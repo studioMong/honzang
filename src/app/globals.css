@@ -392,6 +392,59 @@ a {
   font-size: 12px;
 }
 
+.access-page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+}
+
+.access-card {
+  width: min(100%, 430px);
+}
+
+.access-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 22px 22px 0;
+}
+
+.access-brand p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.access-brand h1 {
+  margin: 2px 0 0;
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.access-form {
+  display: grid;
+  gap: 14px;
+  padding: 20px 22px 22px;
+}
+
+.access-form .field-help {
+  margin: 0;
+}
+
+.access-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.status svg {
+  flex: 0 0 auto;
+  margin-right: 4px;
+}
+
 .mapping-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -821,6 +874,16 @@ th.amount {
 
   .toolbar {
     justify-content: flex-start;
+  }
+
+  .access-page {
+    align-items: start;
+    padding: 16px;
+  }
+
+  .access-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .kpi-grid,

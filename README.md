@@ -42,7 +42,16 @@ Railway 서비스 Variables에서 Postgres 서비스의 `DATABASE_URL`을 참조
 ```bash
 DATABASE_URL=postgresql://...
 NEXT_PUBLIC_APP_URL=https://honzang-production.up.railway.app
+HONZANG_ACCESS_CODE=배포_접근_코드
 ```
+
+권장:
+
+```bash
+HONZANG_ACCESS_TOKEN_SALT=쿠키_서명용_긴_랜덤값
+```
+
+`HONZANG_ACCESS_CODE`가 설정된 배포 환경에서는 `/access`에서 코드를 입력해야 앱과 장부 API에 접근할 수 있습니다. `/api/health`, `/api/version`, PWA 리소스, 샘플 CSV는 배포 점검과 설치를 위해 공개 상태를 유지합니다. 접근 쿠키는 HTTP-only로 7일간 유지되며, 코드를 바꾸면 기존 쿠키는 무효화됩니다.
 
 ## 배포
 
@@ -157,6 +166,7 @@ PWA 리소스와 service worker 등록 상태는 프로덕션 빌드 후 아래 
 ```bash
 npm run build
 npm run verify:pwa
+npm run verify:access-control
 ```
 
 DB 연결 모드에서는 거래/증빙이 0건이어도 샘플 데이터로 대체하지 않습니다. CSV를 여러 번 가져오면 새 배치를 기존 화면 상태와 병합합니다.

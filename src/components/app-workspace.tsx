@@ -15,6 +15,7 @@ import {
   LayoutDashboard,
   ListChecks,
   Loader2,
+  LogOut,
   Printer,
   ReceiptText,
   RefreshCcw,
@@ -95,6 +96,11 @@ type FilingSubmissionGuideRow = {
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};
+
+type AccessSession = {
+  enabled: boolean;
+  authenticated: boolean;
 };
 
 const views: Array<{ key: ViewKey; label: string; icon: React.ComponentType<{ size?: number }> }> = [
@@ -200,6 +206,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
   const [mode, setMode] = useState<"sample" | "database">("sample");
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isStandaloneMode, setIsStandaloneMode] = useState(false);
+  const [accessSession, setAccessSession] = useState<AccessSession | null>(null);
 
   const summary = useMemo(() => summarizeTransactions(transactions), [transactions]);
   const computedReviewItems = useMemo(() => buildReviewItems(transactions), [transactions]);
@@ -227,6 +234,22 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       const vendorResponse = await fetch("/api/vendors", { cache: "no-store" });
       const auditResponse = await fetch("/api/audit-events", { cache: "no-store" });
       const closingPeriodResponse = await fetch("/api/closing-periods", { cache: "no-store" });
+      const responses = [
+        companyResponse,
+        transactionResponse,
+        importResponse,
+        evidenceResponse,
+        journalResponse,
+        reportResponse,
+        reviewResponse,
+        vendorResponse,
+        auditResponse,
+        closingPeriodResponse
+      ];
+      if (responses.some((response) => response.status === 401)) {
+        redirectToAccess();
+        return;
+      }
       const companyPayload = await companyResponse.json();
       const transactionPayload = await transactionResponse.json();
       const importPayload = await importResponse.json();
@@ -296,6 +319,22 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
   }, []);
 
   useEffect(() => {
+    let active = true;
+
+    async function loadAccessSession() {
+      const response = await fetch("/api/auth/session", { cache: "no-store" }).catch(() => null);
+      if (!response?.ok) return;
+      const payload = (await response.json()) as AccessSession;
+      if (active) setAccessSession(payload);
+    }
+
+    void loadAccessSession();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
     const standaloneTimer = window.setTimeout(() => {
       setIsStandaloneMode(isPwaStandalone());
     }, 0);
@@ -330,6 +369,11 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
     const choice = await installPrompt.userChoice.catch(() => null);
     setInstallPrompt(null);
     if (choice?.outcome === "accepted") setIsStandaloneMode(true);
+  }
+
+  async function logoutAccess() {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+    window.location.assign("/access");
   }
 
   async function updateTransaction(id: string, patch: Partial<AppTransaction> & { confirmedAccountId?: string }) {
@@ -430,6 +474,12 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
               {loading ? <Loader2 size={18} className="spin" /> : <RefreshCcw size={18} />}
             </button>
             <InstallPwaButton isStandaloneMode={isStandaloneMode} onInstall={installPwa} />
+            {accessSession?.enabled && (
+              <button className="secondary-button" onClick={() => void logoutAccess()} title="접근 종료">
+                <LogOut size={17} />
+                접근 종료
+              </button>
+            )}
             <button className="secondary-button" onClick={() => setActiveView("imports")}>
               <Upload size={17} />
               CSV 업로드
@@ -561,6 +611,10 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       </main>
     </div>
   );
+}
+
+function redirectToAccess() {
+  window.location.assign(`/access?next=${encodeURIComponent(`${window.location.pathname}${window.location.search}`)}`);
 }
 
 function Dashboard({

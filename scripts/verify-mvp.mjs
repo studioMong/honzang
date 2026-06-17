@@ -8,6 +8,7 @@ const steps = [
   ["verify:samples", "CSV sample parsing and classification"],
   ["build", "Production standalone build"],
   ["verify:pwa", "PWA resources and install hooks"],
+  ["verify:access-control", "Environment access-code protection"],
   ["verify:backup-restore", "Backup restore dry-run"],
   ["smoke:prod", "Production API/UI smoke test"]
 ];

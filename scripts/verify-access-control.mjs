@@ -1,0 +1,157 @@
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import process from "node:process";
+
+const port = process.env.ACCESS_CONTROL_VERIFY_PORT ?? "3104";
+const accessCode = process.env.ACCESS_CONTROL_VERIFY_CODE ?? "verify-access-code";
+const baseUrl = `http://127.0.0.1:${port}`;
+const startupTimeoutMs = Number(process.env.ACCESS_CONTROL_VERIFY_TIMEOUT_MS ?? 20_000);
+const serverPath = ".next/standalone/server.js";
+
+if (!existsSync(serverPath)) {
+  console.error(`${serverPath} not found. Run npm run build before npm run verify:access-control.`);
+  process.exit(1);
+}
+
+const logs = [];
+const server = spawn("npm", ["run", "start"], {
+  env: {
+    ...process.env,
+    NODE_ENV: "production",
+    PORT: port,
+    HONZANG_ACCESS_CODE: accessCode,
+    HONZANG_ACCESS_TOKEN_SALT: "verify-access-token-salt"
+  },
+  stdio: ["ignore", "pipe", "pipe"]
+});
+
+server.stdout.on("data", (chunk) => logs.push(chunk.toString()));
+server.stderr.on("data", (chunk) => logs.push(chunk.toString()));
+
+let serverExited = false;
+server.on("exit", (code, signal) => {
+  serverExited = true;
+  logs.push(`server exited code=${code ?? "null"} signal=${signal ?? "null"}\n`);
+});
+
+try {
+  await waitForServer();
+  await verifyPublicHealth();
+  await verifyPageRedirect();
+  await verifyUnauthorizedApi();
+  await verifyWrongCode();
+  const cookie = await verifyLogin();
+  await verifyAuthenticatedSession(cookie);
+  await verifyAuthenticatedApi(cookie);
+  await verifyLogout(cookie);
+  console.log(`Access-control verification passed at ${baseUrl}`);
+} catch (error) {
+  console.error(error instanceof Error ? error.message : error);
+  console.error("--- server logs ---");
+  console.error(logs.join("").trim());
+  process.exitCode = 1;
+} finally {
+  if (!serverExited) {
+    server.kill("SIGTERM");
+    await new Promise((resolve) => server.once("exit", resolve));
+  }
+}
+
+async function waitForServer() {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < startupTimeoutMs) {
+    if (serverExited) break;
+    try {
+      const response = await fetch(`${baseUrl}/api/version`, { cache: "no-store" });
+      if (response.ok) return;
+    } catch {
+      // Server is still starting.
+    }
+    await delay(250);
+  }
+  throw new Error(`Server did not become ready within ${startupTimeoutMs}ms.`);
+}
+
+async function verifyPublicHealth() {
+  await expectJson("/api/version", (body) => body.app === "honzang");
+  await expectJson("/api/health", (body) => body.ok === true && body.app === "honzang");
+  await expectJson("/api/auth/session", (body) => body.enabled === true && body.authenticated === false);
+}
+
+async function verifyPageRedirect() {
+  const response = await fetch(`${baseUrl}/?view=reports`, {
+    cache: "no-store",
+    redirect: "manual"
+  });
+  assert.ok([307, 308].includes(response.status), `root should redirect to access page, got HTTP ${response.status}`);
+  const location = response.headers.get("location") ?? "";
+  assert.match(location, /\/access\?next=%2F%3Fview%3Dreports|\/access\?next=%2F\?view=reports/, "redirect should preserve requested path");
+}
+
+async function verifyUnauthorizedApi() {
+  const response = await fetch(`${baseUrl}/api/transactions`, { cache: "no-store" });
+  const body = await response.json();
+  assert.equal(response.status, 401, "sensitive APIs should require access cookie");
+  assert.equal(body.code, "AUTH_REQUIRED", "unauthorized API response should identify auth requirement");
+}
+
+async function verifyWrongCode() {
+  const response = await postLogin("wrong-code");
+  assert.equal(response.status, 401, "wrong access code should be rejected");
+}
+
+async function verifyLogin() {
+  const response = await postLogin(accessCode);
+  assert.equal(response.status, 200, "correct access code should be accepted");
+  const setCookie = response.headers.get("set-cookie") ?? "";
+  assert.match(setCookie, /honzang_access=/, "login should set access cookie");
+  const cookie = setCookie.split(";")[0];
+  assert.ok(cookie.includes("=") && !cookie.endsWith("="), "access cookie should contain a token");
+  return cookie;
+}
+
+async function verifyAuthenticatedSession(cookie) {
+  await expectJson("/api/auth/session", (body) => body.enabled === true && body.authenticated === true, { Cookie: cookie });
+}
+
+async function verifyAuthenticatedApi(cookie) {
+  await expectJson("/api/transactions", (body) => Array.isArray(body.transactions), { Cookie: cookie });
+}
+
+async function verifyLogout(cookie) {
+  const response = await fetch(`${baseUrl}/api/auth/logout`, {
+    method: "POST",
+    headers: { Cookie: cookie },
+    cache: "no-store"
+  });
+  assert.equal(response.status, 200, "logout should succeed");
+  const setCookie = response.headers.get("set-cookie") ?? "";
+  assert.match(setCookie, /Max-Age=0/, "logout should clear access cookie");
+}
+
+async function postLogin(code) {
+  return fetch(`${baseUrl}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+    cache: "no-store"
+  });
+}
+
+async function expectJson(path, predicate, headers = {}) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    headers,
+    cache: "no-store"
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`${path} returned HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  assert.ok(predicate(body), `${path} returned unexpected JSON: ${JSON.stringify(body)}`);
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
