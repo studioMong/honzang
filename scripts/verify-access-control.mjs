@@ -8,6 +8,14 @@ const accessCode = process.env.ACCESS_CONTROL_VERIFY_CODE ?? "verify-access-code
 const baseUrl = `http://127.0.0.1:${port}`;
 const startupTimeoutMs = Number(process.env.ACCESS_CONTROL_VERIFY_TIMEOUT_MS ?? 20_000);
 const serverPath = ".next/standalone/server.js";
+const publicSampleCsvChecks = [
+  ["/samples/bank-transactions.csv", "거래일"],
+  ["/samples/card-transactions.csv", "승인번호"],
+  ["/samples/hometax-sales.csv", "공급가액"],
+  ["/samples/hometax-purchases.csv", "공급가액"],
+  ["/samples/cash-receipts.csv", "승인번호"],
+  ["/samples/pg-settlements.csv", "정산금액"]
+];
 
 if (!existsSync(serverPath)) {
   console.error(`${serverPath} not found. Run npm run build before npm run verify:access-control.`);
@@ -78,6 +86,9 @@ async function verifyPublicHealth() {
   await expectJson("/api/version", (body) => body.app === "honzang");
   await expectJson("/api/health", (body) => body.ok === true && body.app === "honzang");
   await expectJson("/api/auth/session", (body) => body.enabled === true && body.authenticated === false);
+  for (const [path, expectedHeader] of publicSampleCsvChecks) {
+    await expectText(path, (body) => body.includes(expectedHeader));
+  }
 }
 
 async function verifyPageRedirect() {
@@ -204,6 +215,18 @@ async function expectJson(path, predicate, headers = {}) {
   }
   const body = JSON.parse(text);
   assert.ok(predicate(body), `${path} returned unexpected JSON: ${JSON.stringify(body)}`);
+}
+
+async function expectText(path, predicate, headers = {}) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    headers,
+    cache: "no-store"
+  });
+  const body = await response.text();
+  if (!response.ok) {
+    throw new Error(`${path} returned HTTP ${response.status}: ${body}`);
+  }
+  assert.ok(predicate(body), `${path} returned unexpected body.`);
 }
 
 function delay(ms) {
