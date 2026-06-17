@@ -6,8 +6,8 @@ import Papa from "papaparse";
 import {
   AlertTriangle,
   BarChart3,
-  Building2,
   CheckCircle2,
+  Download,
   FileSpreadsheet,
   LayoutDashboard,
   ListChecks,
@@ -23,6 +23,7 @@ import type {
   AppCompany,
   AppTransaction,
   CsvColumnMapping,
+  CsvTemplate,
   EvidenceStatus,
   ImportPreview,
   ParsedCsvRow,
@@ -33,7 +34,7 @@ import { normalizeCsvRow, summarizeTransactions } from "@/lib/accounting";
 import { formatDate, formatKRW, formatNumber } from "@/lib/format";
 import { sampleCompany, sampleTransactions } from "@/lib/sample-data";
 
-type ViewKey = "dashboard" | "imports" | "transactions" | "reviews" | "reports" | "settings";
+export type ViewKey = "dashboard" | "imports" | "transactions" | "reviews" | "reports" | "settings";
 
 const views: Array<{ key: ViewKey; label: string; icon: React.ComponentType<{ size?: number }> }> = [
   { key: "dashboard", label: "대시보드", icon: LayoutDashboard },
@@ -59,10 +60,11 @@ const mappingFields: Array<{ key: keyof CsvColumnMapping; label: string; require
 
 const sourceOptions: SourceType[] = ["BANK", "CARD", "HOMETAX_SALES", "HOMETAX_PURCHASES", "CASH_RECEIPT", "PG"];
 
-export function AppWorkspace() {
-  const [activeView, setActiveView] = useState<ViewKey>("dashboard");
+export function AppWorkspace({ initialView = "dashboard" }: { initialView?: ViewKey }) {
+  const [activeView, setActiveView] = useState<ViewKey>(initialView);
   const [company, setCompany] = useState<AppCompany>(sampleCompany);
   const [accounts, setAccounts] = useState<AppAccount[]>(DEFAULT_ACCOUNTS);
+  const [csvTemplates, setCsvTemplates] = useState<CsvTemplate[]>([]);
   const [transactions, setTransactions] = useState<AppTransaction[]>(sampleTransactions);
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<"sample" | "database">("sample");
@@ -81,11 +83,13 @@ export function AppWorkspace() {
       const transactionPayload = await transactionResponse.json();
       setCompany(companyPayload.company ?? sampleCompany);
       setAccounts(companyPayload.accounts ?? DEFAULT_ACCOUNTS);
+      setCsvTemplates(companyPayload.csvTemplates ?? []);
       setTransactions(transactionPayload.transactions?.length ? transactionPayload.transactions : sampleTransactions);
       setMode(companyPayload.mode === "database" || transactionPayload.mode === "database" ? "database" : "sample");
     } catch {
       setCompany(sampleCompany);
       setAccounts(DEFAULT_ACCOUNTS);
+      setCsvTemplates([]);
       setTransactions(sampleTransactions);
       setMode("sample");
     } finally {
@@ -139,16 +143,21 @@ export function AppWorkspace() {
           {views.map((view) => {
             const Icon = view.icon;
             return (
-              <button
+              <a
                 key={view.key}
                 className="nav-button"
                 data-active={activeView === view.key}
-                onClick={() => setActiveView(view.key)}
+                href={`/?view=${view.key}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  window.history.replaceState(null, "", `/?view=${view.key}`);
+                  setActiveView(view.key);
+                }}
                 title={view.label}
               >
                 <Icon size={18} />
                 <span>{view.label}</span>
-              </button>
+              </a>
             );
           })}
         </nav>
@@ -179,6 +188,7 @@ export function AppWorkspace() {
         {activeView === "imports" && (
           <CsvImportPanel
             companyId={company.id || DEFAULT_COMPANY_ID}
+            csvTemplates={csvTemplates}
             onImported={(imported) => {
               setTransactions(imported);
               setActiveView("transactions");
@@ -190,7 +200,7 @@ export function AppWorkspace() {
         )}
         {activeView === "reviews" && <ReviewsPanel items={reviewItems} />}
         {activeView === "reports" && <ReportsPanel summary={summary} transactions={transactions} />}
-        {activeView === "settings" && <SettingsPanel company={company} accounts={accounts} />}
+        {activeView === "settings" && <SettingsPanel company={company} accounts={accounts} onSaved={setCompany} />}
       </main>
     </div>
   );
@@ -248,7 +258,15 @@ function Dashboard({
   );
 }
 
-function CsvImportPanel({ companyId, onImported }: { companyId: string; onImported: (transactions: AppTransaction[]) => void }) {
+function CsvImportPanel({
+  companyId,
+  csvTemplates,
+  onImported
+}: {
+  companyId: string;
+  csvTemplates: CsvTemplate[];
+  onImported: (transactions: AppTransaction[]) => void;
+}) {
   const [sourceType, setSourceType] = useState<SourceType>("BANK");
   const [fileName, setFileName] = useState("");
   const [preview, setPreview] = useState<ImportPreview | null>(null);
@@ -266,7 +284,7 @@ function CsvImportPanel({ companyId, onImported }: { companyId: string; onImport
         const headers = result.meta.fields?.filter(Boolean) ?? [];
         const rows = result.data.filter((row) => Object.values(row).some((value) => String(value ?? "").trim()));
         setPreview({ headers, rows: rows.slice(0, 2000) });
-        setMapping(inferMapping(headers, sourceType));
+        setMapping(getSavedMapping(sourceType, headers, csvTemplates) ?? inferMapping(headers, sourceType));
       }
     });
   }
@@ -283,11 +301,15 @@ function CsvImportPanel({ companyId, onImported }: { companyId: string; onImport
           sourceType,
           originalFileName: fileName,
           mapping,
+          headers: preview.headers,
           rows: preview.rows
         })
       });
       const payload = await response.json();
-      if (payload.transactions?.length) onImported(payload.transactions);
+      if (payload.transactions?.length) {
+        saveLocalMapping(sourceType, preview.headers, mapping);
+        onImported(payload.transactions);
+      }
     } finally {
       setSaving(false);
     }
@@ -476,6 +498,7 @@ function ReviewsPanel({ items }: { items: ReturnType<typeof buildReviewItems> })
 
 function ReportsPanel({ summary, transactions }: { summary: ReturnType<typeof summarizeTransactions>; transactions: AppTransaction[] }) {
   const expenseByAccount = groupExpensesByAccount(transactions);
+  const reviews = buildReviewItems(transactions);
   return (
     <div className="content">
       <section className="kpi-grid">
@@ -516,6 +539,20 @@ function ReportsPanel({ summary, transactions }: { summary: ReturnType<typeof su
         <section className="panel">
           <div className="panel-header">
             <h2 className="panel-title">신고 준비</h2>
+            <div className="toolbar">
+              <button className="secondary-button" onClick={() => downloadCsv("honzang-transactions.csv", buildTransactionCsv(transactions))}>
+                <Download size={16} />
+                거래
+              </button>
+              <button className="secondary-button" onClick={() => downloadCsv("honzang-vat-report.csv", buildVatCsv(summary))}>
+                <Download size={16} />
+                부가세
+              </button>
+              <button className="secondary-button" onClick={() => downloadCsv("honzang-review-items.csv", buildReviewCsv(reviews))}>
+                <Download size={16} />
+                검토
+              </button>
+            </div>
           </div>
           <div className="panel-body">
             <div className="review-list">
@@ -531,21 +568,120 @@ function ReportsPanel({ summary, transactions }: { summary: ReturnType<typeof su
   );
 }
 
-function SettingsPanel({ company, accounts }: { company: AppCompany; accounts: AppAccount[] }) {
+function SettingsPanel({
+  company,
+  accounts,
+  onSaved
+}: {
+  company: AppCompany;
+  accounts: AppAccount[];
+  onSaved: (company: AppCompany) => void;
+}) {
+  const [form, setForm] = useState<AppCompany>(company);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setForm(company);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [company]);
+
+  function updateForm<K extends keyof AppCompany>(key: K, value: AppCompany[K]) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function saveSettings() {
+    setSaving(true);
+    try {
+      const response = await fetch("/api/companies", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form)
+      });
+      const payload = await response.json();
+      onSaved(payload.company ?? form);
+      setSavedAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="content">
       <section className="panel">
         <div className="panel-header">
           <h2 className="panel-title">회사 설정</h2>
-          <span className="status green">1인법인</span>
+          <div className="toolbar">
+            {savedAt && <span className="status green">{savedAt} 저장</span>}
+            <button className="primary-button" onClick={() => void saveSettings()} disabled={saving}>
+              {saving ? <Loader2 size={17} className="spin" /> : <CheckCircle2 size={17} />}
+              저장
+            </button>
+          </div>
         </div>
         <div className="panel-body form-grid">
-          <ReadOnlyField label="법인명" value={company.name} />
-          <ReadOnlyField label="업종" value={company.industry ?? "-"} />
-          <ReadOnlyField label="과세유형" value={company.vatType} />
-          <ReadOnlyField label="결산월" value={`${company.fiscalYearEndMonth}월`} />
-          <ReadOnlyField label="대표자 급여" value={company.representativeSalaryEnabled ? "사용" : "미사용"} />
-          <ReadOnlyField label="외주 지급" value={company.contractorPaymentEnabled ? "사용" : "미사용"} />
+          <div className="field">
+            <label>법인명</label>
+            <input value={form.name} onChange={(event) => updateForm("name", event.target.value)} />
+          </div>
+          <div className="field">
+            <label>업종</label>
+            <input value={form.industry ?? ""} onChange={(event) => updateForm("industry", event.target.value)} />
+          </div>
+          <div className="field">
+            <label>사업자등록번호</label>
+            <input
+              value={form.businessRegistrationNumber ?? ""}
+              onChange={(event) => updateForm("businessRegistrationNumber", event.target.value)}
+              placeholder="선택 입력"
+            />
+          </div>
+          <div className="field">
+            <label>과세유형</label>
+            <select value={form.vatType} onChange={(event) => updateForm("vatType", event.target.value)}>
+              <option value="GENERAL">일반과세</option>
+              <option value="EXEMPT">면세</option>
+              <option value="MIXED">겸영</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>결산월</label>
+            <select
+              value={form.fiscalYearEndMonth}
+              onChange={(event) => updateForm("fiscalYearEndMonth", Number(event.target.value))}
+            >
+              {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
+                <option key={month} value={month}>
+                  {month}월
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label>과금 모델</label>
+            <select value={form.billingModel} onChange={(event) => updateForm("billingModel", event.target.value as AppCompany["billingModel"])}>
+              <option value="INTERNAL_PER_USE">내부 회당 정산</option>
+              <option value="SAAS_MONTHLY">SaaS 월 구독</option>
+              <option value="SAAS_ANNUAL">SaaS 연 구독</option>
+            </select>
+          </div>
+          <ToggleField
+            label="대표자 급여"
+            checked={form.representativeSalaryEnabled}
+            onChange={(checked) => updateForm("representativeSalaryEnabled", checked)}
+          />
+          <ToggleField
+            label="직원 급여"
+            checked={form.employeePayrollEnabled}
+            onChange={(checked) => updateForm("employeePayrollEnabled", checked)}
+          />
+          <ToggleField
+            label="외주 지급"
+            checked={form.contractorPaymentEnabled}
+            onChange={(checked) => updateForm("contractorPaymentEnabled", checked)}
+          />
         </div>
       </section>
 
@@ -637,12 +773,15 @@ function TransactionsTable({ transactions, compact = false }: { transactions: Ap
   );
 }
 
-function ReadOnlyField({ label, value }: { label: string; value: string }) {
+function ToggleField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
   return (
-    <div className="field">
-      <label>{label}</label>
-      <input value={value} readOnly />
-    </div>
+    <label className="toggle-row">
+      <span>
+        <strong>{label}</strong>
+        <small>{checked ? "사용" : "미사용"}</small>
+      </span>
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+    </label>
   );
 }
 
@@ -701,6 +840,90 @@ function inferMapping(headers: string[], sourceType: SourceType): CsvColumnMappi
     balance: find("잔액", "balance"),
     approvalNumber: find("승인번호", "approval")
   };
+}
+
+function getSavedMapping(sourceType: SourceType, headers: string[], templates: CsvTemplate[]) {
+  const signature = headers.join("|");
+  const dbTemplate = templates.find((template) => template.sourceType === sourceType && template.headerSignature === signature);
+  if (dbTemplate) return dbTemplate.mapping;
+
+  try {
+    const raw = window.localStorage.getItem(`honzang:csv-template:${sourceType}:${signature}`);
+    return raw ? (JSON.parse(raw) as CsvColumnMapping) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveLocalMapping(sourceType: SourceType, headers: string[], mapping: CsvColumnMapping) {
+  try {
+    window.localStorage.setItem(`honzang:csv-template:${sourceType}:${headers.join("|")}`, JSON.stringify(mapping));
+  } catch {
+    // Local storage is optional; database persistence still applies when configured.
+  }
+}
+
+function downloadCsv(fileName: string, rows: Array<Record<string, string | number>>) {
+  const csv = toCsv(rows);
+  const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function toCsv(rows: Array<Record<string, string | number>>) {
+  if (rows.length === 0) return "";
+  const headers = Object.keys(rows[0]);
+  const escapeCell = (value: string | number) => {
+    const text = String(value ?? "");
+    return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+  };
+  return [headers.join(","), ...rows.map((row) => headers.map((header) => escapeCell(row[header])).join(","))].join("\n");
+}
+
+function buildTransactionCsv(transactions: AppTransaction[]) {
+  return transactions.map((transaction) => ({
+    거래일: transaction.transactionDate,
+    출처: SOURCE_TYPE_LABELS[transaction.sourceType],
+    거래처: transaction.counterparty ?? "",
+    적요: transaction.description,
+    계정과목: transaction.confirmedAccount?.name ?? transaction.suggestedAccount?.name ?? "미분류",
+    입금: transaction.depositAmount,
+    출금: transaction.withdrawalAmount,
+    공급가액: transaction.supplyAmount ?? "",
+    부가세: transaction.vatAmount ?? "",
+    증빙상태: transaction.evidenceStatus,
+    메모: transaction.memo ?? ""
+  }));
+}
+
+function buildVatCsv(summary: ReturnType<typeof summarizeTransactions>) {
+  return [
+    { 항목: "과세 매출 공급가액", 금액: summary.revenue },
+    { 항목: "매출 부가세", 금액: summary.vatOutput },
+    { 항목: "매입 공급가액", 금액: summary.expense },
+    { 항목: "매입 부가세", 금액: summary.vatInput },
+    { 항목: "예상 납부/환급액", 금액: summary.vatPayable },
+    { 항목: "증빙 누락 비용", 금액: summary.missingEvidenceAmount },
+    { 항목: "검토 필요 건수", 금액: summary.reviewCount },
+    { 항목: "위험 거래 건수", 금액: summary.riskCount }
+  ];
+}
+
+function buildReviewCsv(items: ReturnType<typeof buildReviewItems>) {
+  return items.map((item) => ({
+    심각도: item.severity,
+    사유: item.reason,
+    거래일: item.transaction?.transactionDate ?? "",
+    적요: item.transaction?.description ?? "",
+    거래처: item.transaction?.counterparty ?? "",
+    금액: item.transaction?.withdrawalAmount || item.transaction?.depositAmount || 0
+  }));
 }
 
 function getViewTitle(view: ViewKey) {

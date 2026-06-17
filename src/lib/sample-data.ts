@@ -12,7 +12,8 @@ export const sampleCompany: AppCompany = {
   fiscalYearEndMonth: 12,
   representativeSalaryEnabled: true,
   employeePayrollEnabled: false,
-  contractorPaymentEnabled: true
+  contractorPaymentEnabled: true,
+  billingModel: "INTERNAL_PER_USE"
 };
 
 export const sampleTransactions: AppTransaction[] = [

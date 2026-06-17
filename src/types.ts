@@ -15,6 +15,8 @@ export type TransactionDirection = "DEPOSIT" | "WITHDRAWAL" | "TRANSFER" | "UNKN
 
 export type AccountType = "ASSET" | "LIABILITY" | "EQUITY" | "REVENUE" | "EXPENSE";
 
+export type BillingModel = "INTERNAL_PER_USE" | "SAAS_MONTHLY" | "SAAS_ANNUAL";
+
 export type AppCompany = {
   id: string;
   name: string;
@@ -25,6 +27,7 @@ export type AppCompany = {
   representativeSalaryEnabled: boolean;
   employeePayrollEnabled: boolean;
   contractorPaymentEnabled: boolean;
+  billingModel: BillingModel;
 };
 
 export type AppAccount = {
@@ -65,6 +68,14 @@ export type CsvColumnMapping = {
   vatAmount?: string;
   balance?: string;
   approvalNumber?: string;
+};
+
+export type CsvTemplate = {
+  id: string;
+  name: string;
+  sourceType: SourceType;
+  headerSignature?: string | null;
+  mapping: CsvColumnMapping;
 };
 
 export type ParsedCsvRow = Record<string, string | number | null | undefined>;
