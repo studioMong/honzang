@@ -93,6 +93,15 @@ type FilingSubmissionGuideRow = {
   "마감 전 확인": string;
 };
 
+type JournalIntegrityRow = {
+  점검: string;
+  상태: string;
+  톤: StatusTone;
+  금액: string;
+  근거: string;
+  "다음 작업": string;
+};
+
 type OperationReadinessCheck = {
   key: string;
   label: string;
@@ -672,13 +681,17 @@ function Dashboard({
   const dashboardTransactions = latestPeriod ? filterTransactionsByPeriod(transactions, latestPeriod) : [];
   const dashboardJournalEntries = latestPeriod ? filterJournalEntriesByPeriod(journalEntries, latestPeriod) : [];
   const dashboardApprovedJournalEntries = dashboardJournalEntries.filter((entry) => entry.status === "APPROVED");
+  const dashboardLedgerRows = buildLedgerRows(dashboardApprovedJournalEntries);
+  const dashboardFinancialStatementRows = buildFinancialStatementRows(dashboardLedgerRows);
+  const dashboardFinancialStatementTotals = buildFinancialStatementTotals(dashboardFinancialStatementRows);
   const dashboardReadinessRows = buildFilingReadinessRows({
     transactions: dashboardTransactions,
     summary: summarizeTransactions(dashboardTransactions),
     dataSourceRows: buildDataSourceRows(dashboardTransactions),
     withholdingRows: buildWithholdingRows(dashboardTransactions),
     journalEntries: dashboardJournalEntries,
-    ledgerRows: buildLedgerRows(dashboardApprovedJournalEntries),
+    journalIntegrityRows: buildJournalIntegrityRows(dashboardApprovedJournalEntries, dashboardLedgerRows, dashboardFinancialStatementRows, dashboardFinancialStatementTotals),
+    ledgerRows: dashboardLedgerRows,
     isPeriodClosed: Boolean(latestPeriod && closingPeriods.some((period) => period.period === latestPeriod)),
     canClosePeriod: Boolean(latestPeriod)
   });
@@ -1965,6 +1978,7 @@ function ReportsPanel({
   const withholdingRows = buildWithholdingRows(filteredTransactions);
   const financialStatementRows = buildFinancialStatementRows(ledgerRows);
   const financialStatementTotals = buildFinancialStatementTotals(financialStatementRows);
+  const journalIntegrityRows = buildJournalIntegrityRows(approvedJournalEntries, ledgerRows, financialStatementRows, financialStatementTotals);
   const corporateTaxRows = buildCorporateTaxRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows, financialStatementRows);
   const filingPackageRows = buildFilingPackageRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows, withholdingRows, financialStatementRows);
   const dataSourceRows = buildDataSourceRows(filteredTransactions);
@@ -1974,6 +1988,7 @@ function ReportsPanel({
     dataSourceRows,
     withholdingRows,
     journalEntries: filteredJournalEntries,
+    journalIntegrityRows,
     ledgerRows,
     isPeriodClosed,
     canClosePeriod
@@ -2018,6 +2033,7 @@ function ReportsPanel({
       dataSourceRows,
       filingPackageRows,
       withholdingRows,
+      journalIntegrityRows,
       corporateTaxRows,
       financialStatementRows,
       ledgerRows
@@ -2062,6 +2078,7 @@ function ReportsPanel({
             dataSourceRows,
             filingPackageRows,
             withholdingRows,
+            journalIntegrityRows,
             corporateTaxRows,
             financialStatementRows,
             ledgerRows,
@@ -2127,6 +2144,7 @@ function ReportsPanel({
               dataSourceRows,
               filingPackageRows,
               withholdingRows,
+              journalIntegrityRows,
               corporateTaxRows,
               financialStatementRows,
               ledgerRows,
@@ -3040,6 +3058,48 @@ function ReportsPanel({
                   </tr>
                 ))
               )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="panel-title">복식부기 검증</h2>
+            <p className="panel-subtitle">승인 분개 기준 차변/대변과 회계등식 점검</p>
+          </div>
+          <div className="toolbar">
+            <span className={`status ${journalIntegrityRows.some((row) => row.톤 === "red") ? "red" : journalIntegrityRows.some((row) => row.톤 === "amber") ? "amber" : "green"}`}>
+              {journalIntegrityRows.some((row) => row.톤 === "red") ? "차단" : journalIntegrityRows.some((row) => row.톤 === "amber") ? "확인" : "균형"}
+            </span>
+            <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("journal-integrity", selectedPeriod), journalIntegrityRows)}>
+              <Download size={16} />
+              검증
+            </button>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>점검</th>
+                <th>상태</th>
+                <th className="amount">금액</th>
+                <th>근거</th>
+                <th>다음 작업</th>
+              </tr>
+            </thead>
+            <tbody>
+              {journalIntegrityRows.map((row) => (
+                <tr key={row.점검}>
+                  <td>{row.점검}</td>
+                  <td><span className={`status ${row.톤}`}>{row.상태}</span></td>
+                  <td className="amount">{row.금액}</td>
+                  <td>{row.근거}</td>
+                  <td>{row["다음 작업"]}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -4581,6 +4641,7 @@ function buildTaxReportPayload({
   dataSourceRows,
   filingPackageRows,
   withholdingRows,
+  journalIntegrityRows,
   corporateTaxRows,
   financialStatementRows,
   ledgerRows,
@@ -4596,6 +4657,7 @@ function buildTaxReportPayload({
   dataSourceRows: ReturnType<typeof buildDataSourceRows>;
   filingPackageRows: ReturnType<typeof buildFilingPackageRows>;
   withholdingRows: ReturnType<typeof buildWithholdingRows>;
+  journalIntegrityRows: JournalIntegrityRow[];
   corporateTaxRows: ReturnType<typeof buildCorporateTaxRows>;
   financialStatementRows: ReturnType<typeof buildFinancialStatementRows>;
   ledgerRows: ReturnType<typeof buildLedgerRows>;
@@ -4612,6 +4674,7 @@ function buildTaxReportPayload({
     dataSourceRows,
     filingPackageRows,
     withholdingRows,
+    journalIntegrityRows,
     corporateTaxRows,
     financialStatementRows,
     ledgerRows,
@@ -4672,6 +4735,7 @@ function parseDetailedTaxReportPayload(payload: unknown) {
     dataSourceRows: parseStringNumberRecordRows(record.dataSourceRows) as ReturnType<typeof buildDataSourceRows>,
     filingPackageRows: parseStringNumberRecordRows(record.filingPackageRows) as ReturnType<typeof buildFilingPackageRows>,
     withholdingRows: parseStringNumberRecordRows(record.withholdingRows) as ReturnType<typeof buildWithholdingRows>,
+    journalIntegrityRows: parseStringNumberRecordRows(record.journalIntegrityRows) as JournalIntegrityRow[],
     corporateTaxRows: parseStringNumberRecordRows(record.corporateTaxRows) as ReturnType<typeof buildCorporateTaxRows>,
     financialStatementRows: parseStringNumberRecordRows(record.financialStatementRows) as ReturnType<typeof buildFinancialStatementRows>,
     ledgerRows: parseStringNumberRecordRows(record.ledgerRows),
@@ -4780,6 +4844,7 @@ function downloadFilingPackageZip(fileName: string, payload: ReturnType<typeof b
     "csv/vat-report.csv",
     "csv/review-items.csv",
     "csv/withholding-candidates.csv",
+    "csv/journal-integrity.csv",
     "csv/corporate-tax-prep.csv",
     "csv/financial-statements.csv",
     "csv/ledger.csv"
@@ -4813,6 +4878,7 @@ function downloadFilingPackageZip(fileName: string, payload: ReturnType<typeof b
     { path: "csv/vat-report.csv", content: toCsvFileContent(payload.tables.vatReport) },
     { path: "csv/review-items.csv", content: toCsvFileContent(payload.tables.reviewItems) },
     { path: "csv/withholding-candidates.csv", content: toCsvFileContent(payload.tables.withholdingCandidates) },
+    { path: "csv/journal-integrity.csv", content: toCsvFileContent(payload.tables.journalIntegrity) },
     { path: "csv/corporate-tax-prep.csv", content: toCsvFileContent(payload.tables.corporateTaxPrep) },
     { path: "csv/financial-statements.csv", content: toCsvFileContent(payload.tables.financialStatements) },
     { path: "csv/ledger.csv", content: toCsvFileContent(payload.tables.ledger) },
@@ -5274,6 +5340,7 @@ function buildFilingWorkbookSheets(payload: ReturnType<typeof buildFilingPackage
     { name: "부가세", rows: payload.tables.vatReport },
     { name: "검토", rows: payload.tables.reviewItems },
     { name: "원천세", rows: payload.tables.withholdingCandidates },
+    { name: "복식검증", rows: payload.tables.journalIntegrity },
     { name: "법인세", rows: payload.tables.corporateTaxPrep },
     { name: "재무제표", rows: payload.tables.financialStatements },
     { name: "원장", rows: payload.tables.ledger }
@@ -5292,6 +5359,7 @@ function buildFilingSummaryRows(payload: ReturnType<typeof buildFilingPackagePay
     { 항목: "기간 종료", 값: payload.period.end },
     { 항목: "신고 차단 항목", 값: payload.filingReadinessRows.filter((row) => row.톤 === "red").length },
     { 항목: "신고 확인 항목", 값: payload.filingReadinessRows.filter((row) => row.톤 === "amber").length },
+    { 항목: "복식부기 차단 항목", 값: payload.tables.journalIntegrity.filter((row) => row.톤 === "red").length },
     { 항목: "제출 가이드 단계", 값: payload.submissionGuideRows.length },
     { 항목: "확인 필요 자료", 값: payload.dataSourceRows.filter((row) => row.상태 === "확인 필요").length },
     { 항목: "매출", 값: payload.summary.revenue },
@@ -5563,6 +5631,7 @@ function buildFilingPackagePayload({
   dataSourceRows,
   filingPackageRows,
   withholdingRows,
+  journalIntegrityRows,
   corporateTaxRows,
   financialStatementRows,
   ledgerRows
@@ -5581,6 +5650,7 @@ function buildFilingPackagePayload({
   dataSourceRows: ReturnType<typeof buildDataSourceRows>;
   filingPackageRows: ReturnType<typeof buildFilingPackageRows>;
   withholdingRows: ReturnType<typeof buildWithholdingRows>;
+  journalIntegrityRows: JournalIntegrityRow[];
   corporateTaxRows: ReturnType<typeof buildCorporateTaxRows>;
   financialStatementRows: ReturnType<typeof buildFinancialStatementRows>;
   ledgerRows: ReturnType<typeof buildLedgerRows>;
@@ -5607,6 +5677,7 @@ function buildFilingPackagePayload({
     submissionGuideRows,
     dataSourceRows,
     filingPackageRows,
+    journalIntegrityRows,
     tables: {
       filingReadiness: filingReadinessRows,
       submissionGuide: submissionGuideRows,
@@ -5616,6 +5687,7 @@ function buildFilingPackagePayload({
       vatReport: buildVatCsv(summary, transactions),
       reviewItems: buildReviewCsv(reviews),
       withholdingCandidates: withholdingRows,
+      journalIntegrity: journalIntegrityRows,
       corporateTaxPrep: corporateTaxRows,
       financialStatements: financialStatementRows,
       ledger: buildLedgerCsv(ledgerRows)
@@ -5741,6 +5813,7 @@ function buildFilingReadinessRows({
   dataSourceRows,
   withholdingRows,
   journalEntries,
+  journalIntegrityRows,
   ledgerRows,
   isPeriodClosed,
   canClosePeriod
@@ -5750,6 +5823,7 @@ function buildFilingReadinessRows({
   dataSourceRows: ReturnType<typeof buildDataSourceRows>;
   withholdingRows: ReturnType<typeof buildWithholdingRows>;
   journalEntries: AppJournalEntry[];
+  journalIntegrityRows: JournalIntegrityRow[];
   ledgerRows: ReturnType<typeof buildLedgerRows>;
   isPeriodClosed: boolean;
   canClosePeriod: boolean;
@@ -5762,6 +5836,9 @@ function buildFilingReadinessRows({
   const approvedJournalCount = journalEntries.filter((entry) => entry.status === "APPROVED").length;
   const draftJournalCount = journalEntries.filter((entry) => entry.status === "DRAFT").length;
   const sourceTone: StatusTone = totalTransactions === 0 || bankSourceMissing ? "red" : supportingSourceMissingCount > 0 ? "amber" : "green";
+  const integrityBlockers = journalIntegrityRows.filter((row) => row.톤 === "red").length;
+  const integrityWarnings = journalIntegrityRows.filter((row) => row.톤 === "amber").length;
+  const integrityTone: StatusTone = integrityBlockers > 0 ? "red" : integrityWarnings > 0 ? "amber" : "green";
 
   return [
     {
@@ -5826,6 +5903,14 @@ function buildFilingReadinessRows({
     },
     {
       순서: 7,
+      점검: "복식부기 검증",
+      상태: integrityTone === "red" ? "차단" : integrityTone === "amber" ? "확인 필요" : "완료",
+      톤: integrityTone,
+      근거: `차단 ${formatNumber(integrityBlockers)}개 · 확인 ${formatNumber(integrityWarnings)}개`,
+      "다음 작업": integrityTone === "green" ? "차변/대변과 회계등식 최종 대조" : "복식부기 검증 표에서 차액과 미생성 항목 확인"
+    },
+    {
+      순서: 8,
       점검: "월 마감",
       상태: !canClosePeriod ? "전체 기간" : isPeriodClosed ? "완료" : "확인 필요",
       톤: !canClosePeriod ? "blue" : isPeriodClosed ? "green" : "amber",
@@ -6155,6 +6240,56 @@ function scheduleStatus(date: Date, readyLabel: string) {
   if (days < 0) return "기한 확인";
   if (days <= 30) return "다가옴";
   return readyLabel;
+}
+
+function buildJournalIntegrityRows(
+  journalEntries: AppJournalEntry[],
+  ledgerRows: ReturnType<typeof buildLedgerRows>,
+  financialStatementRows: FinancialStatementRow[],
+  totals: ReturnType<typeof buildFinancialStatementTotals>
+): JournalIntegrityRow[] {
+  const approvedEntries = journalEntries.filter((entry) => entry.status === "APPROVED");
+  const approvedLines = approvedEntries.flatMap((entry) => entry.lines);
+  const totalDebit = approvedLines.reduce((sum, line) => sum + line.debitAmount, 0);
+  const totalCredit = approvedLines.reduce((sum, line) => sum + line.creditAmount, 0);
+  const journalDifference = Math.round(totalDebit - totalCredit);
+  const equationRight = totals.liability + totals.equity + totals.profit;
+  const equationDifference = Math.round(totals.asset - equationRight);
+
+  return [
+    {
+      점검: "차변/대변 합계",
+      상태: approvedEntries.length === 0 ? "승인 대기" : journalDifference === 0 ? "균형" : "차액 확인",
+      톤: approvedEntries.length === 0 ? "red" : journalDifference === 0 ? "green" : "red",
+      금액: `차변 ${formatKRW(totalDebit)} · 대변 ${formatKRW(totalCredit)}`,
+      근거: approvedEntries.length === 0 ? "승인된 분개가 없습니다." : `차액 ${formatKRW(Math.abs(journalDifference))}`,
+      "다음 작업": approvedEntries.length === 0 ? "자동분개 탭에서 정상 초안 승인" : journalDifference === 0 ? "기간별 승인 분개 표본 확인" : "불균형 분개를 취소하고 거래 분류 재확인"
+    },
+    {
+      점검: "회계등식",
+      상태: financialStatementRows.length === 0 ? "재무제표 대기" : equationDifference === 0 ? "균형" : "차액 확인",
+      톤: financialStatementRows.length === 0 ? "red" : equationDifference === 0 ? "green" : "red",
+      금액: `자산 ${formatKRW(totals.asset)} · 부채+자본+손익 ${formatKRW(equationRight)}`,
+      근거: financialStatementRows.length === 0 ? "재무제표 초안이 없습니다." : `차액 ${formatKRW(Math.abs(equationDifference))}`,
+      "다음 작업": financialStatementRows.length === 0 ? "승인 분개 생성 후 재무제표 초안 확인" : equationDifference === 0 ? "자산, 부채, 자본 계정 실재성 검토" : "자본금, 대표자차입금, 손익 계정 분류 확인"
+    },
+    {
+      점검: "계정별 원장",
+      상태: ledgerRows.length > 0 ? "생성됨" : "대기",
+      톤: ledgerRows.length > 0 ? "green" : "red",
+      금액: `${formatNumber(ledgerRows.length)}행`,
+      근거: ledgerRows.length > 0 ? "승인 분개 라인이 원장에 반영되었습니다." : "원장 행이 없습니다.",
+      "다음 작업": ledgerRows.length > 0 ? "계정별 잔액과 거래처 원천자료 대조" : "자동분개 승인 후 원장 재생성"
+    },
+    {
+      점검: "재무제표 초안",
+      상태: financialStatementRows.length > 0 ? "생성됨" : "대기",
+      톤: financialStatementRows.length > 0 ? "green" : "red",
+      금액: `${formatNumber(financialStatementRows.length)}개 계정`,
+      근거: financialStatementRows.length > 0 ? "원장 잔액이 재무제표 초안으로 집계되었습니다." : "재무제표 초안 행이 없습니다.",
+      "다음 작업": financialStatementRows.length > 0 ? "법인세 신고 전 계정별 금액 확인" : "승인 분개 생성 후 재무제표 초안 확인"
+    }
+  ];
 }
 
 function buildLedgerRows(journalEntries: AppJournalEntry[]) {

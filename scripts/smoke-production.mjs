@@ -53,7 +53,7 @@ try {
     ["운영 준비 점검", "배포 환경 상태 확인", "전체 백업", "데이터 보관/삭제 기준"].every((text) => body.includes(text))
   );
   await expectText("/?view=reports", (body) =>
-    ["혼자장부 신고 준비 리포트", "최종 신고 점검", "홈택스 제출 전 입력 가이드", "자료 수집 현황", "신고 패키지", "재무제표 초안"].every((text) => body.includes(text))
+    ["혼자장부 신고 준비 리포트", "최종 신고 점검", "홈택스 제출 전 입력 가이드", "자료 수집 현황", "신고 패키지", "재무제표 초안", "복식부기 검증"].every((text) => body.includes(text))
   );
   console.log(`Production smoke passed at ${baseUrl}`);
 } catch (error) {
