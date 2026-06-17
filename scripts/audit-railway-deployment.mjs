@@ -230,7 +230,11 @@ function printReport() {
   console.log("");
 
   for (const result of results) {
-    console.log(`${result.path}: HTTP ${result.status}, ${result.contentType}, ${result.bytes} bytes`);
+    const headerSummary = responseHeaderSummary(result.headers);
+    console.log(`${result.path}: HTTP ${result.status}, ${result.contentType}, ${result.bytes} bytes${headerSummary ? `, ${headerSummary}` : ""}`);
+    if (result.path === "/" && result.hasLegacySummary) {
+      console.log(`  preview: ${compactPreview(result.textPreview)}`);
+    }
   }
 
   console.log("");
@@ -256,6 +260,19 @@ function printReport() {
 
 function resultFor(path) {
   return results.find((result) => result.path === path);
+}
+
+function responseHeaderSummary(headers) {
+  const parts = [
+    headers.server ? `server=${headers.server}` : "",
+    headers.via ? `via=${headers.via}` : "",
+    headers.railwayRequestId ? `x-railway-request-id=${headers.railwayRequestId}` : ""
+  ].filter(Boolean);
+  return parts.join(", ");
+}
+
+function compactPreview(text) {
+  return text.replace(/\s+/g, " ").trim().slice(0, 160);
 }
 
 function currentGitCommit() {
