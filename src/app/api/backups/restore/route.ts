@@ -281,7 +281,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const transactionIssues = validateBackupTransactions(parsed.data.transactions);
+  const transactionIssues = validateBackupTransactions(parsed.data);
   if (transactionIssues.length > 0) {
     return NextResponse.json(
       {
@@ -813,11 +813,26 @@ function validateBackupEvidences(backup: WorkspaceBackup) {
   return issues;
 }
 
-function validateBackupTransactions(transactions: WorkspaceBackup["transactions"]) {
-  return uniqueById(transactions).flatMap((transaction) => {
-    const issue = validateTransactionAmounts(transaction);
-    return issue ? [`거래 ${transaction.id}: ${issue}`] : [];
-  });
+function validateBackupTransactions(backup: WorkspaceBackup) {
+  const issues: string[] = [];
+  const importBatchById = new Map(uniqueById(backup.importBatches).map((batch) => [batch.id, batch]));
+
+  for (const transaction of uniqueById(backup.transactions)) {
+    const label = `거래 ${transaction.id}`;
+    const amountIssue = validateTransactionAmounts(transaction);
+    if (amountIssue) issues.push(`${label}: ${amountIssue}`);
+
+    if (!transaction.importBatchId) continue;
+
+    const importBatch = importBatchById.get(transaction.importBatchId);
+    if (!importBatch) {
+      issues.push(`${label}: 연결 가져오기 ${transaction.importBatchId}를 백업 가져오기 목록에서 찾을 수 없습니다.`);
+    } else if (importBatch.sourceType !== transaction.sourceType) {
+      issues.push(`${label}: 거래 출처와 연결 가져오기 출처가 일치하지 않습니다.`);
+    }
+  }
+
+  return issues;
 }
 
 function validateBackupDates(backup: WorkspaceBackup) {

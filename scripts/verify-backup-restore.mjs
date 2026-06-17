@@ -165,6 +165,7 @@ try {
   await verifyDryRun();
   await verifyInvalidDateBackup();
   await verifyInvalidTransactionAmountBackup();
+  await verifyInvalidTransactionImportBatchBackup();
   await verifyInvalidEvidenceBackup();
   await verifyInvalidEvidenceAmountBackup();
   await verifyInvalidEvidenceTransactionBackup();
@@ -319,6 +320,22 @@ async function verifyInvalidTransactionAmountBackup() {
   assert.equal(body.code, "INVALID_BACKUP_TRANSACTIONS", "restore should return transaction validation code");
   assert.ok(Array.isArray(body.issues), "restore should return transaction validation issues");
   assert.ok(body.issues.some((issue) => issue.includes("입금과 출금")), "restore should report inconsistent transaction amounts");
+}
+
+async function verifyInvalidTransactionImportBatchBackup() {
+  const invalidBackup = structuredClone(backup);
+  invalidBackup.transactions = [
+    {
+      ...backup.transactions[0],
+      importBatchId: "missing-import-batch"
+    }
+  ];
+
+  const body = await postJson("/api/backups/restore", { backup: invalidBackup, dryRun: true }, 400);
+  assert.equal(body.ok, false, "restore should reject transactions linked to missing import batches");
+  assert.equal(body.code, "INVALID_BACKUP_TRANSACTIONS", "restore should return transaction validation code");
+  assert.ok(Array.isArray(body.issues), "restore should return transaction validation issues");
+  assert.ok(body.issues.some((issue) => issue.includes("연결 가져오기 missing-import-batch")), "restore should report missing import batch");
 }
 
 async function verifyInvalidJournalBackup() {
