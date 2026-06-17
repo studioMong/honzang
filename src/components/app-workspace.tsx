@@ -1318,8 +1318,10 @@ function ReportsPanel({
   const reviews = buildReviewItems(filteredTransactions);
   const ledgerRows = buildLedgerRows(filteredJournalEntries);
   const withholdingRows = buildWithholdingRows(filteredTransactions);
-  const corporateTaxRows = buildCorporateTaxRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows);
-  const filingPackageRows = buildFilingPackageRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows, withholdingRows);
+  const financialStatementRows = buildFinancialStatementRows(ledgerRows);
+  const financialStatementTotals = buildFinancialStatementTotals(financialStatementRows);
+  const corporateTaxRows = buildCorporateTaxRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows, financialStatementRows);
+  const filingPackageRows = buildFilingPackageRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows, withholdingRows, financialStatementRows);
   const periodLabel = formatPeriodLabel(selectedPeriod);
   const periodRange = getReportPeriodRange(selectedPeriod, filteredTransactions);
   const filingScheduleRows = buildFilingScheduleRows(company, periodRange, reportSummary, withholdingRows, ledgerRows);
@@ -1346,6 +1348,7 @@ function ReportsPanel({
             filingPackageRows,
             withholdingRows,
             corporateTaxRows,
+            financialStatementRows,
             ledgerRows,
             transactionCount: filteredTransactions.length,
             journalEntryCount: filteredJournalEntries.length
@@ -1598,6 +1601,35 @@ function ReportsPanel({
             <table>
               <thead>
                 <tr>
+                  <th>재무제표 구분</th>
+                  <th>계정</th>
+                  <th className="amount">금액</th>
+                  <th>확인</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedPayload.financialStatementRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="empty-cell">저장된 재무제표 초안이 없습니다.</td>
+                  </tr>
+                ) : (
+                  selectedPayload.financialStatementRows.map((row) => (
+                    <tr key={`${row.구분}-${row.계정}`}>
+                      <td>{row.구분}</td>
+                      <td>{row.계정}</td>
+                      <td className="amount">{formatKRW(row.금액)}</td>
+                      <td>{row.확인}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="table-wrap snapshot-detail">
+            <table>
+              <thead>
+                <tr>
                   <th>원천세 후보</th>
                   <th>거래처</th>
                   <th className="amount">지급액</th>
@@ -1685,6 +1717,10 @@ function ReportsPanel({
               <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("corporate-tax-prep", selectedPeriod), corporateTaxRows)}>
                 <Download size={16} />
                 법인세
+              </button>
+              <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("financial-statements", selectedPeriod), financialStatementRows)}>
+                <Download size={16} />
+                재무제표
               </button>
             </div>
           </div>
@@ -1805,6 +1841,58 @@ function ReportsPanel({
           </div>
         </section>
       </div>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="panel-title">재무제표 초안</h2>
+            <p className="panel-subtitle">승인된 분개 기준, 신고 전 검토용</p>
+          </div>
+          <div className="toolbar">
+            <span className="status blue">{formatNumber(financialStatementRows.length)}개 계정</span>
+            <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("financial-statements", selectedPeriod), financialStatementRows)}>
+              <Download size={16} />
+              CSV
+            </button>
+          </div>
+        </div>
+        <div className="panel-body">
+          <div className="review-list">
+            <ChecklistItem tone="green" title="자산" value={formatKRW(financialStatementTotals.asset)} />
+            <ChecklistItem tone="green" title="부채" value={formatKRW(financialStatementTotals.liability)} />
+            <ChecklistItem tone="green" title="자본" value={formatKRW(financialStatementTotals.equity + financialStatementTotals.profit)} />
+            <ChecklistItem tone={financialStatementTotals.profit >= 0 ? "green" : "amber"} title="손익" value={formatKRW(financialStatementTotals.profit)} />
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>구분</th>
+                <th>계정</th>
+                <th className="amount">금액</th>
+                <th>확인</th>
+              </tr>
+            </thead>
+            <tbody>
+              {financialStatementRows.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="empty-cell">승인된 분개가 없습니다. 자동분개 탭에서 초안을 승인하면 재무제표 초안이 생성됩니다.</td>
+                </tr>
+              ) : (
+                financialStatementRows.map((row) => (
+                  <tr key={`${row.구분}-${row.계정}`}>
+                    <td>{row.구분}</td>
+                    <td>{row.계정}</td>
+                    <td className="amount">{formatKRW(row.금액)}</td>
+                    <td>{row.확인}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <section className="panel">
         <div className="panel-header">
@@ -2626,6 +2714,7 @@ function buildTaxReportPayload({
   filingPackageRows,
   withholdingRows,
   corporateTaxRows,
+  financialStatementRows,
   ledgerRows,
   transactionCount,
   journalEntryCount
@@ -2637,6 +2726,7 @@ function buildTaxReportPayload({
   filingPackageRows: ReturnType<typeof buildFilingPackageRows>;
   withholdingRows: ReturnType<typeof buildWithholdingRows>;
   corporateTaxRows: ReturnType<typeof buildCorporateTaxRows>;
+  financialStatementRows: ReturnType<typeof buildFinancialStatementRows>;
   ledgerRows: ReturnType<typeof buildLedgerRows>;
   transactionCount: number;
   journalEntryCount: number;
@@ -2649,6 +2739,7 @@ function buildTaxReportPayload({
     filingPackageRows,
     withholdingRows,
     corporateTaxRows,
+    financialStatementRows,
     ledgerRows,
     transactionCount,
     journalEntryCount
@@ -2705,6 +2796,7 @@ function parseDetailedTaxReportPayload(payload: unknown) {
     filingPackageRows: parseStringNumberRecordRows(record.filingPackageRows) as ReturnType<typeof buildFilingPackageRows>,
     withholdingRows: parseStringNumberRecordRows(record.withholdingRows) as ReturnType<typeof buildWithholdingRows>,
     corporateTaxRows: parseStringNumberRecordRows(record.corporateTaxRows) as ReturnType<typeof buildCorporateTaxRows>,
+    financialStatementRows: parseStringNumberRecordRows(record.financialStatementRows) as ReturnType<typeof buildFinancialStatementRows>,
     ledgerRows: parseStringNumberRecordRows(record.ledgerRows),
     transactionCount: typeof record.transactionCount === "number" ? record.transactionCount : 0,
     journalEntryCount: typeof record.journalEntryCount === "number" ? record.journalEntryCount : 0
@@ -2721,6 +2813,7 @@ function buildTaxReportDetailRows(taxReport: AppTaxReport, payload: ReturnType<t
     { 항목: "손익", 값: formatKRW(payload.summary.profit), 확인: payload.summary.profit >= 0 ? "이익" : "손실" },
     { 항목: "예상 부가세", 값: formatKRW(payload.summary.vatPayable), 확인: "확정 전 신고 준비 금액" },
     { 항목: "증빙 누락", 값: formatKRW(payload.summary.missingEvidenceAmount), 확인: `${formatNumber(payload.summary.reviewCount)}건 검토` },
+    { 항목: "재무제표 초안", 값: `${formatNumber(payload.financialStatementRows.length)}행`, 확인: "저장 당시 승인 분개 기준" },
     { 항목: "계정별 원장", 값: `${formatNumber(payload.ledgerRows.length)}행`, 확인: "저장 당시 원장 행 수" }
   ];
 }
@@ -2899,7 +2992,8 @@ function buildCorporateTaxRows(
   summary: ReturnType<typeof summarizeTransactions>,
   transactions: AppTransaction[],
   journalEntries: AppJournalEntry[],
-  ledgerRows: ReturnType<typeof buildLedgerRows>
+  ledgerRows: ReturnType<typeof buildLedgerRows>,
+  financialStatementRows: ReturnType<typeof buildFinancialStatementRows>
 ) {
   const unclassifiedCount = transactions.filter((transaction) => !transaction.confirmedAccount && !transaction.suggestedAccount).length;
   const ownerRiskCount = transactions.filter((transaction) => {
@@ -2956,6 +3050,12 @@ function buildCorporateTaxRows(
       값: `${formatNumber(ledgerRows.length)}행`,
       상태: ledgerRows.length > 0 ? "생성됨" : "대기",
       확인: "법인세 준비 시 계정별 원장 다운로드"
+    },
+    {
+      항목: "재무제표 초안",
+      값: `${formatNumber(financialStatementRows.length)}개 계정`,
+      상태: financialStatementRows.length > 0 ? "생성됨" : "대기",
+      확인: "자산, 부채, 자본, 손익 초안 검토"
     }
   ];
 }
@@ -2965,7 +3065,8 @@ function buildFilingPackageRows(
   transactions: AppTransaction[],
   journalEntries: AppJournalEntry[],
   ledgerRows: ReturnType<typeof buildLedgerRows>,
-  withholdingRows: ReturnType<typeof buildWithholdingRows>
+  withholdingRows: ReturnType<typeof buildWithholdingRows>,
+  financialStatementRows: ReturnType<typeof buildFinancialStatementRows>
 ) {
   const classifiedCount = transactions.filter((transaction) => transaction.confirmedAccount || transaction.suggestedAccount).length;
   const missingEvidenceCount = transactions.filter((transaction) => transaction.withdrawalAmount > 0 && ["UNCHECKED", "MISSING"].includes(transaction.evidenceStatus)).length;
@@ -3014,6 +3115,13 @@ function buildFilingPackageRows(
       톤: ledgerRows.length > 0 ? "green" : "amber",
       "금액/건수": `${formatNumber(ledgerRows.length)}행`,
       "다음 확인": "계정별 원장, 증빙 누락, 대표자 거래 검토"
+    },
+    {
+      구분: "재무제표",
+      상태: financialStatementRows.length > 0 ? "초안 있음" : "초안 대기",
+      톤: financialStatementRows.length > 0 ? "green" : "amber",
+      "금액/건수": `${formatNumber(financialStatementRows.length)}개 계정`,
+      "다음 확인": "재무상태표 자산/부채/자본과 손익계산서 수익/비용 확인"
     }
   ];
 }
@@ -3142,6 +3250,102 @@ function buildLedgerRows(journalEntries: AppJournalEntry[]) {
     balances.set(row.accountCode, next);
     return { ...row, balance: next };
   });
+}
+
+type FinancialStatementRow = {
+  구분: string;
+  계정: string;
+  금액: number;
+  확인: string;
+};
+
+function buildFinancialStatementRows(ledgerRows: ReturnType<typeof buildLedgerRows>): FinancialStatementRow[] {
+  const accountBalances = new Map<
+    string,
+    {
+      accountCode: string;
+      accountName: string;
+      accountType?: AppAccount["type"];
+      balance: number;
+    }
+  >();
+
+  ledgerRows.forEach((row) => {
+    accountBalances.set(row.accountCode, {
+      accountCode: row.accountCode,
+      accountName: row.accountName,
+      accountType: row.accountType,
+      balance: row.balance
+    });
+  });
+
+  return [...accountBalances.values()]
+    .filter((row) => row.balance !== 0)
+    .sort((a, b) => {
+      const typeOrder = financialStatementSortOrder(a.accountType) - financialStatementSortOrder(b.accountType);
+      if (typeOrder !== 0) return typeOrder;
+      return a.accountCode.localeCompare(b.accountCode);
+    })
+    .map((row) => ({
+      구분: financialStatementLabel(row.accountType),
+      계정: `${row.accountCode} ${row.accountName}`,
+      금액: Math.round(row.balance),
+      확인: financialStatementCheckText(row.accountType)
+    }));
+}
+
+function buildFinancialStatementTotals(rows: FinancialStatementRow[]) {
+  const totals = {
+    asset: 0,
+    liability: 0,
+    equity: 0,
+    revenue: 0,
+    expense: 0,
+    profit: 0
+  };
+
+  rows.forEach((row) => {
+    if (row.구분 === "재무상태표 자산") totals.asset += row.금액;
+    if (row.구분 === "재무상태표 부채") totals.liability += row.금액;
+    if (row.구분 === "재무상태표 자본") totals.equity += row.금액;
+    if (row.구분 === "손익계산서 수익") totals.revenue += row.금액;
+    if (row.구분 === "손익계산서 비용") totals.expense += row.금액;
+  });
+  totals.profit = totals.revenue - totals.expense;
+  return totals;
+}
+
+function financialStatementSortOrder(type?: AppAccount["type"]) {
+  const order: Record<AppAccount["type"], number> = {
+    ASSET: 1,
+    LIABILITY: 2,
+    EQUITY: 3,
+    REVENUE: 4,
+    EXPENSE: 5
+  };
+  return type ? order[type] : 9;
+}
+
+function financialStatementLabel(type?: AppAccount["type"]) {
+  const labels: Record<AppAccount["type"], string> = {
+    ASSET: "재무상태표 자산",
+    LIABILITY: "재무상태표 부채",
+    EQUITY: "재무상태표 자본",
+    REVENUE: "손익계산서 수익",
+    EXPENSE: "손익계산서 비용"
+  };
+  return type ? labels[type] : "미분류";
+}
+
+function financialStatementCheckText(type?: AppAccount["type"]) {
+  const checks: Record<AppAccount["type"], string> = {
+    ASSET: "통장 잔액, 미수금, 가지급금 실재성 확인",
+    LIABILITY: "대표자차입금, 미지급금, 카드대금 확인",
+    EQUITY: "자본금, 이익잉여금, 당기손익 반영 확인",
+    REVENUE: "세금계산서, 카드, PG 매출 누락 확인",
+    EXPENSE: "손금 가능성과 적격증빙 확인"
+  };
+  return type ? checks[type] : "계정 유형 확인";
 }
 
 function buildLedgerCsv(rows: ReturnType<typeof buildLedgerRows>) {
