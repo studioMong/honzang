@@ -291,6 +291,19 @@ export async function POST(request: Request) {
     );
   }
 
+  const journalIssues = validateBackupJournalEntries(parsed.data);
+  if (journalIssues.length > 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_BACKUP_JOURNALS",
+        message: "백업 분개 데이터가 올바르지 않습니다.",
+        issues: journalIssues
+      },
+      { status: 400 }
+    );
+  }
+
   if (body.dryRun === true) {
     return NextResponse.json({
       ok: true,
@@ -791,6 +804,40 @@ function validateBackupDates(backup: WorkspaceBackup) {
   }
   for (const event of uniqueById(backup.auditEvents)) {
     optionalTimestamp(event.createdAt, `활동 로그 ${event.id} createdAt`, issues);
+  }
+
+  return issues;
+}
+
+function validateBackupJournalEntries(backup: WorkspaceBackup) {
+  const issues: string[] = [];
+  const accountCodes = new Set(uniqueByCode([...DEFAULT_ACCOUNTS, ...backup.accounts]).map((account) => account.code));
+  const transactionIds = new Set(uniqueById(backup.transactions).map((transaction) => transaction.id));
+
+  for (const entry of uniqueById(backup.journalEntries)) {
+    const label = `분개 ${entry.id}`;
+    if (entry.transactionId && !transactionIds.has(entry.transactionId)) {
+      issues.push(`${label}: 연결 거래 ${entry.transactionId}를 백업 거래 목록에서 찾을 수 없습니다.`);
+    }
+
+    const debit = entry.lines.reduce((sum, line) => sum + line.debitAmount, 0);
+    const credit = entry.lines.reduce((sum, line) => sum + line.creditAmount, 0);
+    if (Math.round(debit) !== Math.round(credit)) {
+      issues.push(`${label}: 차변과 대변이 일치하지 않습니다.`);
+    }
+
+    for (const [index, line] of entry.lines.entries()) {
+      const lineLabel = `${label} ${index + 1}번째 라인`;
+      if (!accountCodes.has(line.accountCode)) {
+        issues.push(`${lineLabel}: ${line.accountCode} 계정과목을 백업 계정 목록에서 찾을 수 없습니다.`);
+      }
+
+      const debitPositive = line.debitAmount > 0;
+      const creditPositive = line.creditAmount > 0;
+      if (debitPositive === creditPositive) {
+        issues.push(`${lineLabel}: 차변 또는 대변 중 한쪽만 0보다 커야 합니다.`);
+      }
+    }
   }
 
   return issues;

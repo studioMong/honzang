@@ -164,6 +164,7 @@ try {
   await verifyDryRun();
   await verifyInvalidDateBackup();
   await verifyInvalidEvidenceBackup();
+  await verifyInvalidJournalBackup();
   await verifyConfirmGuard();
   console.log(`Backup restore verification passed at ${baseUrl}`);
 } catch (error) {
@@ -262,6 +263,39 @@ async function verifyInvalidDateBackup() {
   assert.equal(body.code, "INVALID_BACKUP_DATES", "restore should return date validation code");
   assert.ok(Array.isArray(body.issues), "restore should return date validation issues");
   assert.ok(body.issues.length >= 2, "restore should report invalid date and timestamp issues");
+}
+
+async function verifyInvalidJournalBackup() {
+  const invalidBackup = structuredClone(backup);
+  invalidBackup.journalEntries = [
+    {
+      id: "journal-invalid-1",
+      transactionId: "missing-transaction",
+      entryDate: "2026-06-17",
+      memo: "invalid journal backup",
+      status: "APPROVED",
+      lines: [
+        {
+          accountCode: "NO_ACCOUNT",
+          accountName: "없는 계정",
+          debitAmount: 1000,
+          creditAmount: 1000
+        },
+        {
+          accountCode: "401",
+          accountName: "매출",
+          debitAmount: 0,
+          creditAmount: 0
+        }
+      ]
+    }
+  ];
+
+  const body = await postJson("/api/backups/restore", { backup: invalidBackup, dryRun: true }, 400);
+  assert.equal(body.ok, false, "restore should reject invalid journal backup data");
+  assert.equal(body.code, "INVALID_BACKUP_JOURNALS", "restore should return journal validation code");
+  assert.ok(Array.isArray(body.issues), "restore should return journal validation issues");
+  assert.ok(body.issues.length >= 4, "restore should report missing transaction, missing account, and invalid line issues");
 }
 
 async function verifyConfirmGuard() {
