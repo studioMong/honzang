@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import Papa from "papaparse";
 import { generateJournalDraft, inferMapping, summarizeTransactions } from "../src/lib/accounting";
 import { DEFAULT_COMPANY_ID } from "../src/lib/defaults";
-import type { AppAccount, AppJournalEntry, AppTransaction, CsvColumnMapping, CsvTemplate, ParsedCsvRow, ReviewItem, SourceType } from "../src/types";
+import type { AppAccount, AppClassificationRule, AppJournalEntry, AppTransaction, CsvColumnMapping, CsvTemplate, ParsedCsvRow, ReviewItem, SourceType } from "../src/types";
 
 const evidenceAmountMismatchReason = "연결 증빙 합계가 거래금액과 일치하지 않습니다.";
 
@@ -16,7 +16,8 @@ const cleanup = {
   evidenceIds: [] as string[],
   journalEntryIds: [] as string[],
   taxReportIds: [] as string[],
-  closingPeriods: [] as string[]
+  closingPeriods: [] as string[],
+  classificationRuleIds: [] as string[]
 };
 
 if (baseUrl.includes("honzang-production.up.railway.app") && process.env.VERIFY_DB_WORKFLOW_ALLOW_PRODUCTION !== "1") {
@@ -47,6 +48,35 @@ try {
   const verifiedBankTemplateCount =
     companyAfterTemplateVariants.csvTemplates?.filter((template) => template.sourceType === "BANK" && template.headerSignature?.includes(marker)).length ?? 0;
   assert.ok(verifiedBankTemplateCount >= 2, "BANK imports with different header signatures should preserve multiple CSV templates");
+
+  const classificationRulePayload = await requestJson<{ ok?: boolean; mode?: string; classificationRule?: AppClassificationRule }>("/api/classification-rules", {
+    method: "POST",
+    body: {
+      companyId,
+      name: `${marker} classification rule`,
+      keyword: marker,
+      accountCode: verificationAccount.code,
+      sourceType: "BANK",
+      priority: 10,
+      isActive: true
+    }
+  });
+  assert.equal(classificationRulePayload.ok, true, "classification rule create should succeed");
+  assert.equal(classificationRulePayload.mode, "database", "classification rule create should use database mode");
+  assert.ok(classificationRulePayload.classificationRule?.id, "classification rule create should return an id");
+  cleanup.classificationRuleIds.push(classificationRulePayload.classificationRule.id);
+
+  const invalidClassificationRulePatchPayload = await requestJson<{ ok?: boolean; message?: string }>("/api/classification-rules", {
+    method: "PATCH",
+    expectedStatus: 404,
+    body: {
+      companyId,
+      id: classificationRulePayload.classificationRule.id,
+      accountCode: `${marker}-missing-account`
+    }
+  });
+  assert.equal(invalidClassificationRulePatchPayload.ok, false, "classification rule patch with a missing account should fail");
+  assert.match(invalidClassificationRulePatchPayload.message ?? "", /계정과목/, "classification rule patch should report a missing account");
 
   await requestJson<{ ok?: boolean; mode?: string; transaction?: AppTransaction }>("/api/transactions", {
     method: "PATCH",
@@ -573,6 +603,14 @@ async function cleanupCreatedData() {
     await requestJson("/api/csv-templates", {
       method: "DELETE",
       body: { id: csvTemplateId },
+      allowFailure: true
+    });
+  }
+
+  for (const classificationRuleId of cleanup.classificationRuleIds.reverse()) {
+    await requestJson("/api/classification-rules", {
+      method: "DELETE",
+      body: { id: classificationRuleId },
       allowFailure: true
     });
   }

@@ -128,6 +128,20 @@ export async function PATCH(request: Request) {
   }
 
   const company = await ensureDefaultCompany(db);
+  const account = payload.accountCode
+    ? await db.account.findFirst({
+        where: {
+          companyId: company.id,
+          code: payload.accountCode,
+          isActive: true
+        }
+      })
+    : null;
+
+  if (payload.accountCode && !account) {
+    return NextResponse.json({ ok: false, message: "계정과목을 찾을 수 없습니다." }, { status: 404 });
+  }
+
   const data: Record<string, unknown> = {};
   if (payload.name !== undefined) data.name = payload.name;
   if (payload.sourceType !== undefined) data.sourceType = payload.sourceType;
