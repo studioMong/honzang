@@ -6,6 +6,7 @@ const port = process.env.SMOKE_PORT ?? "3100";
 const baseUrl = `http://127.0.0.1:${port}`;
 const startupTimeoutMs = Number(process.env.SMOKE_TIMEOUT_MS ?? 20_000);
 const serverPath = ".next/standalone/server.js";
+const oversizedJsonText = "x".repeat(500_001);
 
 if (!existsSync(serverPath)) {
   console.error(`${serverPath} not found. Run npm run build before npm run smoke:prod.`);
@@ -47,6 +48,7 @@ try {
     Number.isInteger(body.summary?.blockers)
   );
   await expectInvalidClosingPeriod();
+  await expectInvalidClosingPayload();
   await expectMissingClosingReadiness();
   await expectBlockedClosingPeriod();
   await expectInvalidCsvImportMapping();
@@ -63,6 +65,7 @@ try {
   await expectInvalidEvidenceAmounts();
   await expectInvalidReportPeriod();
   await expectInvalidReportPeriodRange();
+  await expectInvalidReportPayload();
   await expectText("/", (body) =>
     ["혼자장부", "최근 월 신고 준비", "오늘 할 일", "1인법인 신고 준비"].every((text) => body.includes(text))
   );
@@ -167,6 +170,28 @@ async function expectInvalidClosingPeriod() {
   const body = JSON.parse(text);
   if (body.code !== "INVALID_CLOSING_PERIOD") {
     throw new Error(`/api/closing-periods returned unexpected invalid period payload: ${text}`);
+  }
+}
+
+async function expectInvalidClosingPayload() {
+  const response = await fetch(`${baseUrl}/api/closing-periods`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      period: "2026-06",
+      summaryPayload: {
+        filingReadinessRows: [{ 점검: "증빙", 톤: "green" }],
+        oversized: oversizedJsonText
+      }
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/closing-periods should reject oversized summary payloads, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_CLOSING_PAYLOAD") {
+    throw new Error(`/api/closing-periods returned unexpected payload validation response: ${text}`);
   }
 }
 
@@ -537,6 +562,27 @@ async function expectInvalidReportPeriodRange() {
   const body = JSON.parse(text);
   if (body.code !== "INVALID_REPORT_PERIOD_RANGE") {
     throw new Error(`/api/reports returned unexpected period range validation payload: ${text}`);
+  }
+}
+
+async function expectInvalidReportPayload() {
+  const response = await fetch(`${baseUrl}/api/reports`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      reportType: "CORPORATE_TAX_PREP",
+      periodStart: "2026-01-01",
+      periodEnd: "2026-12-31",
+      calculatedPayload: { oversized: oversizedJsonText }
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/reports should reject oversized calculated payloads, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_REPORT_PAYLOAD") {
+    throw new Error(`/api/reports returned unexpected payload validation response: ${text}`);
   }
 }
 

@@ -1,5 +1,4 @@
 import { Prisma } from "@prisma/client";
-import { Buffer } from "node:buffer";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { DEFAULT_ACCOUNTS } from "@/lib/defaults";
@@ -17,6 +16,7 @@ import {
   validateEvidenceFile,
   validateEvidenceFileUrl
 } from "@/lib/server/evidence-validation";
+import { validateJsonPayloadSize } from "@/lib/server/json-payload-validation";
 import { MAX_ORIGINAL_FILE_TEXT_SIZE, validateOriginalFileText } from "@/lib/server/source-file-validation";
 import { validateTransactionAmounts } from "@/lib/server/transaction-validation";
 
@@ -29,7 +29,6 @@ const journalStatusSchema = z.enum(["DRAFT", "APPROVED", "VOID"]);
 const taxReportTypeSchema = z.enum(["MONTHLY_PROFIT", "VAT_PREP", "WITHHOLDING_CHECKLIST", "CORPORATE_TAX_PREP", "RISK_REVIEW"]);
 const reviewSeveritySchema = z.enum(["INFO", "WARNING", "DANGER"]);
 const reviewStatusSchema = z.enum(["OPEN", "RESOLVED", "IGNORED"]);
-const MAX_BACKUP_JSON_PAYLOAD_SIZE = 500_000;
 
 const csvMappingFieldLabels = [
   ["transactionDate", "거래일"],
@@ -1163,15 +1162,6 @@ function emptyToNull(value?: string | null) {
 
 function toJsonInput(value: unknown) {
   return value === null ? Prisma.JsonNull : (value as Prisma.InputJsonValue);
-}
-
-function validateJsonPayloadSize(value: unknown, label: string) {
-  if (value === null || value === undefined) return null;
-  const byteLength = Buffer.byteLength(JSON.stringify(value), "utf8");
-  if (byteLength > MAX_BACKUP_JSON_PAYLOAD_SIZE) {
-    return `${label}는 ${MAX_BACKUP_JSON_PAYLOAD_SIZE}바이트 이하만 복원할 수 있습니다.`;
-  }
-  return null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

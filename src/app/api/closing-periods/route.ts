@@ -4,6 +4,7 @@ import { getPrisma } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { asJsonValue, periodRangeFromMonth } from "@/lib/server/closing-periods";
+import { validateJsonPayloadSize } from "@/lib/server/json-payload-validation";
 import { serializeClosingPeriod } from "@/lib/server/serializers";
 
 const closePeriodSchema = z.object({
@@ -44,6 +45,18 @@ export async function POST(request: Request) {
         ok: false,
         code: "INVALID_CLOSING_PERIOD",
         message: "마감 기간 형식이 올바르지 않습니다."
+      },
+      { status: 400 }
+    );
+  }
+
+  const payloadIssue = validateJsonPayloadSize(parsed.data.summaryPayload, "마감 summaryPayload");
+  if (payloadIssue) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_CLOSING_PAYLOAD",
+        message: payloadIssue
       },
       { status: 400 }
     );

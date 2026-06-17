@@ -8,6 +8,7 @@ import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { closedPeriodResponse, findClosedPeriodForDates } from "@/lib/server/closing-periods";
 import { parseStrictDate } from "@/lib/server/date-validation";
+import { validateJsonPayloadSize } from "@/lib/server/json-payload-validation";
 import { serializeTaxReport } from "@/lib/server/serializers";
 
 const taxReportSchema = z.object({
@@ -68,6 +69,18 @@ export async function POST(request: Request) {
         ok: false,
         code: "INVALID_REPORT_PERIOD_RANGE",
         message: "리포트 기간 종료일은 시작일보다 빠를 수 없습니다."
+      },
+      { status: 400 }
+    );
+  }
+
+  const payloadIssue = validateJsonPayloadSize(payload.calculatedPayload, "리포트 calculatedPayload");
+  if (payloadIssue) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_REPORT_PAYLOAD",
+        message: payloadIssue
       },
       { status: 400 }
     );
