@@ -10,6 +10,7 @@ const startupTimeoutMs = Number(process.env.BACKUP_RESTORE_VERIFY_TIMEOUT_MS ?? 
 const serverPath = ".next/standalone/server.js";
 const evidenceFileText = "dry-run-evidence";
 const originalCsvText = "거래일,적요,입금\n2026-06-17,dry run,1000\n";
+const oversizedJsonText = "x".repeat(500_001);
 
 if (!existsSync(serverPath)) {
   console.error(`${serverPath} not found. Run npm run build before npm run verify:backup-restore.`);
@@ -165,6 +166,7 @@ try {
   await verifyDryRun();
   await verifyInvalidDateBackup();
   await verifyInvalidCsvTemplateBackup();
+  await verifyInvalidJsonPayloadBackup();
   await verifyInvalidTransactionAmountBackup();
   await verifyInvalidTransactionImportBatchBackup();
   await verifyInvalidTransactionAccountBackup();
@@ -406,6 +408,39 @@ async function verifyInvalidCsvTemplateBackup() {
   assert.ok(body.issues.some((issue) => issue.includes("내용/적요 매핑 값은 문자열")), "restore should report non-string mapping values");
   assert.ok(body.issues.some((issue) => issue.includes("내용/적요 컬럼을 매핑")), "restore should report missing required description mapping");
   assert.ok(body.issues.some((issue) => issue.includes("거래일 매핑 컬럼(없는거래일)")), "restore should report mapping columns absent from header signature");
+}
+
+async function verifyInvalidJsonPayloadBackup() {
+  const invalidBackup = structuredClone(backup);
+  invalidBackup.taxReports = [
+    {
+      id: "report-oversized-payload-1",
+      reportType: "CORPORATE_TAX_PREP",
+      periodStart: "2026-01-01",
+      periodEnd: "2026-12-31",
+      calculatedPayload: { text: oversizedJsonText }
+    }
+  ];
+  invalidBackup.closingPeriods = [
+    {
+      ...backup.closingPeriods[0],
+      summaryPayload: { text: oversizedJsonText }
+    }
+  ];
+  invalidBackup.auditEvents = [
+    {
+      ...backup.auditEvents[0],
+      metadata: { text: oversizedJsonText }
+    }
+  ];
+
+  const body = await postJson("/api/backups/restore", { backup: invalidBackup, dryRun: true }, 400);
+  assert.equal(body.ok, false, "restore should reject oversized JSON payloads");
+  assert.equal(body.code, "INVALID_BACKUP_JSON_PAYLOADS", "restore should return JSON payload validation code");
+  assert.ok(Array.isArray(body.issues), "restore should return JSON payload validation issues");
+  assert.ok(body.issues.some((issue) => issue.includes("calculatedPayload")), "restore should report oversized report payloads");
+  assert.ok(body.issues.some((issue) => issue.includes("summaryPayload")), "restore should report oversized closing payloads");
+  assert.ok(body.issues.some((issue) => issue.includes("metadata")), "restore should report oversized audit metadata");
 }
 
 async function verifyInvalidTransactionAmountBackup() {

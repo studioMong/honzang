@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { Buffer } from "node:buffer";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { DEFAULT_ACCOUNTS } from "@/lib/defaults";
@@ -28,6 +29,7 @@ const journalStatusSchema = z.enum(["DRAFT", "APPROVED", "VOID"]);
 const taxReportTypeSchema = z.enum(["MONTHLY_PROFIT", "VAT_PREP", "WITHHOLDING_CHECKLIST", "CORPORATE_TAX_PREP", "RISK_REVIEW"]);
 const reviewSeveritySchema = z.enum(["INFO", "WARNING", "DANGER"]);
 const reviewStatusSchema = z.enum(["OPEN", "RESOLVED", "IGNORED"]);
+const MAX_BACKUP_JSON_PAYLOAD_SIZE = 500_000;
 
 const csvMappingFieldLabels = [
   ["transactionDate", "거래일"],
@@ -302,6 +304,19 @@ export async function POST(request: Request) {
         code: "INVALID_BACKUP_CSV_TEMPLATES",
         message: "백업 CSV 매핑 템플릿 데이터가 올바르지 않습니다.",
         issues: csvTemplateIssues
+      },
+      { status: 400 }
+    );
+  }
+
+  const jsonPayloadIssues = validateBackupJsonPayloads(parsed.data);
+  if (jsonPayloadIssues.length > 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_BACKUP_JSON_PAYLOADS",
+        message: "백업 JSON payload 데이터가 올바르지 않습니다.",
+        issues: jsonPayloadIssues
       },
       { status: 400 }
     );
@@ -877,6 +892,27 @@ function validateBackupCsvTemplates(csvTemplates: WorkspaceBackup["csvTemplates"
   return issues;
 }
 
+function validateBackupJsonPayloads(backup: WorkspaceBackup) {
+  const issues: string[] = [];
+
+  for (const report of uniqueById(backup.taxReports)) {
+    const issue = validateJsonPayloadSize(report.calculatedPayload, `리포트 ${report.id} calculatedPayload`);
+    if (issue) issues.push(issue);
+  }
+
+  for (const closingPeriod of uniqueByPeriod(backup.closingPeriods)) {
+    const issue = validateJsonPayloadSize(closingPeriod.summaryPayload, `마감 ${closingPeriod.period} summaryPayload`);
+    if (issue) issues.push(issue);
+  }
+
+  for (const event of uniqueById(backup.auditEvents)) {
+    const issue = validateJsonPayloadSize(event.metadata, `활동 로그 ${event.id} metadata`);
+    if (issue) issues.push(issue);
+  }
+
+  return issues;
+}
+
 function validateBackupEvidences(backup: WorkspaceBackup) {
   const issues: string[] = [];
   const transactionIds = new Set(uniqueById(backup.transactions).map((transaction) => transaction.id));
@@ -1127,6 +1163,15 @@ function emptyToNull(value?: string | null) {
 
 function toJsonInput(value: unknown) {
   return value === null ? Prisma.JsonNull : (value as Prisma.InputJsonValue);
+}
+
+function validateJsonPayloadSize(value: unknown, label: string) {
+  if (value === null || value === undefined) return null;
+  const byteLength = Buffer.byteLength(JSON.stringify(value), "utf8");
+  if (byteLength > MAX_BACKUP_JSON_PAYLOAD_SIZE) {
+    return `${label}는 ${MAX_BACKUP_JSON_PAYLOAD_SIZE}바이트 이하만 복원할 수 있습니다.`;
+  }
+  return null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
