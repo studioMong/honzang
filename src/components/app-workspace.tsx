@@ -1753,6 +1753,20 @@ function ReportsPanel({
   const corporateTaxRows = buildCorporateTaxRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows, financialStatementRows);
   const filingPackageRows = buildFilingPackageRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows, withholdingRows, financialStatementRows);
   const dataSourceRows = buildDataSourceRows(filteredTransactions);
+  const filingReadinessRows = buildFilingReadinessRows({
+    transactions: filteredTransactions,
+    summary: reportSummary,
+    dataSourceRows,
+    withholdingRows,
+    journalEntries: filteredJournalEntries,
+    ledgerRows,
+    isPeriodClosed,
+    canClosePeriod
+  });
+  const readinessBlockers = filingReadinessRows.filter((row) => row.톤 === "red").length;
+  const readinessWarnings = filingReadinessRows.filter((row) => row.톤 === "amber").length;
+  const readinessStatus = readinessBlockers > 0 ? "차단" : readinessWarnings > 0 ? "확인 필요" : "준비 가능";
+  const readinessTone = readinessBlockers > 0 ? "red" : readinessWarnings > 0 ? "amber" : "green";
   const periodLabel = formatPeriodLabel(selectedPeriod);
   const periodRange = getReportPeriodRange(selectedPeriod, filteredTransactions);
   const filingScheduleRows = buildFilingScheduleRows(company, periodRange, reportSummary, withholdingRows, ledgerRows);
@@ -1771,6 +1785,7 @@ function ReportsPanel({
       transactions: filteredTransactions,
       evidences: filteredEvidences,
       reviews,
+      filingReadinessRows,
       filingScheduleRows,
       dataSourceRows,
       filingPackageRows,
@@ -1813,6 +1828,7 @@ function ReportsPanel({
             period: selectedPeriod,
             periodLabel,
             summary: reportSummary,
+            filingReadinessRows,
             filingScheduleRows,
             dataSourceRows,
             filingPackageRows,
@@ -1876,6 +1892,7 @@ function ReportsPanel({
               period: selectedPeriod,
               periodLabel,
               summary: reportSummary,
+              filingReadinessRows,
               filingScheduleRows,
               dataSourceRows,
               filingPackageRows,
@@ -1981,6 +1998,50 @@ function ReportsPanel({
               <option value="ALL">전체 기간</option>
             </select>
           </div>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="panel-title">최종 신고 점검</h2>
+            <p className="panel-subtitle">자료, 분류, 증빙, 원장, 마감 상태를 신고 전 순서대로 확인</p>
+          </div>
+          <div className="toolbar">
+            <span className={`status ${readinessTone}`}>{readinessStatus}</span>
+            <span className={readinessBlockers > 0 ? "status red" : "status green"}>{formatNumber(readinessBlockers)}개 차단</span>
+            <span className={readinessWarnings > 0 ? "status amber" : "status green"}>{formatNumber(readinessWarnings)}개 확인</span>
+            <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("filing-readiness", selectedPeriod), filingReadinessRows)}>
+              <Download size={16} />
+              점검
+            </button>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>순서</th>
+                <th>점검</th>
+                <th>상태</th>
+                <th>근거</th>
+                <th>다음 작업</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filingReadinessRows.map((row) => (
+                <tr key={row.점검}>
+                  <td>{row.순서}</td>
+                  <td>{row.점검}</td>
+                  <td>
+                    <span className={`status ${row.톤}`}>{row.상태}</span>
+                  </td>
+                  <td>{row.근거}</td>
+                  <td>{row["다음 작업"]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -2195,6 +2256,37 @@ function ReportsPanel({
                     <td>{row.확인}</td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="table-wrap snapshot-detail">
+            <table>
+              <thead>
+                <tr>
+                  <th>순서</th>
+                  <th>점검</th>
+                  <th>상태</th>
+                  <th>근거</th>
+                  <th>다음 작업</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedPayload.filingReadinessRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="empty-cell">저장된 최종 신고 점검이 없습니다.</td>
+                  </tr>
+                ) : (
+                  selectedPayload.filingReadinessRows.map((row) => (
+                    <tr key={row.점검}>
+                      <td>{row.순서}</td>
+                      <td>{row.점검}</td>
+                      <td>{row.상태}</td>
+                      <td>{row.근거}</td>
+                      <td>{row["다음 작업"]}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -4004,6 +4096,7 @@ function buildTaxReportPayload({
   period,
   periodLabel,
   summary,
+  filingReadinessRows,
   filingScheduleRows,
   dataSourceRows,
   filingPackageRows,
@@ -4017,6 +4110,7 @@ function buildTaxReportPayload({
   period: string;
   periodLabel: string;
   summary: ReturnType<typeof summarizeTransactions>;
+  filingReadinessRows: ReturnType<typeof buildFilingReadinessRows>;
   filingScheduleRows: ReturnType<typeof buildFilingScheduleRows>;
   dataSourceRows: ReturnType<typeof buildDataSourceRows>;
   filingPackageRows: ReturnType<typeof buildFilingPackageRows>;
@@ -4031,6 +4125,7 @@ function buildTaxReportPayload({
     period,
     periodLabel,
     summary,
+    filingReadinessRows,
     filingScheduleRows,
     dataSourceRows,
     filingPackageRows,
@@ -4089,6 +4184,7 @@ function parseDetailedTaxReportPayload(payload: unknown) {
       reviewCount: typeof summary.reviewCount === "number" ? summary.reviewCount : 0,
       riskCount: typeof summary.riskCount === "number" ? summary.riskCount : 0
     },
+    filingReadinessRows: parseStringNumberRecordRows(record.filingReadinessRows) as ReturnType<typeof buildFilingReadinessRows>,
     filingScheduleRows: parseStringNumberRecordRows(record.filingScheduleRows) as ReturnType<typeof buildFilingScheduleRows>,
     dataSourceRows: parseStringNumberRecordRows(record.dataSourceRows) as ReturnType<typeof buildDataSourceRows>,
     filingPackageRows: parseStringNumberRecordRows(record.filingPackageRows) as ReturnType<typeof buildFilingPackageRows>,
@@ -4191,6 +4287,7 @@ function downloadFilingPackageZip(fileName: string, payload: ReturnType<typeof b
   const evidenceFiles = buildEvidenceFileZipEntries(evidences);
   const packageFiles = [
     "filing-package.json",
+    "csv/filing-readiness.csv",
     "csv/filing-schedule.csv",
     "csv/data-sources.csv",
     "csv/filing-package.csv",
@@ -4222,6 +4319,7 @@ function downloadFilingPackageZip(fileName: string, payload: ReturnType<typeof b
       )
     },
     { path: "filing-package.json", content: JSON.stringify(payload, null, 2) },
+    { path: "csv/filing-readiness.csv", content: toCsvFileContent(payload.filingReadinessRows) },
     { path: "csv/filing-schedule.csv", content: toCsvFileContent(payload.filingScheduleRows) },
     { path: "csv/data-sources.csv", content: toCsvFileContent(payload.dataSourceRows) },
     { path: "csv/filing-package.csv", content: toCsvFileContent(payload.filingPackageRows) },
@@ -4451,6 +4549,7 @@ function buildImportSourceZipEntries(originalImportFiles: OriginalImportFile[]) 
 function buildFilingWorkbookSheets(payload: ReturnType<typeof buildFilingPackagePayload>): XlsxSheet[] {
   return [
     { name: "요약", rows: buildFilingSummaryRows(payload) },
+    { name: "최종점검", rows: payload.filingReadinessRows },
     { name: "신고일정", rows: payload.filingScheduleRows },
     { name: "자료수집", rows: payload.dataSourceRows },
     { name: "신고패키지", rows: payload.filingPackageRows },
@@ -4475,6 +4574,8 @@ function buildFilingSummaryRows(payload: ReturnType<typeof buildFilingPackagePay
     { 항목: "기간", 값: payload.period.label },
     { 항목: "기간 시작", 값: payload.period.start },
     { 항목: "기간 종료", 값: payload.period.end },
+    { 항목: "신고 차단 항목", 값: payload.filingReadinessRows.filter((row) => row.톤 === "red").length },
+    { 항목: "신고 확인 항목", 값: payload.filingReadinessRows.filter((row) => row.톤 === "amber").length },
     { 항목: "확인 필요 자료", 값: payload.dataSourceRows.filter((row) => row.상태 === "확인 필요").length },
     { 항목: "매출", 값: payload.summary.revenue },
     { 항목: "비용", 값: payload.summary.expense },
@@ -4739,6 +4840,7 @@ function buildFilingPackagePayload({
   transactions,
   evidences,
   reviews,
+  filingReadinessRows,
   filingScheduleRows,
   dataSourceRows,
   filingPackageRows,
@@ -4755,6 +4857,7 @@ function buildFilingPackagePayload({
   transactions: AppTransaction[];
   evidences: AppEvidence[];
   reviews: ReturnType<typeof buildReviewItems>;
+  filingReadinessRows: ReturnType<typeof buildFilingReadinessRows>;
   filingScheduleRows: ReturnType<typeof buildFilingScheduleRows>;
   dataSourceRows: ReturnType<typeof buildDataSourceRows>;
   filingPackageRows: ReturnType<typeof buildFilingPackageRows>;
@@ -4780,10 +4883,12 @@ function buildFilingPackagePayload({
       end: periodRange.end
     },
     summary,
+    filingReadinessRows,
     filingScheduleRows,
     dataSourceRows,
     filingPackageRows,
     tables: {
+      filingReadiness: filingReadinessRows,
       dataSources: dataSourceRows,
       transactions: buildTransactionCsv(transactions),
       evidences: buildEvidenceCsv(evidences),
@@ -4905,6 +5010,106 @@ function buildCorporateTaxRows(
       값: `${formatNumber(financialStatementRows.length)}개 계정`,
       상태: financialStatementRows.length > 0 ? "생성됨" : "대기",
       확인: "자산, 부채, 자본, 손익 초안 검토"
+    }
+  ];
+}
+
+function buildFilingReadinessRows({
+  transactions,
+  summary,
+  dataSourceRows,
+  withholdingRows,
+  journalEntries,
+  ledgerRows,
+  isPeriodClosed,
+  canClosePeriod
+}: {
+  transactions: AppTransaction[];
+  summary: ReturnType<typeof summarizeTransactions>;
+  dataSourceRows: ReturnType<typeof buildDataSourceRows>;
+  withholdingRows: ReturnType<typeof buildWithholdingRows>;
+  journalEntries: AppJournalEntry[];
+  ledgerRows: ReturnType<typeof buildLedgerRows>;
+  isPeriodClosed: boolean;
+  canClosePeriod: boolean;
+}) {
+  const totalTransactions = transactions.length;
+  const bankSourceMissing = dataSourceRows.some((row) => row.자료 === SOURCE_TYPE_LABELS.BANK && row.상태 === "확인 필요");
+  const supportingSourceMissingCount = dataSourceRows.filter((row) => row.자료 !== SOURCE_TYPE_LABELS.BANK && row.상태 === "확인 필요").length;
+  const unclassifiedCount = transactions.filter((transaction) => !transaction.confirmedAccount && !transaction.suggestedAccount).length;
+  const missingEvidenceCount = transactions.filter((transaction) => transaction.withdrawalAmount > 0 && ["UNCHECKED", "MISSING"].includes(transaction.evidenceStatus)).length;
+  const approvedJournalCount = journalEntries.filter((entry) => entry.status === "APPROVED").length;
+  const draftJournalCount = journalEntries.filter((entry) => entry.status === "DRAFT").length;
+  const sourceTone = totalTransactions === 0 || bankSourceMissing ? "red" : supportingSourceMissingCount > 0 ? "amber" : "green";
+
+  return [
+    {
+      순서: 1,
+      점검: "자료 수집",
+      상태: sourceTone === "red" ? "차단" : sourceTone === "amber" ? "확인 필요" : "완료",
+      톤: sourceTone,
+      근거:
+        totalTransactions === 0
+          ? "거래 없음"
+          : bankSourceMissing
+            ? "통장 자료 미반영"
+            : supportingSourceMissingCount > 0
+              ? `보조 자료 ${formatNumber(supportingSourceMissingCount)}개 확인 필요`
+              : "자료 반영됨",
+      "다음 작업":
+        totalTransactions === 0 || bankSourceMissing
+          ? "법인 통장 거래 CSV를 먼저 업로드"
+          : supportingSourceMissingCount > 0
+            ? "카드, 홈택스, 현금영수증 자료가 해당되는지 확인"
+            : "자료별 기간 누락만 최종 확인"
+    },
+    {
+      순서: 2,
+      점검: "거래 분류",
+      상태: totalTransactions === 0 || unclassifiedCount > 0 ? "차단" : "완료",
+      톤: totalTransactions === 0 || unclassifiedCount > 0 ? "red" : "green",
+      근거: totalTransactions === 0 ? "거래 없음" : `${formatNumber(unclassifiedCount)} / ${formatNumber(totalTransactions)}건 미분류`,
+      "다음 작업": totalTransactions === 0 ? "신고 대상 기간의 거래 CSV 업로드" : unclassifiedCount > 0 ? "거래내역에서 계정과목 확정" : "분류 결과 표본 검토"
+    },
+    {
+      순서: 3,
+      점검: "증빙",
+      상태: missingEvidenceCount > 0 ? "차단" : "완료",
+      톤: missingEvidenceCount > 0 ? "red" : "green",
+      근거: `${formatNumber(missingEvidenceCount)}건 · ${formatKRW(summary.missingEvidenceAmount)}`,
+      "다음 작업": missingEvidenceCount > 0 ? "카드전표, 세금계산서, 현금영수증 연결" : "증빙 파일 원본 보관 상태 확인"
+    },
+    {
+      순서: 4,
+      점검: "부가세",
+      상태: summary.vatPayable === 0 ? "완료" : "확인 필요",
+      톤: summary.vatPayable === 0 ? "green" : "amber",
+      근거: formatKRW(summary.vatPayable),
+      "다음 작업": summary.vatPayable >= 0 ? "납부 예상액과 홈택스 입력값 대조" : "환급 예상 사유와 매입세액 공제 가능 여부 확인"
+    },
+    {
+      순서: 5,
+      점검: "원천세/대표자",
+      상태: withholdingRows.length > 0 || summary.riskCount > 0 ? "확인 필요" : "완료",
+      톤: withholdingRows.length > 0 || summary.riskCount > 0 ? "amber" : "green",
+      근거: `원천세 ${formatNumber(withholdingRows.length)}건 · 위험 ${formatNumber(summary.riskCount)}건`,
+      "다음 작업": withholdingRows.length > 0 || summary.riskCount > 0 ? "급여, 외주비, 대표자 입출금 검토" : "추가 지급 건만 확인"
+    },
+    {
+      순서: 6,
+      점검: "자동분개/원장",
+      상태: approvedJournalCount > 0 && ledgerRows.length > 0 ? "완료" : draftJournalCount > 0 ? "확인 필요" : "차단",
+      톤: approvedJournalCount > 0 && ledgerRows.length > 0 ? "green" : draftJournalCount > 0 ? "amber" : "red",
+      근거: `승인 ${formatNumber(approvedJournalCount)}개 · 초안 ${formatNumber(draftJournalCount)}개 · 원장 ${formatNumber(ledgerRows.length)}행`,
+      "다음 작업": approvedJournalCount > 0 && ledgerRows.length > 0 ? "원장과 재무제표 초안 검토" : "자동분개 탭에서 초안 승인"
+    },
+    {
+      순서: 7,
+      점검: "월 마감",
+      상태: !canClosePeriod ? "전체 기간" : isPeriodClosed ? "완료" : "확인 필요",
+      톤: !canClosePeriod ? "blue" : isPeriodClosed ? "green" : "amber",
+      근거: !canClosePeriod ? "전체 기간 선택" : isPeriodClosed ? "마감 잠금됨" : "아직 미마감",
+      "다음 작업": !canClosePeriod ? "신고 월을 선택해 마감 여부 확인" : isPeriodClosed ? "잠금 후 변경 차단됨" : "스냅샷 저장 후 마감 잠금"
     }
   ];
 }
