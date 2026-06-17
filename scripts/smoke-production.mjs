@@ -103,7 +103,9 @@ try {
   await expectMismatchedReportPayloadPeriod();
   await expectInvalidReportPayload();
   await expectText("/", (body) =>
-    ["혼자장부", "최근 월 신고 준비", "오늘 할 일", "1인법인 신고 준비"].every((text) => body.includes(text))
+    ["혼자장부", "자료 수집 현황", "필수 자료", "통장", "홈택스 매출", "최근 월 신고 준비", "오늘 할 일", "1인법인 신고 준비"].every((text) =>
+      body.includes(text)
+    )
   );
   await expectText("/?view=settings", (body) =>
     ["운영 준비 점검", "배포 환경 상태 확인", "과금 정책", "회당 단가", "SaaS 월 구독", "전체 백업", "데이터 보관/삭제 기준", "CSV 매핑 템플릿"].every((text) => body.includes(text))

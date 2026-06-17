@@ -750,12 +750,23 @@ function Dashboard({
   const dashboardCashFlowRows = buildCashFlowRows(dashboardTransactions);
   const dashboardCashFlowTotals = buildCashFlowTotals(dashboardCashFlowRows);
   const dashboardBankBalanceRows = buildBankBalanceCheckRows(dashboardTransactions, dashboardCashFlowTotals);
+  const dashboardDataSourceRows = buildDataSourceRows(dashboardTransactions);
+  const requiredDataSourceRows = dashboardDataSourceRows.filter((row) => row.자료 !== SOURCE_TYPE_LABELS.PG);
+  const completedRequiredDataSources = requiredDataSourceRows.filter((row) => row.상태 === "반영됨").length;
+  const dataSourceActions = dashboardDataSourceRows.map((row) => ({
+    title: row.자료,
+    detail: `${row.기간} · ${row["다음 확인"]}`,
+    status: `${row.상태} · ${row.거래}`,
+    tone: row.톤 as DashboardAction["tone"],
+    target: "imports" as ViewKey,
+    actionLabel: row.상태 === "반영됨" ? "확인" : "업로드"
+  }));
   const evidenceAmountMismatchCount = countEvidenceAmountMismatchReviews(reviewItems);
   const dashboardReadinessRows = buildFilingReadinessRows({
     setupItems,
     transactions: dashboardTransactions,
     summary: summarizeTransactions(dashboardTransactions),
-    dataSourceRows: buildDataSourceRows(dashboardTransactions),
+    dataSourceRows: dashboardDataSourceRows,
     withholdingRows: buildWithholdingRows(dashboardTransactions),
     journalEntries: dashboardJournalEntries,
     journalIntegrityRows: buildJournalIntegrityRows(dashboardApprovedJournalEntries, dashboardLedgerRows, dashboardFinancialStatementRows, dashboardFinancialStatementTotals),
@@ -809,6 +820,27 @@ function Dashboard({
         <Kpi label="손익" value={formatKRW(summary.profit)} foot={summary.profit >= 0 ? "흑자" : "적자"} icon={<BarChart3 size={16} />} />
         <Kpi label="부가세 예상" value={formatKRW(summary.vatPayable)} foot="양수 납부 · 음수 환급" icon={<FileSpreadsheet size={16} />} />
         <Kpi label="검토" value={`${reviewItems.length}건`} foot={`위험 ${summary.riskCount}건 · 불일치 ${evidenceAmountMismatchCount}건`} icon={<AlertTriangle size={16} />} />
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="panel-title">자료 수집 현황</h2>
+            <p className="panel-subtitle">{latestPeriod ? `${formatPeriodLabel(latestPeriod)} 자료 반영 상태` : "첫 신고 준비에 필요한 입력 자료"}</p>
+          </div>
+          <button className="ghost-button" onClick={() => onMove("imports")}>업로드</button>
+        </div>
+        <div className="panel-body setup-grid">
+          <div className="setup-score">
+            <strong>{completedRequiredDataSources}/{requiredDataSourceRows.length}</strong>
+            <span>필수 자료</span>
+          </div>
+          <div className="action-list">
+            {dataSourceActions.map((item) => (
+              <DashboardActionItem key={item.title} item={item} onMove={onMove} />
+            ))}
+          </div>
+        </div>
       </section>
 
       <section className="panel">
