@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
+import { MAX_ORIGINAL_FILE_TEXT_SIZE } from "@/lib/file-limits";
 
-export const MAX_ORIGINAL_FILE_TEXT_SIZE = 2_000_000;
+export { MAX_ORIGINAL_FILE_TEXT_SIZE };
 
 const UTF8_BOM_BYTE_LENGTH = 3;
 

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { RESTORE_CONFIRMATION_TEXT } from "@/lib/backup-restore";
 import { DEFAULT_ACCOUNTS } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
+import { MAX_BACKUP_RESTORE_REQUEST_BYTES } from "@/lib/file-limits";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { periodRangeFromMonth } from "@/lib/server/closing-periods";
@@ -21,8 +22,6 @@ import { validateJsonPayloadSize } from "@/lib/server/json-payload-validation";
 import { parseJsonRequest } from "@/lib/server/request-json";
 import { MAX_ORIGINAL_FILE_TEXT_SIZE, validateOriginalFileText } from "@/lib/server/source-file-validation";
 import { validateTransactionAmounts } from "@/lib/server/transaction-validation";
-
-const MAX_BACKUP_RESTORE_REQUEST_BYTES = 25_000_000;
 
 const sourceTypeSchema = z.enum(["BANK", "CARD", "HOMETAX_SALES", "HOMETAX_PURCHASES", "CASH_RECEIPT", "PG", "MANUAL"]);
 const accountTypeSchema = z.enum(["ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"]);

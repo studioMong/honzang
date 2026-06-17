@@ -1,8 +1,8 @@
 import { Buffer } from "node:buffer";
+import { MAX_EVIDENCE_FILE_DATA_URL_LENGTH, MAX_EVIDENCE_FILE_SIZE } from "@/lib/file-limits";
 import { parseStrictDate } from "@/lib/server/date-validation";
 
-export const MAX_EVIDENCE_FILE_SIZE = 750_000;
-export const MAX_EVIDENCE_FILE_DATA_URL_LENGTH = 1_500_000;
+export { MAX_EVIDENCE_FILE_DATA_URL_LENGTH, MAX_EVIDENCE_FILE_SIZE };
 
 export type EvidenceFileValidationInput = {
   fileDataUrl?: string | null;

@@ -48,6 +48,7 @@ import { RESTORE_CONFIRMATION_TEXT } from "@/lib/backup-restore";
 import { DEFAULT_ACCOUNTS, DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/defaults";
 import { sanitizeCsvCellValue } from "@/lib/export-safety";
 import { applyClassificationRules, buildReviewItems, generateJournalDraft, inferMapping, normalizeCsvRow, parseMoney, summarizeTransactions } from "@/lib/accounting";
+import { MAX_BACKUP_RESTORE_REQUEST_BYTES, MAX_EVIDENCE_FILE_SIZE, MAX_ORIGINAL_FILE_TEXT_SIZE } from "@/lib/file-limits";
 import { formatDate, formatDateTime, formatKRW, formatNumber } from "@/lib/format";
 import { sampleCompany, sampleEvidences, sampleJournalEntries, sampleTaxReports, sampleTransactions } from "@/lib/sample-data";
 import { createXlsxBlob, type XlsxSheet } from "@/lib/xlsx";
@@ -201,8 +202,7 @@ const mappingFields: Array<{ key: keyof CsvColumnMapping; label: string; require
 ];
 
 const sourceOptions: SourceType[] = ["BANK", "CARD", "HOMETAX_SALES", "HOMETAX_PURCHASES", "CASH_RECEIPT", "PG"];
-const MAX_EVIDENCE_FILE_SIZE = 750_000;
-const MAX_IMPORT_ORIGINAL_FILE_SIZE = 2_000_000;
+const MAX_IMPORT_ORIGINAL_FILE_SIZE = MAX_ORIGINAL_FILE_TEXT_SIZE;
 
 const sampleCsvLinks: Record<SourceType, { label: string; href: string }> = {
   BANK: { label: "통장 샘플", href: "/samples/bank-transactions.csv" },
@@ -1003,7 +1003,7 @@ function CsvImportPanel({
     }
 
     const text = await file.text();
-    if (text.length > MAX_IMPORT_ORIGINAL_FILE_SIZE) {
+    if (getUtf8ByteSize(text) > MAX_IMPORT_ORIGINAL_FILE_SIZE) {
       setImportMessage({
         tone: "red",
         text: `원본 CSV 텍스트가 ${formatFileSize(MAX_IMPORT_ORIGINAL_FILE_SIZE)}를 초과합니다.`
@@ -4043,11 +4043,24 @@ function SettingsPanel({
     setRestoringBackup(true);
     setBackupMessage(null);
     try {
+      if (file.size > MAX_BACKUP_RESTORE_REQUEST_BYTES) {
+        setBackupMessage({
+          tone: "red",
+          text: `백업 JSON은 ${formatFileSize(MAX_BACKUP_RESTORE_REQUEST_BYTES)} 이하만 복원할 수 있습니다. 현재 파일은 ${formatFileSize(file.size)}입니다.`
+        });
+        return;
+      }
+
       const backup = JSON.parse(await file.text());
+      const dryRunBody = buildJsonRequestBody({ backup, dryRun: true }, MAX_BACKUP_RESTORE_REQUEST_BYTES, "백업 검사 요청");
+      if (!dryRunBody.ok) {
+        setBackupMessage({ tone: "red", text: dryRunBody.message });
+        return;
+      }
       const dryRunResponse = await fetch("/api/backups/restore", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ backup, dryRun: true })
+        body: dryRunBody.body
       });
       const dryRunPayload = await dryRunResponse.json();
       if (!dryRunResponse.ok) {
@@ -4073,10 +4086,20 @@ function SettingsPanel({
         return;
       }
 
+      const restoreBody = buildJsonRequestBody(
+        { backup, confirmReplace: true, restoreConfirmation },
+        MAX_BACKUP_RESTORE_REQUEST_BYTES,
+        "백업 복원 요청"
+      );
+      if (!restoreBody.ok) {
+        setBackupMessage({ tone: "red", text: restoreBody.message });
+        return;
+      }
+
       const response = await fetch("/api/backups/restore", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ backup, confirmReplace: true, restoreConfirmation })
+        body: restoreBody.body
       });
       const payload = await response.json();
       if (!response.ok) {
@@ -5684,6 +5707,26 @@ function readFileAsDataUrl(file: File) {
 function formatFileSize(size: number) {
   if (size >= 1_000_000) return `${(size / 1_000_000).toFixed(1)}MB`;
   return `${Math.max(1, Math.round(size / 1000))}KB`;
+}
+
+function getUtf8ByteSize(text: string) {
+  return new TextEncoder().encode(text).length;
+}
+
+function buildJsonRequestBody(
+  payload: unknown,
+  maxBytes: number,
+  label: string
+): { ok: true; body: string } | { ok: false; message: string } {
+  const body = JSON.stringify(payload);
+  const byteSize = getUtf8ByteSize(body);
+  if (byteSize > maxBytes) {
+    return {
+      ok: false,
+      message: `${label}은 ${formatFileSize(maxBytes)} 이하만 처리할 수 있습니다. 현재 ${formatFileSize(byteSize)}입니다.`
+    };
+  }
+  return { ok: true, body };
 }
 
 function toCsv(rows: Array<Record<string, string | number>>) {

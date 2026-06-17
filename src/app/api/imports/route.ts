@@ -4,6 +4,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
+import { MAX_IMPORT_REQUEST_BYTES } from "@/lib/file-limits";
 import { applyClassificationRules, applyVendorDefaults, normalizeCsvRow, parseMoney, summarizeTransactions } from "@/lib/accounting";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
@@ -23,8 +24,6 @@ import {
 import type { CsvColumnMapping, ParsedCsvRow, SourceType } from "@/types";
 
 const MAX_IMPORT_VALIDATION_ISSUES = 25;
-const MAX_IMPORT_REQUEST_BYTES = MAX_ORIGINAL_FILE_TEXT_SIZE + 3_000_000;
-
 const mappingSchema = z.object({
   transactionDate: z.string().optional(),
   description: z.string().optional(),
