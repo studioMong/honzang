@@ -348,8 +348,12 @@ export function generateJournalDraft(transaction: AppTransaction): JournalDraft 
     };
   }
 
-  const supplyAmount = transaction.supplyAmount ?? Math.round((transaction.depositAmount || transaction.withdrawalAmount) / 1.1);
-  const vatAmount = transaction.vatAmount ?? Math.round((transaction.depositAmount || transaction.withdrawalAmount) - supplyAmount);
+  const grossAmount = transaction.depositAmount || transaction.withdrawalAmount;
+  const hasExplicitVatBreakdown =
+    (transaction.supplyAmount !== null && transaction.supplyAmount !== undefined) ||
+    (transaction.vatAmount !== null && transaction.vatAmount !== undefined);
+  const vatAmount = transaction.vatAmount ?? Math.max(0, Math.round(grossAmount - (transaction.supplyAmount ?? grossAmount / 1.1)));
+  const supplyAmount = transaction.supplyAmount ?? Math.max(0, Math.round(grossAmount - vatAmount));
 
   if (transaction.depositAmount > 0) {
     lines.push({
@@ -374,18 +378,24 @@ export function generateJournalDraft(transaction: AppTransaction): JournalDraft 
     }
   } else if (transaction.withdrawalAmount > 0) {
     if (account.type === "EXPENSE") {
+      const canCreateInputVatLine =
+        vatAmount > 0 &&
+        !hasForeignSaasSignal(transaction) &&
+        (account.taxCategory === "VAT_INPUT" || (account.taxCategory === "WITHHOLDING_REVIEW" && hasExplicitVatBreakdown));
+      const expenseDebitAmount = canCreateInputVatLine ? supplyAmount : transaction.withdrawalAmount;
+
       lines.push({
         accountCode: account.code,
         accountName: account.name,
-        debitAmount: supplyAmount,
+        debitAmount: expenseDebitAmount,
         creditAmount: 0,
         memo
       });
 
-      if (vatAmount > 0 && account.taxCategory === "VAT_INPUT") {
+      if (canCreateInputVatLine) {
         lines.push({ accountCode: "135", accountName: "부가세대급금", debitAmount: vatAmount, creditAmount: 0, memo: "매입 부가세" });
-      } else if (vatAmount > 0) {
-        warnings.push("부가세 공제 가능 여부를 확인해야 합니다.");
+      } else if (vatAmount > 0 && hasExplicitVatBreakdown) {
+        warnings.push("부가세를 비용에 포함할지 매입세액으로 공제할지 확인해야 합니다.");
       }
 
       lines.push({

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import Papa from "papaparse";
-import { applyClassificationRules, applyVendorDefaults, inferMapping, normalizeCsvRow, summarizeTransactions } from "../src/lib/accounting";
+import { applyClassificationRules, applyVendorDefaults, generateJournalDraft, inferMapping, normalizeCsvRow, summarizeTransactions } from "../src/lib/accounting";
 import { DEFAULT_ACCOUNTS } from "../src/lib/defaults";
 import type { AppClassificationRule, AppTransaction, ParsedCsvRow, SourceType } from "../src/types";
 
@@ -174,4 +174,45 @@ assert.ok(classified.reviewReasons?.some((reason) => reason.includes("거래처 
 assert.ok(classified.reviewReasons?.some((reason) => reason.includes("OpenAI 교육비")), "custom classification rule reason should be recorded");
 console.log("Verified custom classification rule override.");
 
+const contractorAccount = DEFAULT_ACCOUNTS.find((account) => account.code === "502");
+assert.ok(contractorAccount, "contractor account should exist");
+
+const contractorBase: AppTransaction = {
+  id: "contractor-journal-check",
+  sourceType: "BANK",
+  transactionDate: "2026-06-12",
+  description: "프리랜서 디자인 외주비",
+  counterparty: "김디자인",
+  direction: "WITHDRAWAL",
+  depositAmount: 0,
+  withdrawalAmount: 330_000,
+  suggestedAccount: contractorAccount,
+  confirmedAccount: contractorAccount,
+  evidenceStatus: "UNCHECKED",
+  reviewReasons: ["외주비는 원천세 또는 세금계산서 수취 여부 확인이 필요합니다."]
+};
+
+const grossContractorDraft = generateJournalDraft(contractorBase);
+assertBalancedDraft(grossContractorDraft, "contractor gross expense draft");
+assert.equal(grossContractorDraft.lines.find((line) => line.accountCode === "502")?.debitAmount, 330_000, "contractor expense without VAT breakdown should use gross expense");
+assert.equal(grossContractorDraft.lines.some((line) => line.accountCode === "135"), false, "contractor expense without VAT breakdown should not create input VAT");
+
+const taxInvoiceContractorDraft = generateJournalDraft({
+  ...contractorBase,
+  id: "contractor-tax-invoice-journal-check",
+  supplyAmount: 300_000,
+  vatAmount: 30_000,
+  evidenceStatus: "MATCHED"
+});
+assertBalancedDraft(taxInvoiceContractorDraft, "contractor tax invoice draft");
+assert.equal(taxInvoiceContractorDraft.lines.find((line) => line.accountCode === "502")?.debitAmount, 300_000, "contractor tax invoice should use supply amount");
+assert.equal(taxInvoiceContractorDraft.lines.find((line) => line.accountCode === "135")?.debitAmount, 30_000, "contractor tax invoice should create input VAT");
+console.log("Verified contractor journal draft VAT handling.");
+
 console.log("Sample CSV verification passed.");
+
+function assertBalancedDraft(draft: ReturnType<typeof generateJournalDraft>, label: string) {
+  const debit = draft.lines.reduce((sum, line) => sum + line.debitAmount, 0);
+  const credit = draft.lines.reduce((sum, line) => sum + line.creditAmount, 0);
+  assert.equal(Math.round(debit), Math.round(credit), `${label} should be balanced`);
+}
