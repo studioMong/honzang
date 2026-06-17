@@ -13,6 +13,7 @@
     "verify:mvp": "node scripts/verify-mvp.mjs",
     "verify:deployment-config": "node scripts/verify-deployment-config.mjs",
     "verify:limits": "node scripts/verify-file-limits.mjs",
+    "verify:data-sources": "tsx scripts/verify-data-sources.ts",
     "verify:pwa": "node scripts/verify-pwa.mjs",
     "verify:access-control": "node scripts/verify-access-control.mjs",
     "verify:backup-restore": "node scripts/verify-backup-restore.mjs",

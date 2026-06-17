@@ -18,7 +18,7 @@ export type DataSourceRow = {
 export function buildDataSourceRows(transactions: AppTransaction[], importBatches: AppImportBatch[] = []): DataSourceRow[] {
   return DATA_SOURCE_TYPES.map((sourceType) => {
     const sourceTransactions = transactions.filter((transaction) => transaction.sourceType === sourceType);
-    const sourceBatches = importBatches.filter((batch) => batch.sourceType === sourceType);
+    const sourceBatches = filterSourceBatches(sourceType, sourceTransactions, importBatches);
     const originalFileCount = sourceBatches.filter((batch) => batch.hasOriginalFile).length;
     const dates = sourceTransactions.map((transaction) => transaction.transactionDate).filter(Boolean).sort();
     const hasTransactions = sourceTransactions.length > 0;
@@ -35,6 +35,13 @@ export function buildDataSourceRows(transactions: AppTransaction[], importBatche
       "다음 확인": hasTransactions ? dataSourceReadyMessage(sourceType) : dataSourceMissingMessage(sourceType)
     };
   });
+}
+
+function filterSourceBatches(sourceType: SourceType, transactions: AppTransaction[], importBatches: AppImportBatch[]) {
+  const sourceBatches = importBatches.filter((batch) => batch.sourceType === sourceType);
+  const transactionBatchIds = new Set(transactions.map((transaction) => transaction.importBatchId).filter((id): id is string => Boolean(id)));
+  if (transactionBatchIds.size === 0) return sourceBatches;
+  return sourceBatches.filter((batch) => transactionBatchIds.has(batch.id));
 }
 
 function dataSourceReadyMessage(sourceType: SourceType) {
