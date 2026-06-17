@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { getPrisma } from "@/lib/db";
 import { sampleTransactions } from "@/lib/sample-data";
@@ -18,6 +19,13 @@ const manualTransactionSchema = z.object({
   vatAmount: z.coerce.number().nonnegative().optional().nullable(),
   confirmedAccountId: z.string().optional().nullable(),
   evidenceStatus: z.enum(["UNCHECKED", "MISSING", "ATTACHED", "MATCHED", "NOT_REQUIRED"]).default("UNCHECKED"),
+  memo: z.string().max(500).optional().nullable()
+});
+
+const patchTransactionSchema = z.object({
+  id: z.string().min(1),
+  confirmedAccountId: z.string().optional().nullable(),
+  evidenceStatus: z.enum(["UNCHECKED", "MISSING", "ATTACHED", "MATCHED", "NOT_REQUIRED"]).optional(),
   memo: z.string().max(500).optional().nullable()
 });
 
@@ -58,6 +66,17 @@ export async function POST(request: Request) {
   }
 
   const payload = parsed.data;
+  const transactionDate = parseStrictTransactionDate(payload.transactionDate);
+  if (!transactionDate) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_TRANSACTION_DATE",
+        message: "거래일은 유효한 날짜여야 합니다."
+      },
+      { status: 400 }
+    );
+  }
   if (payload.depositAmount <= 0 && payload.withdrawalAmount <= 0) {
     return NextResponse.json({ ok: false, message: "입금 또는 출금 금액을 입력해야 합니다." }, { status: 400 });
   }
@@ -74,7 +93,7 @@ export async function POST(request: Request) {
       transaction: {
         id: `manual-preview-${Date.now()}`,
         sourceType: "MANUAL",
-        transactionDate: payload.transactionDate,
+        transactionDate,
         description: payload.description,
         counterparty: payload.counterparty ?? null,
         direction: payload.depositAmount > 0 ? "DEPOSIT" : "WITHDRAWAL",
@@ -92,7 +111,7 @@ export async function POST(request: Request) {
   }
 
   const company = await ensureDefaultCompany(db);
-  const closedPeriod = await findClosedPeriodForDate(db, company.id, payload.transactionDate);
+  const closedPeriod = await findClosedPeriodForDate(db, company.id, transactionDate);
   if (closedPeriod) return closedPeriodResponse(closedPeriod.period);
 
   const inferred = inferAccount(payload.description, payload.counterparty);
@@ -133,7 +152,7 @@ export async function POST(request: Request) {
     data: {
       companyId: company.id,
       sourceType: "MANUAL",
-      transactionDate: new Date(payload.transactionDate),
+      transactionDate: new Date(transactionDate),
       description: payload.description,
       counterparty: payload.counterparty,
       direction: payload.depositAmount > 0 ? "DEPOSIT" : "WITHDRAWAL",
@@ -173,17 +192,29 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const parsed = patchTransactionSchema.safeParse(await request.json());
+  if (!parsed.success) {
+    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const payload = parsed.data;
+  const hasConfirmedAccountId = Object.prototype.hasOwnProperty.call(payload, "confirmedAccountId");
+  const hasEvidenceStatus = Object.prototype.hasOwnProperty.call(payload, "evidenceStatus");
+  const hasMemo = Object.prototype.hasOwnProperty.call(payload, "memo");
+  if (!hasConfirmedAccountId && !hasEvidenceStatus && !hasMemo) {
+    return NextResponse.json({ ok: false, message: "수정할 거래 항목이 없습니다." }, { status: 400 });
+  }
+
   const db = getPrisma();
-  const body = await request.json();
 
   if (!db) {
-    return NextResponse.json({ ok: true, transaction: body, mode: "sample" });
+    return NextResponse.json({ ok: true, transaction: payload, mode: "sample" });
   }
 
   const company = await ensureDefaultCompany(db);
   const existing = await db.transaction.findFirst({
     where: {
-      id: String(body.id),
+      id: payload.id,
       companyId: company.id
     }
   });
@@ -193,15 +224,30 @@ export async function PATCH(request: Request) {
   const closedPeriod = await findClosedPeriodForDate(db, company.id, existing.transactionDate);
   if (closedPeriod) return closedPeriodResponse(closedPeriod.period);
 
+  const confirmedAccount =
+    hasConfirmedAccountId && payload.confirmedAccountId
+      ? await db.account.findFirst({
+          where: {
+            companyId: company.id,
+            id: payload.confirmedAccountId,
+            isActive: true
+          }
+        })
+      : null;
+  if (payload.confirmedAccountId && !confirmedAccount) {
+    return NextResponse.json({ ok: false, message: "계정과목을 찾을 수 없습니다." }, { status: 404 });
+  }
+
+  const updateData: Prisma.TransactionUncheckedUpdateInput = {};
+  if (hasConfirmedAccountId) updateData.confirmedAccountId = payload.confirmedAccountId || null;
+  if (hasEvidenceStatus && payload.evidenceStatus) updateData.evidenceStatus = payload.evidenceStatus;
+  if (hasMemo) updateData.memo = payload.memo ?? null;
+
   const transaction = await db.transaction.update({
     where: {
       id: existing.id
     },
-    data: {
-      confirmedAccountId: body.confirmedAccountId || null,
-      evidenceStatus: body.evidenceStatus || undefined,
-      memo: body.memo ?? undefined
-    },
+    data: updateData,
     include: {
       suggestedAccount: true,
       confirmedAccount: true
@@ -213,12 +259,52 @@ export async function PATCH(request: Request) {
     entityType: "TRANSACTION",
     entityId: transaction.id,
     summary: `거래를 수정했습니다: ${transaction.description}`,
-    metadata: {
-      confirmedAccountId: body.confirmedAccountId ?? null,
-      evidenceStatus: body.evidenceStatus ?? null,
-      memoChanged: body.memo !== undefined
-    }
+    metadata: transactionUpdateMetadata({
+      hasConfirmedAccountId,
+      confirmedAccountId: payload.confirmedAccountId,
+      evidenceStatus: payload.evidenceStatus,
+      memoChanged: hasMemo
+    })
   });
 
   return NextResponse.json({ ok: true, transaction: serializeTransaction(transaction), mode: "database" });
+}
+
+function parseStrictTransactionDate(value: unknown) {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+
+  const dotted = text.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
+  if (dotted) {
+    const [, year, month, day] = dotted;
+    return validDateParts(Number(year), Number(month), Number(day));
+  }
+
+  const compact = text.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (compact) {
+    const [, year, month, day] = compact;
+    return validDateParts(Number(year), Number(month), Number(day));
+  }
+
+  return null;
+}
+
+function validDateParts(year: number, month: number, day: number) {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function transactionUpdateMetadata(input: {
+  hasConfirmedAccountId: boolean;
+  confirmedAccountId?: string | null;
+  evidenceStatus?: string;
+  memoChanged: boolean;
+}): Prisma.InputJsonObject {
+  return {
+    evidenceStatus: input.evidenceStatus ?? null,
+    memoChanged: input.memoChanged,
+    ...(input.hasConfirmedAccountId ? { confirmedAccountId: input.confirmedAccountId ?? null } : {})
+  };
 }

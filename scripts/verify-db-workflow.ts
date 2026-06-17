@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import Papa from "papaparse";
 import { generateJournalDraft, inferMapping, summarizeTransactions } from "../src/lib/accounting";
 import { DEFAULT_COMPANY_ID } from "../src/lib/defaults";
-import type { AppJournalEntry, AppTransaction, CsvColumnMapping, CsvTemplate, ParsedCsvRow, SourceType } from "../src/types";
+import type { AppAccount, AppJournalEntry, AppTransaction, CsvColumnMapping, CsvTemplate, ParsedCsvRow, SourceType } from "../src/types";
 
 const baseUrl = (process.env.VERIFY_DB_WORKFLOW_BASE_URL ?? "http://127.0.0.1:3000").replace(/\/$/, "");
 const marker = `verify-db-workflow-${Date.now()}`;
@@ -25,9 +25,12 @@ try {
   const companyPayload = await requestJson<{
     mode?: string;
     company?: { id?: string };
+    accounts?: AppAccount[];
   }>("/api/companies");
   assert.equal(companyPayload.mode, "database", "verify:db-workflow requires database mode");
   const companyId = companyPayload.company?.id ?? DEFAULT_COMPANY_ID;
+  const verificationAccount = companyPayload.accounts?.find((account) => account.code === "599") ?? companyPayload.accounts?.[0];
+  assert.ok(verificationAccount?.id, "company accounts should include an account for transaction patch verification");
 
   const bankTransactions = await importSample(companyId, "BANK", "public/samples/bank-transactions.csv", 1, "primary");
   await importSample(companyId, "BANK", "public/samples/bank-transactions.csv", 1, "alternate");
@@ -40,6 +43,25 @@ try {
   const verifiedBankTemplateCount =
     companyAfterTemplateVariants.csvTemplates?.filter((template) => template.sourceType === "BANK" && template.headerSignature?.includes(marker)).length ?? 0;
   assert.ok(verifiedBankTemplateCount >= 2, "BANK imports with different header signatures should preserve multiple CSV templates");
+
+  await requestJson<{ ok?: boolean; mode?: string; transaction?: AppTransaction }>("/api/transactions", {
+    method: "PATCH",
+    body: {
+      id: importedTransactions[0]?.id,
+      confirmedAccountId: verificationAccount.id
+    }
+  });
+  await requestJson<{ ok?: boolean; mode?: string; transaction?: AppTransaction }>("/api/transactions", {
+    method: "PATCH",
+    body: {
+      id: importedTransactions[0]?.id,
+      evidenceStatus: "MISSING"
+    }
+  });
+  const transactionPatchList = await requestJson<{ transactions?: AppTransaction[] }>("/api/transactions");
+  const patchedTransaction = transactionPatchList.transactions?.find((transaction) => transaction.id === importedTransactions[0]?.id);
+  assert.equal(patchedTransaction?.confirmedAccount?.id, verificationAccount.id, "evidence-only transaction patch should preserve confirmed account");
+  assert.equal(patchedTransaction?.evidenceStatus, "MISSING", "evidence-only transaction patch should update evidence status");
 
   const evidencePayload = await requestJson<{
     ok?: boolean;

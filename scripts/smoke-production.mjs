@@ -49,6 +49,8 @@ try {
   await expectBlockedClosingPeriod();
   await expectInvalidCsvImportMapping();
   await expectInvalidCsvImportRows();
+  await expectInvalidManualTransactionDate();
+  await expectInvalidTransactionPatch();
   await expectText("/", (body) =>
     ["혼자장부", "최근 월 신고 준비", "오늘 할 일", "1인법인 신고 준비"].every((text) => body.includes(text))
   );
@@ -192,6 +194,46 @@ async function expectInvalidCsvImportRows() {
   const body = JSON.parse(text);
   if (body.code !== "INVALID_CSV_ROWS" || !Array.isArray(body.issues) || body.issues.length < 3) {
     throw new Error(`/api/imports returned unexpected row validation payload: ${text}`);
+  }
+}
+
+async function expectInvalidManualTransactionDate() {
+  const response = await fetch(`${baseUrl}/api/transactions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      transactionDate: "2026-02-31",
+      description: "잘못된 날짜 수기 거래",
+      depositAmount: 1000,
+      withdrawalAmount: 0
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/transactions should reject invalid manual transaction dates, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_TRANSACTION_DATE") {
+    throw new Error(`/api/transactions returned unexpected date validation payload: ${text}`);
+  }
+}
+
+async function expectInvalidTransactionPatch() {
+  const response = await fetch(`${baseUrl}/api/transactions`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: "sample-transaction",
+      evidenceStatus: "BROKEN"
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/transactions should reject invalid patch payloads, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (!body.errors?.fieldErrors?.evidenceStatus?.length) {
+    throw new Error(`/api/transactions returned unexpected patch validation payload: ${text}`);
   }
 }
 
