@@ -849,6 +849,9 @@ function ReportsPanel({
   const expenseByAccount = groupExpensesByAccount(transactions);
   const reviews = buildReviewItems(transactions);
   const ledgerRows = buildLedgerRows(journalEntries);
+  const withholdingRows = buildWithholdingRows(transactions);
+  const corporateTaxRows = buildCorporateTaxRows(summary, transactions, journalEntries, ledgerRows);
+  const filingPackageRows = buildFilingPackageRows(summary, transactions, journalEntries, ledgerRows, withholdingRows);
   return (
     <div className="content">
       <section className="kpi-grid">
@@ -902,6 +905,14 @@ function ReportsPanel({
                 <Download size={16} />
                 검토
               </button>
+              <button className="secondary-button" onClick={() => downloadCsv("honzang-withholding-candidates.csv", withholdingRows)}>
+                <Download size={16} />
+                원천세
+              </button>
+              <button className="secondary-button" onClick={() => downloadCsv("honzang-corporate-tax-prep.csv", corporateTaxRows)}>
+                <Download size={16} />
+                법인세
+              </button>
             </div>
           </div>
           <div className="panel-body">
@@ -911,6 +922,113 @@ function ReportsPanel({
               <ChecklistItem tone={summary.vatPayable > 0 ? "amber" : "green"} title="부가세" value={formatKRW(summary.vatPayable)} />
               <ChecklistItem tone={summary.riskCount > 0 ? "amber" : "green"} title="원천세/대표자" value={`${summary.riskCount}건`} />
             </div>
+          </div>
+        </section>
+      </div>
+
+      <section className="panel">
+        <div className="panel-header">
+          <h2 className="panel-title">신고 패키지</h2>
+          <div className="toolbar">
+            <span className="status blue">{formatNumber(filingPackageRows.length)}개 항목</span>
+            <button className="secondary-button" onClick={() => downloadCsv("honzang-filing-package.csv", filingPackageRows)}>
+              <Download size={16} />
+              패키지
+            </button>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>구분</th>
+                <th>상태</th>
+                <th className="amount">금액/건수</th>
+                <th>다음 확인</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filingPackageRows.map((row) => (
+                <tr key={row.구분}>
+                  <td>{row.구분}</td>
+                  <td>
+                    <span className={`status ${row.톤}`}>{row.상태}</span>
+                  </td>
+                  <td className="amount">{row["금액/건수"]}</td>
+                  <td>{row["다음 확인"]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <div className="split">
+        <section className="panel">
+          <div className="panel-header">
+            <h2 className="panel-title">원천세 후보</h2>
+            <span className={withholdingRows.length ? "status amber" : "status green"}>{formatNumber(withholdingRows.length)}건</span>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>거래일</th>
+                  <th>거래처</th>
+                  <th>구분</th>
+                  <th className="amount">지급액</th>
+                  <th className="amount">예상 원천세</th>
+                  <th>확인</th>
+                </tr>
+              </thead>
+              <tbody>
+                {withholdingRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="empty-cell">급여, 외주비, 기타소득 원천세 후보가 없습니다.</td>
+                  </tr>
+                ) : (
+                  withholdingRows.map((row) => (
+                    <tr key={`${row.거래일}-${row.거래처}-${row.지급액}`}>
+                      <td>{formatDate(row.거래일)}</td>
+                      <td>{row.거래처}</td>
+                      <td>{row.구분}</td>
+                      <td className="amount">{formatKRW(row.지급액)}</td>
+                      <td className="amount">{row["예상 원천세"] ? formatKRW(row["예상 원천세"]) : "-"}</td>
+                      <td>{row.확인}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="panel-header">
+            <h2 className="panel-title">법인세 결산 체크</h2>
+            <span className="status blue">{formatNumber(corporateTaxRows.length)}개 항목</span>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>항목</th>
+                  <th className="amount">값</th>
+                  <th>상태</th>
+                  <th>확인</th>
+                </tr>
+              </thead>
+              <tbody>
+                {corporateTaxRows.map((row) => (
+                  <tr key={row.항목}>
+                    <td>{row.항목}</td>
+                    <td className="amount">{row.값}</td>
+                    <td>{row.상태}</td>
+                    <td>{row.확인}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
       </div>
@@ -1321,6 +1439,165 @@ function buildReviewCsv(items: ReturnType<typeof buildReviewItems>) {
     거래처: item.transaction?.counterparty ?? "",
     금액: item.transaction?.withdrawalAmount || item.transaction?.depositAmount || 0
   }));
+}
+
+function getTransactionAccount(transaction: AppTransaction) {
+  return transaction.confirmedAccount ?? transaction.suggestedAccount ?? null;
+}
+
+function buildWithholdingRows(transactions: AppTransaction[]) {
+  return transactions
+    .filter((transaction) => transaction.withdrawalAmount > 0)
+    .map((transaction) => {
+      const account = getTransactionAccount(transaction);
+      const text = `${transaction.description} ${transaction.counterparty ?? ""}`.toLowerCase();
+      const isPayroll = account?.taxCategory === "PAYROLL" || text.includes("급여") || text.includes("상여");
+      const isContractor =
+        account?.taxCategory === "WITHHOLDING_REVIEW" ||
+        text.includes("외주") ||
+        text.includes("프리랜서") ||
+        text.includes("사업소득") ||
+        text.includes("기타소득");
+
+      if (!isPayroll && !isContractor) return null;
+
+      const candidateType = isPayroll ? "급여 후보" : "사업소득/기타소득 후보";
+      const estimatedTax = isContractor ? Math.round(transaction.withdrawalAmount * 0.033) : 0;
+      const check = isPayroll ? "급여대장, 4대보험, 간이세액표 기준 확인" : "세금계산서 수취 거래인지 3.3% 원천세 대상인지 확인";
+
+      return {
+        거래일: transaction.transactionDate,
+        거래처: transaction.counterparty ?? "",
+        구분: candidateType,
+        지급액: transaction.withdrawalAmount,
+        "예상 원천세": estimatedTax,
+        확인: check
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => row !== null);
+}
+
+function buildCorporateTaxRows(
+  summary: ReturnType<typeof summarizeTransactions>,
+  transactions: AppTransaction[],
+  journalEntries: AppJournalEntry[],
+  ledgerRows: ReturnType<typeof buildLedgerRows>
+) {
+  const unclassifiedCount = transactions.filter((transaction) => !transaction.confirmedAccount && !transaction.suggestedAccount).length;
+  const ownerRiskCount = transactions.filter((transaction) => {
+    const account = getTransactionAccount(transaction);
+    return account?.taxCategory === "OWNER_RISK" || transaction.reviewReasons?.some((reason) => reason.includes("대표자"));
+  }).length;
+  const approvedJournalCount = journalEntries.filter((entry) => entry.status === "APPROVED").length;
+
+  return [
+    {
+      항목: "매출 공급가액",
+      값: formatKRW(summary.revenue),
+      상태: summary.revenue > 0 ? "집계됨" : "매출 없음",
+      확인: "세금계산서, 카드, PG 매출과 입금 매칭 확인"
+    },
+    {
+      항목: "비용 공급가액",
+      값: formatKRW(summary.expense),
+      상태: summary.expense > 0 ? "집계됨" : "비용 없음",
+      확인: "손금 인정 가능성과 적격증빙 확인"
+    },
+    {
+      항목: "월 손익",
+      값: formatKRW(summary.profit),
+      상태: summary.profit >= 0 ? "이익" : "손실",
+      확인: "연말 법인세 전 기간별 손익 누락 확인"
+    },
+    {
+      항목: "증빙 누락 비용",
+      값: formatKRW(summary.missingEvidenceAmount),
+      상태: summary.missingEvidenceAmount > 0 ? "검토 필요" : "정상",
+      확인: "증빙 없는 비용은 손금/부가세 공제 제한 가능성 확인"
+    },
+    {
+      항목: "대표자 거래",
+      값: `${formatNumber(ownerRiskCount)}건`,
+      상태: ownerRiskCount > 0 ? "검토 필요" : "정상",
+      확인: "가지급금, 대표자차입금, 개인 사용 여부 확인"
+    },
+    {
+      항목: "미분류 거래",
+      값: `${formatNumber(unclassifiedCount)}건`,
+      상태: unclassifiedCount > 0 ? "분류 필요" : "정상",
+      확인: "모든 거래에 계정과목 확정"
+    },
+    {
+      항목: "승인 분개",
+      값: `${formatNumber(approvedJournalCount)}개`,
+      상태: approvedJournalCount > 0 ? "원장 생성 가능" : "승인 필요",
+      확인: "자동분개 탭에서 월 마감 전 승인"
+    },
+    {
+      항목: "계정별 원장",
+      값: `${formatNumber(ledgerRows.length)}행`,
+      상태: ledgerRows.length > 0 ? "생성됨" : "대기",
+      확인: "법인세 준비 시 계정별 원장 다운로드"
+    }
+  ];
+}
+
+function buildFilingPackageRows(
+  summary: ReturnType<typeof summarizeTransactions>,
+  transactions: AppTransaction[],
+  journalEntries: AppJournalEntry[],
+  ledgerRows: ReturnType<typeof buildLedgerRows>,
+  withholdingRows: ReturnType<typeof buildWithholdingRows>
+) {
+  const classifiedCount = transactions.filter((transaction) => transaction.confirmedAccount || transaction.suggestedAccount).length;
+  const missingEvidenceCount = transactions.filter((transaction) => transaction.withdrawalAmount > 0 && ["UNCHECKED", "MISSING"].includes(transaction.evidenceStatus)).length;
+  const approvedJournalCount = journalEntries.filter((entry) => entry.status === "APPROVED").length;
+  const totalTransactions = transactions.length;
+
+  return [
+    {
+      구분: "거래 분류",
+      상태: classifiedCount === totalTransactions ? "완료" : "진행",
+      톤: classifiedCount === totalTransactions ? "green" : "amber",
+      "금액/건수": `${formatNumber(classifiedCount)} / ${formatNumber(totalTransactions)}건`,
+      "다음 확인": "미분류 거래는 거래내역에서 계정과목 확정"
+    },
+    {
+      구분: "증빙",
+      상태: missingEvidenceCount > 0 ? "누락" : "정상",
+      톤: missingEvidenceCount > 0 ? "red" : "green",
+      "금액/건수": formatKRW(summary.missingEvidenceAmount),
+      "다음 확인": "카드전표, 세금계산서, 현금영수증 매칭"
+    },
+    {
+      구분: "부가세",
+      상태: summary.vatPayable >= 0 ? "납부 예상" : "환급 예상",
+      톤: summary.missingEvidenceAmount > 0 ? "amber" : "green",
+      "금액/건수": formatKRW(summary.vatPayable),
+      "다음 확인": "매출세액, 매입세액, 불공제 후보 확인"
+    },
+    {
+      구분: "원천세",
+      상태: withholdingRows.length > 0 ? "후보 있음" : "대상 없음",
+      톤: withholdingRows.length > 0 ? "amber" : "green",
+      "금액/건수": `${formatNumber(withholdingRows.length)}건`,
+      "다음 확인": "급여, 외주비, 기타소득 지급 여부 확인"
+    },
+    {
+      구분: "자동분개",
+      상태: approvedJournalCount > 0 ? "승인 있음" : "승인 필요",
+      톤: approvedJournalCount > 0 ? "green" : "amber",
+      "금액/건수": `${formatNumber(approvedJournalCount)}개`,
+      "다음 확인": "월 마감 전 자동분개 초안 승인"
+    },
+    {
+      구분: "법인세",
+      상태: ledgerRows.length > 0 ? "원장 있음" : "원장 대기",
+      톤: ledgerRows.length > 0 ? "green" : "amber",
+      "금액/건수": `${formatNumber(ledgerRows.length)}행`,
+      "다음 확인": "계정별 원장, 증빙 누락, 대표자 거래 검토"
+    }
+  ];
 }
 
 function buildLedgerRows(journalEntries: AppJournalEntry[]) {

@@ -127,13 +127,58 @@ export function collectReviewReasons(input: {
   return [...new Set(reasons)];
 }
 
+function transactionAccount(transaction: AppTransaction) {
+  return transaction.confirmedAccount ?? transaction.suggestedAccount ?? null;
+}
+
+function isRevenueTransaction(transaction: AppTransaction) {
+  const account = transactionAccount(transaction);
+  if (transaction.depositAmount <= 0) return false;
+  if (account) return account.type === "REVENUE";
+  return transaction.sourceType === "HOMETAX_SALES";
+}
+
+function isExpenseTransaction(transaction: AppTransaction) {
+  const account = transactionAccount(transaction);
+  if (transaction.withdrawalAmount <= 0) return false;
+  return account ? account.type === "EXPENSE" : true;
+}
+
+function taxableSupplyAmount(transaction: AppTransaction) {
+  const grossAmount = transaction.depositAmount || transaction.withdrawalAmount;
+  return transaction.supplyAmount ?? Math.round(grossAmount / 1.1);
+}
+
+function estimatedVatAmount(transaction: AppTransaction) {
+  const grossAmount = transaction.depositAmount || transaction.withdrawalAmount;
+  return transaction.vatAmount ?? Math.round(grossAmount - taxableSupplyAmount(transaction));
+}
+
+function hasForeignSaasSignal(transaction: AppTransaction) {
+  const text = `${transaction.description} ${transaction.counterparty ?? ""}`.toLowerCase();
+  return ["openai", "aws", "github", "vercel", "railway", "stripe"].some((keyword) => text.includes(keyword));
+}
+
+function outputVatAmount(transaction: AppTransaction) {
+  return transaction.vatAmount ?? estimatedVatAmount(transaction);
+}
+
+function inputVatAmount(transaction: AppTransaction) {
+  if (transaction.vatAmount !== null && transaction.vatAmount !== undefined) return transaction.vatAmount;
+  const account = transactionAccount(transaction);
+  if (account?.taxCategory === "VAT_INPUT" && !hasForeignSaasSignal(transaction)) return estimatedVatAmount(transaction);
+  return 0;
+}
+
 export function summarizeTransactions(transactions: AppTransaction[]) {
-  const revenue = transactions.reduce((sum, tx) => sum + tx.depositAmount / 1.1, 0);
-  const expense = transactions.reduce((sum, tx) => sum + tx.withdrawalAmount / 1.1, 0);
-  const vatOutput = transactions.reduce((sum, tx) => sum + (tx.vatAmount ?? (tx.depositAmount > 0 ? tx.depositAmount - tx.depositAmount / 1.1 : 0)), 0);
-  const vatInput = transactions.reduce((sum, tx) => sum + (tx.vatAmount ?? (tx.withdrawalAmount > 0 ? tx.withdrawalAmount - tx.withdrawalAmount / 1.1 : 0)), 0);
+  const revenueTransactions = transactions.filter(isRevenueTransaction);
+  const expenseTransactions = transactions.filter(isExpenseTransaction);
+  const revenue = revenueTransactions.reduce((sum, tx) => sum + taxableSupplyAmount(tx), 0);
+  const expense = expenseTransactions.reduce((sum, tx) => sum + taxableSupplyAmount(tx), 0);
+  const vatOutput = revenueTransactions.reduce((sum, tx) => sum + outputVatAmount(tx), 0);
+  const vatInput = expenseTransactions.reduce((sum, tx) => sum + inputVatAmount(tx), 0);
   const missingEvidenceAmount = transactions
-    .filter((tx) => tx.withdrawalAmount > 0 && ["MISSING", "UNCHECKED"].includes(tx.evidenceStatus))
+    .filter((tx) => isExpenseTransaction(tx) && ["MISSING", "UNCHECKED"].includes(tx.evidenceStatus))
     .reduce((sum, tx) => sum + tx.withdrawalAmount, 0);
   const reviewCount = transactions.filter((tx) => (tx.reviewReasons?.length ?? 0) > 0 || tx.evidenceStatus === "MISSING").length;
 
