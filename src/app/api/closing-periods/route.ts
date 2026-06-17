@@ -62,6 +62,19 @@ export async function POST(request: Request) {
     );
   }
 
+  const periodIssues = getClosingPeriodConsistencyIssues(parsed.data.summaryPayload, parsed.data.period, range);
+  if (periodIssues.length > 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "CLOSING_PERIOD_PAYLOAD_MISMATCH",
+        message: "마감 스냅샷 기간이 요청한 마감 월과 일치하지 않습니다.",
+        issues: periodIssues
+      },
+      { status: 400 }
+    );
+  }
+
   const readinessRows = getFilingReadinessRows(parsed.data.summaryPayload);
   if (readinessRows.length === 0) {
     return NextResponse.json(
@@ -190,6 +203,31 @@ function getClosingReadinessBlockers(summaryPayload: unknown) {
     if (tone !== "red" || check === "월 마감") return [];
     return [{ check: check || "미확인 차단 항목" }];
   });
+}
+
+function getClosingPeriodConsistencyIssues(summaryPayload: unknown, period: string, range: { start: Date; end: Date }) {
+  const issues: string[] = [];
+  if (!isRecord(summaryPayload)) return issues;
+
+  const report = isRecord(summaryPayload.report) ? summaryPayload.report : null;
+  const reportPeriod = typeof report?.period === "string" ? report.period : "";
+  if (reportPeriod && reportPeriod !== period) {
+    issues.push(`report.period(${reportPeriod})이 요청 월 ${period}와 일치하지 않습니다.`);
+  }
+
+  const periodRange = isRecord(summaryPayload.periodRange) ? summaryPayload.periodRange : null;
+  const expectedStart = range.start.toISOString().slice(0, 10);
+  const expectedEnd = range.end.toISOString().slice(0, 10);
+  const payloadStart = typeof periodRange?.start === "string" ? periodRange.start : "";
+  const payloadEnd = typeof periodRange?.end === "string" ? periodRange.end : "";
+  if (payloadStart && payloadStart !== expectedStart) {
+    issues.push(`periodRange.start(${payloadStart})가 ${expectedStart}와 일치하지 않습니다.`);
+  }
+  if (payloadEnd && payloadEnd !== expectedEnd) {
+    issues.push(`periodRange.end(${payloadEnd})가 ${expectedEnd}와 일치하지 않습니다.`);
+  }
+
+  return issues;
 }
 
 function getFilingReadinessRows(summaryPayload: unknown): unknown[] {

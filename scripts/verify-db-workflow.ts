@@ -163,6 +163,31 @@ try {
 
   const closingPeriod = transactionDates[0]?.slice(0, 7);
   assert.equal(closingPeriod, "2026-06", "workflow fixture should run in the June 2026 period");
+  const mismatchedClosePayload = await requestJson<{ ok?: boolean; code?: string; issues?: string[] }>("/api/closing-periods", {
+    method: "POST",
+    expectedStatus: 400,
+    body: {
+      companyId,
+      period: closingPeriod,
+      summaryPayload: {
+        periodRange: {
+          start: "2026-05-01",
+          end: "2026-05-31"
+        },
+        report: {
+          period: "2026-05",
+          filingReadinessRows: [
+            { 점검: "법인 기본정보", 톤: "green" },
+            { 점검: "자료 수집", 톤: "green" }
+          ]
+        }
+      }
+    }
+  });
+  assert.equal(mismatchedClosePayload.ok, false, "mismatched closing payload should fail");
+  assert.equal(mismatchedClosePayload.code, "CLOSING_PERIOD_PAYLOAD_MISMATCH", "mismatched closing payload should return a period mismatch code");
+  assert.ok(mismatchedClosePayload.issues?.length, "mismatched closing payload should report period mismatch issues");
+
   const closePayload = await requestJson<{ ok?: boolean; mode?: string; closingPeriod?: { period?: string } }>("/api/closing-periods", {
     method: "POST",
     body: {
