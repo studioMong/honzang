@@ -7,6 +7,7 @@ import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { closedPeriodResponse, findClosedPeriodForDate } from "@/lib/server/closing-periods";
 import { parseStrictDate } from "@/lib/server/date-validation";
+import { parseJsonRequest } from "@/lib/server/request-json";
 import { serializeTransaction, serializeVendor } from "@/lib/server/serializers";
 import { validateTransactionAmounts } from "@/lib/server/transaction-validation";
 import { applyVendorDefaults, inferAccount, summarizeTransactions } from "@/lib/accounting";
@@ -62,10 +63,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const parsed = manualTransactionSchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
-  }
+  const parsed = await parseJsonRequest(request, manualTransactionSchema, { label: "수기 거래 요청" });
+  if (!parsed.ok) return parsed.response;
 
   const payload = parsed.data;
   const transactionDate = parseStrictDate(payload.transactionDate);
@@ -195,10 +194,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const parsed = patchTransactionSchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
-  }
+  const parsed = await parseJsonRequest(request, patchTransactionSchema, { label: "거래 수정 요청" });
+  if (!parsed.ok) return parsed.response;
 
   const payload = parsed.data;
   const hasConfirmedAccountId = Object.prototype.hasOwnProperty.call(payload, "confirmedAccountId");

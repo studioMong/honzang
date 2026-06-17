@@ -7,6 +7,7 @@ import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { closedPeriodResponse, findClosedPeriodForDate } from "@/lib/server/closing-periods";
 import { parseStrictDate } from "@/lib/server/date-validation";
+import { parseJsonRequest } from "@/lib/server/request-json";
 import { serializeJournalEntry } from "@/lib/server/serializers";
 
 const journalLineSchema = z.object({
@@ -63,10 +64,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const parsed = journalSchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
-  }
+  const parsed = await parseJsonRequest(request, journalSchema, { label: "분개 저장 요청" });
+  if (!parsed.ok) return parsed.response;
 
   const payload = parsed.data;
   const entryDate = parseStrictDate(payload.entryDate);
@@ -230,10 +229,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const parsed = journalStatusSchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
-  }
+  const parsed = await parseJsonRequest(request, journalStatusSchema, { label: "분개 상태 변경 요청" });
+  if (!parsed.ok) return parsed.response;
 
   const db = getPrisma();
   if (!db) {

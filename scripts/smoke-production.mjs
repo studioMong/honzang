@@ -79,12 +79,15 @@ try {
   await expectInvalidCsvImportTaxAmounts();
   await expectInvalidCsvOriginalFile();
   await expectInvalidManualTransactionDate();
+  await expectInvalidManualTransactionJson();
   await expectInvalidManualTransactionAmounts();
   await expectInvalidManualTransactionTaxAmounts();
   await expectInvalidTransactionPatch();
   await expectInvalidJournalDate();
+  await expectInvalidJournalJson();
   await expectInvalidJournalLines();
   await expectInvalidEvidenceDate();
+  await expectInvalidEvidenceJson();
   await expectInvalidEvidenceFile();
   await expectInvalidEvidenceFileUrl();
   await expectInvalidEvidenceAmounts();
@@ -452,6 +455,22 @@ async function expectInvalidManualTransactionDate() {
   }
 }
 
+async function expectInvalidManualTransactionJson() {
+  const response = await fetch(`${baseUrl}/api/transactions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{"
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/transactions should reject malformed JSON, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_JSON_PAYLOAD") {
+    throw new Error(`/api/transactions returned unexpected invalid JSON payload: ${text}`);
+  }
+}
+
 async function expectInvalidManualTransactionAmounts() {
   const response = await fetch(`${baseUrl}/api/transactions`, {
     method: "POST",
@@ -549,6 +568,22 @@ async function expectInvalidJournalDate() {
   }
 }
 
+async function expectInvalidJournalJson() {
+  const response = await fetch(`${baseUrl}/api/journals`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{"
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/journals should reject malformed JSON, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_JSON_PAYLOAD") {
+    throw new Error(`/api/journals returned unexpected invalid JSON payload: ${text}`);
+  }
+}
+
 async function expectInvalidJournalLines() {
   const response = await fetch(`${baseUrl}/api/journals`, {
     method: "POST",
@@ -599,6 +634,22 @@ async function expectInvalidEvidenceDate() {
   const body = JSON.parse(text);
   if (body.code !== "INVALID_EVIDENCE_DATE") {
     throw new Error(`/api/evidences returned unexpected date validation payload: ${text}`);
+  }
+}
+
+async function expectInvalidEvidenceJson() {
+  const response = await fetch(`${baseUrl}/api/evidences`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{"
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/evidences should reject malformed JSON, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_JSON_PAYLOAD") {
+    throw new Error(`/api/evidences returned unexpected invalid JSON payload: ${text}`);
   }
 }
 

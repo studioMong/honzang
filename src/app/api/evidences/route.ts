@@ -17,6 +17,7 @@ import {
   validateEvidenceFileUrl
 } from "@/lib/server/evidence-validation";
 import { resolveTransactionEvidenceStatus } from "@/lib/server/evidence-amount-reviews";
+import { parseJsonRequest } from "@/lib/server/request-json";
 import { serializeEvidence } from "@/lib/server/serializers";
 
 const evidenceSchema = z.object({
@@ -39,6 +40,8 @@ const evidenceSchema = z.object({
 const deleteEvidenceSchema = z.object({
   id: z.string().min(1)
 });
+
+const MAX_EVIDENCE_REQUEST_BYTES = MAX_EVIDENCE_FILE_DATA_URL_LENGTH + 20_000;
 
 export async function GET() {
   const db = getPrisma();
@@ -66,10 +69,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const parsed = evidenceSchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
-  }
+  const parsed = await parseJsonRequest(request, evidenceSchema, { label: "증빙 추가 요청", maxBytes: MAX_EVIDENCE_REQUEST_BYTES });
+  if (!parsed.ok) return parsed.response;
 
   const payload = parsed.data;
   const issueDate = parseStrictEvidenceDate(payload.issueDate);
@@ -210,10 +211,8 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const parsed = deleteEvidenceSchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
-  }
+  const parsed = await parseJsonRequest(request, deleteEvidenceSchema, { label: "증빙 삭제 요청" });
+  if (!parsed.ok) return parsed.response;
 
   const db = getPrisma();
   if (!db) {
