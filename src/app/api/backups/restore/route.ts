@@ -503,6 +503,12 @@ async function clearCompanyData(tx: Prisma.TransactionClient, companyId: string)
   await tx.classificationRule.deleteMany({ where: { companyId } });
   await tx.csvTemplate.deleteMany({ where: { companyId } });
   await tx.auditEvent.deleteMany({ where: { companyId } });
+  await tx.account.deleteMany({
+    where: {
+      companyId,
+      code: { notIn: DEFAULT_ACCOUNTS.map((account) => account.code) }
+    }
+  });
 }
 
 async function restoreAccounts(tx: Prisma.TransactionClient, companyId: string, backupAccounts: WorkspaceBackup["accounts"]) {
