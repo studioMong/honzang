@@ -71,6 +71,17 @@ type BackupReadinessRow = {
   확인: string;
 };
 
+type FilingSubmissionGuideRow = {
+  순서: number;
+  신고: string;
+  "홈택스/제출 위치": string;
+  "혼자장부에서 볼 것": string;
+  상태: string;
+  톤: StatusTone;
+  "입력 기준": string;
+  "마감 전 확인": string;
+};
+
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
@@ -1829,6 +1840,18 @@ function ReportsPanel({
   const periodLabel = formatPeriodLabel(selectedPeriod);
   const periodRange = getReportPeriodRange(selectedPeriod, filteredTransactions);
   const filingScheduleRows = buildFilingScheduleRows(company, periodRange, reportSummary, withholdingRows, ledgerRows);
+  const submissionGuideRows = buildFilingSubmissionGuideRows({
+    company,
+    summary: reportSummary,
+    dataSourceRows,
+    filingReadinessRows,
+    filingScheduleRows,
+    withholdingRows,
+    ledgerRows,
+    financialStatementRows,
+    isPeriodClosed,
+    canClosePeriod
+  });
   const vatPrepRows = buildVatCsv(reportSummary, filteredTransactions);
   const visibleTaxReports = taxReports.slice(0, 6);
   const selectedTaxReport = taxReports.find((taxReport) => taxReport.id === selectedTaxReportId) ?? null;
@@ -1846,6 +1869,7 @@ function ReportsPanel({
       reviews,
       filingReadinessRows,
       filingScheduleRows,
+      submissionGuideRows,
       dataSourceRows,
       filingPackageRows,
       withholdingRows,
@@ -1889,6 +1913,7 @@ function ReportsPanel({
             summary: reportSummary,
             filingReadinessRows,
             filingScheduleRows,
+            submissionGuideRows,
             dataSourceRows,
             filingPackageRows,
             withholdingRows,
@@ -1953,6 +1978,7 @@ function ReportsPanel({
               summary: reportSummary,
               filingReadinessRows,
               filingScheduleRows,
+              submissionGuideRows,
               dataSourceRows,
               filingPackageRows,
               withholdingRows,
@@ -2139,6 +2165,52 @@ function ReportsPanel({
                     <span className={`status ${row.톤}`}>{row.상태}</span>
                   </td>
                   <td>{row["다음 작업"]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="panel-title">홈택스 제출 전 입력 가이드</h2>
+            <p className="panel-subtitle">부가세, 원천세, 법인세 입력 전에 어떤 표를 보고 무엇을 대조할지 순서대로 확인</p>
+          </div>
+          <div className="toolbar">
+            <span className="status blue">{formatNumber(submissionGuideRows.length)}단계</span>
+            <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("submission-guide", selectedPeriod), submissionGuideRows)}>
+              <Download size={16} />
+              가이드
+            </button>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>순서</th>
+                <th>신고</th>
+                <th>홈택스/제출 위치</th>
+                <th>혼자장부에서 볼 것</th>
+                <th>상태</th>
+                <th>입력 기준</th>
+                <th>마감 전 확인</th>
+              </tr>
+            </thead>
+            <tbody>
+              {submissionGuideRows.map((row) => (
+                <tr key={`${row.순서}-${row.신고}`}>
+                  <td>{row.순서}</td>
+                  <td>{row.신고}</td>
+                  <td>{row["홈택스/제출 위치"]}</td>
+                  <td>{row["혼자장부에서 볼 것"]}</td>
+                  <td>
+                    <span className={`status ${row.톤}`}>{row.상태}</span>
+                  </td>
+                  <td>{row["입력 기준"]}</td>
+                  <td>{row["마감 전 확인"]}</td>
                 </tr>
               ))}
             </tbody>
@@ -2376,6 +2448,43 @@ function ReportsPanel({
                         <span className={`status ${row.톤}`}>{row.상태}</span>
                       </td>
                       <td>{row["다음 작업"]}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="table-wrap snapshot-detail">
+            <table>
+              <thead>
+                <tr>
+                  <th>순서</th>
+                  <th>신고</th>
+                  <th>홈택스/제출 위치</th>
+                  <th>혼자장부에서 볼 것</th>
+                  <th>상태</th>
+                  <th>입력 기준</th>
+                  <th>마감 전 확인</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedPayload.submissionGuideRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="empty-cell">저장된 홈택스 제출 전 입력 가이드가 없습니다.</td>
+                  </tr>
+                ) : (
+                  selectedPayload.submissionGuideRows.map((row) => (
+                    <tr key={`${row.순서}-${row.신고}`}>
+                      <td>{row.순서}</td>
+                      <td>{row.신고}</td>
+                      <td>{row["홈택스/제출 위치"]}</td>
+                      <td>{row["혼자장부에서 볼 것"]}</td>
+                      <td>
+                        <span className={`status ${row.톤}`}>{row.상태}</span>
+                      </td>
+                      <td>{row["입력 기준"]}</td>
+                      <td>{row["마감 전 확인"]}</td>
                     </tr>
                   ))
                 )}
@@ -4193,6 +4302,7 @@ function buildTaxReportPayload({
   summary,
   filingReadinessRows,
   filingScheduleRows,
+  submissionGuideRows,
   dataSourceRows,
   filingPackageRows,
   withholdingRows,
@@ -4207,6 +4317,7 @@ function buildTaxReportPayload({
   summary: ReturnType<typeof summarizeTransactions>;
   filingReadinessRows: ReturnType<typeof buildFilingReadinessRows>;
   filingScheduleRows: ReturnType<typeof buildFilingScheduleRows>;
+  submissionGuideRows: ReturnType<typeof buildFilingSubmissionGuideRows>;
   dataSourceRows: ReturnType<typeof buildDataSourceRows>;
   filingPackageRows: ReturnType<typeof buildFilingPackageRows>;
   withholdingRows: ReturnType<typeof buildWithholdingRows>;
@@ -4222,6 +4333,7 @@ function buildTaxReportPayload({
     summary,
     filingReadinessRows,
     filingScheduleRows,
+    submissionGuideRows,
     dataSourceRows,
     filingPackageRows,
     withholdingRows,
@@ -4281,6 +4393,7 @@ function parseDetailedTaxReportPayload(payload: unknown) {
     },
     filingReadinessRows: parseStringNumberRecordRows(record.filingReadinessRows) as ReturnType<typeof buildFilingReadinessRows>,
     filingScheduleRows: parseStringNumberRecordRows(record.filingScheduleRows) as ReturnType<typeof buildFilingScheduleRows>,
+    submissionGuideRows: parseStringNumberRecordRows(record.submissionGuideRows) as ReturnType<typeof buildFilingSubmissionGuideRows>,
     dataSourceRows: parseStringNumberRecordRows(record.dataSourceRows) as ReturnType<typeof buildDataSourceRows>,
     filingPackageRows: parseStringNumberRecordRows(record.filingPackageRows) as ReturnType<typeof buildFilingPackageRows>,
     withholdingRows: parseStringNumberRecordRows(record.withholdingRows) as ReturnType<typeof buildWithholdingRows>,
@@ -4384,6 +4497,7 @@ function downloadFilingPackageZip(fileName: string, payload: ReturnType<typeof b
     "filing-package.json",
     "csv/filing-readiness.csv",
     "csv/filing-schedule.csv",
+    "csv/submission-guide.csv",
     "csv/data-sources.csv",
     "csv/filing-package.csv",
     "csv/transactions.csv",
@@ -4416,6 +4530,7 @@ function downloadFilingPackageZip(fileName: string, payload: ReturnType<typeof b
     { path: "filing-package.json", content: JSON.stringify(payload, null, 2) },
     { path: "csv/filing-readiness.csv", content: toCsvFileContent(payload.filingReadinessRows) },
     { path: "csv/filing-schedule.csv", content: toCsvFileContent(payload.filingScheduleRows) },
+    { path: "csv/submission-guide.csv", content: toCsvFileContent(payload.submissionGuideRows) },
     { path: "csv/data-sources.csv", content: toCsvFileContent(payload.dataSourceRows) },
     { path: "csv/filing-package.csv", content: toCsvFileContent(payload.filingPackageRows) },
     { path: "csv/transactions.csv", content: toCsvFileContent(payload.tables.transactions) },
@@ -4757,6 +4872,7 @@ function buildFilingWorkbookSheets(payload: ReturnType<typeof buildFilingPackage
     { name: "요약", rows: buildFilingSummaryRows(payload) },
     { name: "최종점검", rows: payload.filingReadinessRows },
     { name: "신고일정", rows: payload.filingScheduleRows },
+    { name: "제출가이드", rows: payload.submissionGuideRows },
     { name: "자료수집", rows: payload.dataSourceRows },
     { name: "신고패키지", rows: payload.filingPackageRows },
     { name: "거래", rows: payload.tables.transactions },
@@ -4782,6 +4898,7 @@ function buildFilingSummaryRows(payload: ReturnType<typeof buildFilingPackagePay
     { 항목: "기간 종료", 값: payload.period.end },
     { 항목: "신고 차단 항목", 값: payload.filingReadinessRows.filter((row) => row.톤 === "red").length },
     { 항목: "신고 확인 항목", 값: payload.filingReadinessRows.filter((row) => row.톤 === "amber").length },
+    { 항목: "제출 가이드 단계", 값: payload.submissionGuideRows.length },
     { 항목: "확인 필요 자료", 값: payload.dataSourceRows.filter((row) => row.상태 === "확인 필요").length },
     { 항목: "매출", 값: payload.summary.revenue },
     { 항목: "비용", 값: payload.summary.expense },
@@ -5048,6 +5165,7 @@ function buildFilingPackagePayload({
   reviews,
   filingReadinessRows,
   filingScheduleRows,
+  submissionGuideRows,
   dataSourceRows,
   filingPackageRows,
   withholdingRows,
@@ -5065,6 +5183,7 @@ function buildFilingPackagePayload({
   reviews: ReturnType<typeof buildReviewItems>;
   filingReadinessRows: ReturnType<typeof buildFilingReadinessRows>;
   filingScheduleRows: ReturnType<typeof buildFilingScheduleRows>;
+  submissionGuideRows: ReturnType<typeof buildFilingSubmissionGuideRows>;
   dataSourceRows: ReturnType<typeof buildDataSourceRows>;
   filingPackageRows: ReturnType<typeof buildFilingPackageRows>;
   withholdingRows: ReturnType<typeof buildWithholdingRows>;
@@ -5091,10 +5210,12 @@ function buildFilingPackagePayload({
     summary,
     filingReadinessRows,
     filingScheduleRows,
+    submissionGuideRows,
     dataSourceRows,
     filingPackageRows,
     tables: {
       filingReadiness: filingReadinessRows,
+      submissionGuide: submissionGuideRows,
       dataSources: dataSourceRows,
       transactions: buildTransactionCsv(transactions),
       evidences: buildEvidenceCsv(evidences),
@@ -5374,6 +5495,107 @@ function dataSourceMissingMessage(sourceType: SourceType) {
     case "MANUAL":
       return "필요한 수기 거래는 거래내역에서 직접 추가";
   }
+}
+
+function buildFilingSubmissionGuideRows({
+  company,
+  summary,
+  dataSourceRows,
+  filingReadinessRows,
+  filingScheduleRows,
+  withholdingRows,
+  ledgerRows,
+  financialStatementRows,
+  isPeriodClosed,
+  canClosePeriod
+}: {
+  company: AppCompany;
+  summary: ReturnType<typeof summarizeTransactions>;
+  dataSourceRows: ReturnType<typeof buildDataSourceRows>;
+  filingReadinessRows: ReturnType<typeof buildFilingReadinessRows>;
+  filingScheduleRows: ReturnType<typeof buildFilingScheduleRows>;
+  withholdingRows: ReturnType<typeof buildWithholdingRows>;
+  ledgerRows: ReturnType<typeof buildLedgerRows>;
+  financialStatementRows: ReturnType<typeof buildFinancialStatementRows>;
+  isPeriodClosed: boolean;
+  canClosePeriod: boolean;
+}): FilingSubmissionGuideRow[] {
+  const sourceReadiness = filingReadinessRows.find((row) => row.점검 === "자료 수집");
+  const classificationReadiness = filingReadinessRows.find((row) => row.점검 === "거래 분류");
+  const evidenceReadiness = filingReadinessRows.find((row) => row.점검 === "증빙");
+  const journalReadiness = filingReadinessRows.find((row) => row.점검 === "자동분개/원장");
+  const dataMissingCount = dataSourceRows.filter((row) => row.상태 === "확인 필요").length;
+  const payrollEnabled = company.representativeSalaryEnabled || company.employeePayrollEnabled || company.contractorPaymentEnabled;
+  const vatSchedule = filingScheduleRows.find((row) => row.신고.includes("부가세"));
+  const withholdingSchedule = filingScheduleRows.find((row) => row.신고.includes("원천세"));
+  const corporateSchedule = filingScheduleRows.find((row) => row.신고.includes("법인세"));
+  const vatTone: StatusTone = sourceReadiness?.톤 === "red" ? "red" : summary.missingEvidenceAmount > 0 || dataMissingCount > 0 ? "amber" : "green";
+  const withholdingTone: StatusTone = withholdingRows.length > 0 ? "amber" : payrollEnabled ? "green" : "blue";
+  const corporateTone: StatusTone = ledgerRows.length > 0 && financialStatementRows.length > 0 ? "green" : journalReadiness?.톤 === "red" ? "red" : "amber";
+  const closeTone: StatusTone = !canClosePeriod ? "blue" : isPeriodClosed ? "green" : "amber";
+
+  return [
+    {
+      순서: 1,
+      신고: "자료 확정",
+      "홈택스/제출 위치": "은행, 카드, 홈택스, PG 자료 조회",
+      "혼자장부에서 볼 것": "자료 수집 현황, 최종 신고 점검",
+      상태: sourceReadiness?.상태 ?? "확인 필요",
+      톤: sourceReadiness?.톤 ?? "amber",
+      "입력 기준": `확인 필요 자료 ${formatNumber(dataMissingCount)}개`,
+      "마감 전 확인": sourceReadiness?.["다음 작업"] ?? "신고 대상 기간 자료 업로드"
+    },
+    {
+      순서: 2,
+      신고: "부가세",
+      "홈택스/제출 위치": "부가가치세 신고서",
+      "혼자장부에서 볼 것": "부가세 입력 전 정리표, 증빙함",
+      상태: vatTone === "red" ? "차단" : vatTone === "amber" ? "대조 필요" : "입력 가능",
+      톤: vatTone,
+      "입력 기준": `매출세액 ${formatKRW(summary.vatOutput)} · 매입세액 ${formatKRW(summary.vatInput)} · 예상 ${formatKRW(summary.vatPayable)}`,
+      "마감 전 확인": vatSchedule ? `${vatSchedule["예상 기한"]} 전 ${vatSchedule["다음 작업"]}` : "매출/매입세액과 공제 보류 후보 대조"
+    },
+    {
+      순서: 3,
+      신고: "원천세",
+      "홈택스/제출 위치": "원천세 신고/납부",
+      "혼자장부에서 볼 것": "원천세 후보, 대표자/급여 설정",
+      상태: withholdingRows.length > 0 ? "후보 확인" : payrollEnabled ? "대상 없음" : "설정 선택",
+      톤: withholdingTone,
+      "입력 기준": `원천세 후보 ${formatNumber(withholdingRows.length)}건`,
+      "마감 전 확인": withholdingSchedule ? `${withholdingSchedule["예상 기한"]} 전 ${withholdingSchedule["다음 작업"]}` : "급여, 외주비, 기타소득 지급 여부 확인"
+    },
+    {
+      순서: 4,
+      신고: "법인세",
+      "홈택스/제출 위치": "법인세 신고, 재무제표 입력",
+      "혼자장부에서 볼 것": "법인세 결산 체크, 재무제표 초안, 계정별 원장",
+      상태: corporateTone === "green" ? "준비 가능" : corporateTone === "red" ? "차단" : "원장 대기",
+      톤: corporateTone,
+      "입력 기준": `원장 ${formatNumber(ledgerRows.length)}행 · 재무제표 ${formatNumber(financialStatementRows.length)}개 계정`,
+      "마감 전 확인": corporateSchedule ? `${corporateSchedule["예상 기한"]} 전 ${corporateSchedule["다음 작업"]}` : "승인 분개 기준 재무제표와 원장 확인"
+    },
+    {
+      순서: 5,
+      신고: "증빙 보관",
+      "홈택스/제출 위치": "신고 근거자료 보관",
+      "혼자장부에서 볼 것": "증빙함, 신고 패키지 ZIP",
+      상태: evidenceReadiness?.톤 === "red" ? "차단" : "보관 가능",
+      톤: evidenceReadiness?.톤 === "red" ? "red" : "green",
+      "입력 기준": `증빙 누락 ${formatKRW(summary.missingEvidenceAmount)} · 검토 ${formatNumber(summary.reviewCount)}건`,
+      "마감 전 확인": evidenceReadiness?.["다음 작업"] ?? "세금계산서, 카드전표, 현금영수증 원본 보관"
+    },
+    {
+      순서: 6,
+      신고: "마감/보관",
+      "홈택스/제출 위치": "제출 전 내부 확정",
+      "혼자장부에서 볼 것": "스냅샷 저장, 마감 잠금, XLSX/ZIP 패키지",
+      상태: !canClosePeriod ? "기간 선택" : isPeriodClosed ? "마감됨" : "마감 필요",
+      톤: closeTone,
+      "입력 기준": `분류 ${classificationReadiness?.상태 ?? "-"} · 분개 ${journalReadiness?.상태 ?? "-"}`,
+      "마감 전 확인": isPeriodClosed ? "잠금 후 변경 차단됨" : "스냅샷 저장 후 마감 잠금"
+    }
+  ];
 }
 
 function buildFilingPackageRows(
