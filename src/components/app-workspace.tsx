@@ -42,6 +42,7 @@ import { DEFAULT_ACCOUNTS, DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/
 import { applyClassificationRules, buildReviewItems, generateJournalDraft, inferMapping, normalizeCsvRow, parseMoney, summarizeTransactions } from "@/lib/accounting";
 import { formatDate, formatDateTime, formatKRW, formatNumber } from "@/lib/format";
 import { sampleCompany, sampleEvidences, sampleJournalEntries, sampleTaxReports, sampleTransactions } from "@/lib/sample-data";
+import { createZipBlob } from "@/lib/zip";
 
 export type ViewKey = "dashboard" | "imports" | "transactions" | "evidences" | "journals" | "reviews" | "reports" | "settings";
 
@@ -1434,26 +1435,31 @@ function ReportsPanel({
   const selectedTaxReport = taxReports.find((taxReport) => taxReport.id === selectedTaxReportId) ?? null;
   const selectedPayload = selectedTaxReport ? parseDetailedTaxReportPayload(selectedTaxReport.calculatedPayload) : null;
 
+  function buildCurrentFilingPackagePayload() {
+    return buildFilingPackagePayload({
+      company,
+      period: selectedPeriod,
+      periodLabel,
+      periodRange,
+      summary: reportSummary,
+      transactions: filteredTransactions,
+      evidences: filteredEvidences,
+      reviews,
+      filingScheduleRows,
+      filingPackageRows,
+      withholdingRows,
+      corporateTaxRows,
+      financialStatementRows,
+      ledgerRows
+    });
+  }
+
   function downloadFilingPackageJson() {
-    downloadJson(
-      buildReportJsonFileName("filing-package", selectedPeriod),
-      buildFilingPackagePayload({
-        company,
-        period: selectedPeriod,
-        periodLabel,
-        periodRange,
-        summary: reportSummary,
-        transactions: filteredTransactions,
-        evidences: filteredEvidences,
-        reviews,
-        filingScheduleRows,
-        filingPackageRows,
-        withholdingRows,
-        corporateTaxRows,
-        financialStatementRows,
-        ledgerRows
-      })
-    );
+    downloadJson(buildReportJsonFileName("filing-package", selectedPeriod), buildCurrentFilingPackagePayload());
+  }
+
+  function downloadFilingPackageArchive() {
+    downloadFilingPackageZip(buildReportZipFileName("filing-package", selectedPeriod), buildCurrentFilingPackagePayload());
   }
 
   async function saveSnapshot() {
@@ -1869,6 +1875,10 @@ function ReportsPanel({
                 <Download size={16} />
                 원천세
               </button>
+              <button className="secondary-button" onClick={downloadFilingPackageArchive}>
+                <Download size={16} />
+                패키지 ZIP
+              </button>
               <button className="secondary-button" onClick={downloadFilingPackageJson}>
                 <Download size={16} />
                 패키지 JSON
@@ -1902,6 +1912,10 @@ function ReportsPanel({
             <button className="secondary-button" onClick={downloadFilingPackageJson}>
               <Download size={16} />
               JSON
+            </button>
+            <button className="secondary-button" onClick={downloadFilingPackageArchive}>
+              <Download size={16} />
+              ZIP
             </button>
             <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("filing-package", selectedPeriod), filingPackageRows)}>
               <Download size={16} />
@@ -2874,6 +2888,10 @@ function buildReportJsonFileName(name: string, period: string) {
   return `honzang-${period === "ALL" ? "all" : period}-${name}.json`;
 }
 
+function buildReportZipFileName(name: string, period: string) {
+  return `honzang-${period === "ALL" ? "all" : period}-${name}.zip`;
+}
+
 function getReportPeriodRange(period: string, transactions: AppTransaction[]) {
   if (period !== "ALL") {
     const [year, month] = period.split("-").map(Number);
@@ -3059,20 +3077,59 @@ function saveLocalMapping(sourceType: SourceType, headers: string[], mapping: Cs
 }
 
 function downloadCsv(fileName: string, rows: Array<Record<string, string | number>>) {
-  const csv = toCsv(rows);
-  const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = fileName;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
+  downloadBlob(fileName, new Blob([toCsvFileContent(rows)], { type: "text/csv;charset=utf-8" }));
 }
 
 function downloadJson(fileName: string, payload: unknown) {
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+  downloadBlob(fileName, new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" }));
+}
+
+function downloadFilingPackageZip(fileName: string, payload: ReturnType<typeof buildFilingPackagePayload>) {
+  const files = [
+    {
+      path: "manifest.json",
+      content: JSON.stringify(
+        {
+          app: payload.app,
+          generatedAt: payload.generatedAt,
+          company: payload.company,
+          period: payload.period,
+          summary: payload.summary,
+          files: [
+            "filing-package.json",
+            "csv/filing-schedule.csv",
+            "csv/filing-package.csv",
+            "csv/transactions.csv",
+            "csv/evidences.csv",
+            "csv/vat-report.csv",
+            "csv/review-items.csv",
+            "csv/withholding-candidates.csv",
+            "csv/corporate-tax-prep.csv",
+            "csv/financial-statements.csv",
+            "csv/ledger.csv"
+          ],
+          notes: payload.notes
+        },
+        null,
+        2
+      )
+    },
+    { path: "filing-package.json", content: JSON.stringify(payload, null, 2) },
+    { path: "csv/filing-schedule.csv", content: toCsvFileContent(payload.filingScheduleRows) },
+    { path: "csv/filing-package.csv", content: toCsvFileContent(payload.filingPackageRows) },
+    { path: "csv/transactions.csv", content: toCsvFileContent(payload.tables.transactions) },
+    { path: "csv/evidences.csv", content: toCsvFileContent(payload.tables.evidences) },
+    { path: "csv/vat-report.csv", content: toCsvFileContent(payload.tables.vatReport) },
+    { path: "csv/review-items.csv", content: toCsvFileContent(payload.tables.reviewItems) },
+    { path: "csv/withholding-candidates.csv", content: toCsvFileContent(payload.tables.withholdingCandidates) },
+    { path: "csv/corporate-tax-prep.csv", content: toCsvFileContent(payload.tables.corporateTaxPrep) },
+    { path: "csv/financial-statements.csv", content: toCsvFileContent(payload.tables.financialStatements) },
+    { path: "csv/ledger.csv", content: toCsvFileContent(payload.tables.ledger) }
+  ];
+  downloadBlob(fileName, createZipBlob(files));
+}
+
+function downloadBlob(fileName: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -3114,6 +3171,10 @@ function toCsv(rows: Array<Record<string, string | number>>) {
     return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
   };
   return [headers.join(","), ...rows.map((row) => headers.map((header) => escapeCell(row[header])).join(","))].join("\n");
+}
+
+function toCsvFileContent(rows: Array<Record<string, string | number>>) {
+  return `\uFEFF${toCsv(rows)}`;
 }
 
 function buildTransactionCsv(transactions: AppTransaction[]) {
