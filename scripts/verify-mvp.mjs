@@ -8,6 +8,7 @@ const steps = [
   ["typecheck", "TypeScript typecheck"],
   ["lint", "ESLint"],
   ["verify:samples", "CSV sample parsing and classification"],
+  ["verify:closing-snapshot-exports", "Closing snapshot export packages"],
   ["build", "Production standalone build"],
   ["verify:pwa", "PWA resources and install hooks"],
   ["verify:access-control", "Environment access-code protection"],
