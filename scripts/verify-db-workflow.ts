@@ -33,6 +33,8 @@ try {
   const companyId = companyPayload.company?.id ?? DEFAULT_COMPANY_ID;
   const verificationAccount = companyPayload.accounts?.find((account) => account.code === "599") ?? companyPayload.accounts?.[0];
   assert.ok(verificationAccount?.id, "company accounts should include an account for transaction patch verification");
+  const alternateVerificationAccountId = companyPayload.accounts?.find((account) => account.id && account.id !== verificationAccount.id)?.id;
+  assert.ok(alternateVerificationAccountId, "company accounts should include a second account for approved journal account guard verification");
 
   const bankTransactions = await importSample(companyId, "BANK", "public/samples/bank-transactions.csv", 1, "primary");
   await importSample(companyId, "BANK", "public/samples/bank-transactions.csv", 1, "alternate");
@@ -160,6 +162,22 @@ try {
     "DRAFT replacement of an approved journal should return a replacement guard code"
   );
   assert.equal(draftReplacementPayload.approvedJournalId, approvedEntries[0]?.id, "replacement guard should identify the existing approved journal");
+
+  const approvedAccountPatchPayload = await requestJson<{ ok?: boolean; code?: string; approvedJournalId?: string }>("/api/transactions", {
+    method: "PATCH",
+    expectedStatus: 409,
+    body: {
+      id: importedTransactions[0]?.id,
+      confirmedAccountId: alternateVerificationAccountId
+    }
+  });
+  assert.equal(approvedAccountPatchPayload.ok, false, "account change on a transaction with an approved journal should fail");
+  assert.equal(
+    approvedAccountPatchPayload.code,
+    "APPROVED_JOURNAL_ACCOUNT_CHANGE_BLOCKED",
+    "account change on a transaction with an approved journal should return an account guard code"
+  );
+  assert.equal(approvedAccountPatchPayload.approvedJournalId, approvedEntries[0]?.id, "account guard should identify the existing approved journal");
 
   const transactionDates = importedTransactions.map((transaction) => transaction.transactionDate).sort();
   const reportPayload = await requestJson<{ ok?: boolean; mode?: string; taxReport?: { id?: string } }>("/api/reports", {

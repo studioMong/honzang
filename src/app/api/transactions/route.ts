@@ -223,22 +223,48 @@ export async function PATCH(request: Request) {
   const closedPeriod = await findClosedPeriodForDate(db, company.id, existing.transactionDate);
   if (closedPeriod) return closedPeriodResponse(closedPeriod.period);
 
+  const nextConfirmedAccountId = hasConfirmedAccountId ? payload.confirmedAccountId || null : existing.confirmedAccountId;
+  if (hasConfirmedAccountId && nextConfirmedAccountId !== existing.confirmedAccountId) {
+    const approvedJournal = await db.journalEntry.findFirst({
+      where: {
+        companyId: company.id,
+        transactionId: existing.id,
+        status: "APPROVED"
+      },
+      select: {
+        id: true
+      }
+    });
+
+    if (approvedJournal) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "APPROVED_JOURNAL_ACCOUNT_CHANGE_BLOCKED",
+          message: "승인된 분개가 있는 거래는 계정과목을 변경할 수 없습니다. 먼저 승인 취소 후 다시 수정하세요.",
+          approvedJournalId: approvedJournal.id
+        },
+        { status: 409 }
+      );
+    }
+  }
+
   const confirmedAccount =
-    hasConfirmedAccountId && payload.confirmedAccountId
+    hasConfirmedAccountId && nextConfirmedAccountId
       ? await db.account.findFirst({
           where: {
             companyId: company.id,
-            id: payload.confirmedAccountId,
+            id: nextConfirmedAccountId,
             isActive: true
           }
         })
       : null;
-  if (payload.confirmedAccountId && !confirmedAccount) {
+  if (nextConfirmedAccountId && !confirmedAccount) {
     return NextResponse.json({ ok: false, message: "계정과목을 찾을 수 없습니다." }, { status: 404 });
   }
 
   const updateData: Prisma.TransactionUncheckedUpdateInput = {};
-  if (hasConfirmedAccountId) updateData.confirmedAccountId = payload.confirmedAccountId || null;
+  if (hasConfirmedAccountId) updateData.confirmedAccountId = nextConfirmedAccountId;
   if (hasEvidenceStatus && payload.evidenceStatus) updateData.evidenceStatus = payload.evidenceStatus;
   if (hasMemo) updateData.memo = payload.memo ?? null;
 
