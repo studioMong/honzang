@@ -52,10 +52,10 @@ const sampleCases: SampleCase[] = [
   },
   {
     sourceType: "CASH_RECEIPT",
-    filePath: "public/samples/hometax-purchases.csv",
+    filePath: "public/samples/cash-receipts.csv",
     expectedRows: 2,
     expectedDeposit: 0,
-    expectedWithdrawal: 440_000
+    expectedWithdrawal: 69_500
   },
   {
     sourceType: "PG",
@@ -96,6 +96,9 @@ function requireMapping(caseItem: SampleCase, headers: string[]) {
   } else {
     assert.ok(mapping.amount, `${caseItem.sourceType} should infer amount`);
   }
+  if (caseItem.sourceType === "CASH_RECEIPT") {
+    assert.ok(mapping.approvalNumber, "CASH_RECEIPT should infer approvalNumber");
+  }
 
   return mapping;
 }
@@ -127,6 +130,9 @@ for (const caseItem of sampleCases) {
   if (caseItem.sourceType === "BANK") {
     const ownerTransaction = transactions.find((transaction) => transaction.description.includes("대표자"));
     assert.equal(ownerTransaction?.suggestedAccount?.code, "281", "owner deposit should be classified as owner loan");
+  }
+  if (caseItem.sourceType === "CASH_RECEIPT") {
+    assert.equal(transactions[0]?.approvalNumber, "CR-20260607-001", "cash receipt should preserve approval number");
   }
 
   console.log(`Verified ${caseItem.sourceType} ${caseItem.filePath} (${transactions.length} rows)`);

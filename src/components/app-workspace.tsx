@@ -208,7 +208,7 @@ const sampleCsvLinks: Record<SourceType, { label: string; href: string }> = {
   CARD: { label: "카드 샘플", href: "/samples/card-transactions.csv" },
   HOMETAX_SALES: { label: "홈택스 매출 샘플", href: "/samples/hometax-sales.csv" },
   HOMETAX_PURCHASES: { label: "홈택스 매입 샘플", href: "/samples/hometax-purchases.csv" },
-  CASH_RECEIPT: { label: "현금영수증 샘플", href: "/samples/hometax-purchases.csv" },
+  CASH_RECEIPT: { label: "현금영수증 샘플", href: "/samples/cash-receipts.csv" },
   PG: { label: "PG 정산 샘플", href: "/samples/pg-settlements.csv" },
   MANUAL: { label: "수기 샘플", href: "/samples/bank-transactions.csv" }
 };
