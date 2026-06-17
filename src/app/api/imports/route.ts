@@ -415,13 +415,12 @@ async function saveCsvTemplate(
     mapping: CsvColumnMapping;
   }
 ) {
-  const templateName = `${SOURCE_TYPE_LABELS[input.sourceType]} 기본 템플릿`;
   const headerSignature = input.headers.join("|");
   const existingTemplate = await db.csvTemplate.findFirst({
     where: {
       companyId: input.companyId,
       sourceType: input.sourceType,
-      name: templateName
+      headerSignature
     }
   });
 
@@ -434,6 +433,17 @@ async function saveCsvTemplate(
       }
     });
   }
+
+  const sourceTemplateCount = await db.csvTemplate.count({
+    where: {
+      companyId: input.companyId,
+      sourceType: input.sourceType
+    }
+  });
+  const templateName =
+    sourceTemplateCount === 0
+      ? `${SOURCE_TYPE_LABELS[input.sourceType]} 기본 템플릿`
+      : `${SOURCE_TYPE_LABELS[input.sourceType]} 템플릿 ${sourceTemplateCount + 1}`;
 
   return db.csvTemplate.create({
     data: {

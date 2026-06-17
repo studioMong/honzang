@@ -10,6 +10,7 @@ const baseUrl = (process.env.VERIFY_DB_WORKFLOW_BASE_URL ?? "http://127.0.0.1:30
 const marker = `verify-db-workflow-${Date.now()}`;
 const cleanup = {
   importBatchIds: [] as string[],
+  csvTemplateIds: [] as string[],
   evidenceIds: [] as string[],
   journalEntryIds: [] as string[],
   taxReportIds: [] as string[],
@@ -28,11 +29,17 @@ try {
   assert.equal(companyPayload.mode, "database", "verify:db-workflow requires database mode");
   const companyId = companyPayload.company?.id ?? DEFAULT_COMPANY_ID;
 
+  const bankTransactions = await importSample(companyId, "BANK", "public/samples/bank-transactions.csv", 1, "primary");
+  await importSample(companyId, "BANK", "public/samples/bank-transactions.csv", 1, "alternate");
   const importedTransactions = [
-    ...(await importSample(companyId, "BANK", "public/samples/bank-transactions.csv", 1)),
-    ...(await importSample(companyId, "CARD", "public/samples/card-transactions.csv", 1))
+    ...bankTransactions,
+    ...(await importSample(companyId, "CARD", "public/samples/card-transactions.csv", 1, "primary"))
   ];
   assert.equal(importedTransactions.length, 2, "workflow should import two sample transactions");
+  const companyAfterTemplateVariants = await requestJson<{ csvTemplates?: CsvTemplate[] }>("/api/companies");
+  const verifiedBankTemplateCount =
+    companyAfterTemplateVariants.csvTemplates?.filter((template) => template.sourceType === "BANK" && template.headerSignature?.includes(marker)).length ?? 0;
+  assert.ok(verifiedBankTemplateCount >= 2, "BANK imports with different header signatures should preserve multiple CSV templates");
 
   const evidencePayload = await requestJson<{
     ok?: boolean;
@@ -205,18 +212,24 @@ try {
   await cleanupCreatedData();
 }
 
-async function importSample(companyId: string, sourceType: SourceType, filePath: string, rowCount: number) {
+async function importSample(companyId: string, sourceType: SourceType, filePath: string, rowCount: number, templateVariant: string) {
   const csv = readFileSync(resolve(filePath), "utf8");
   const parsed = Papa.parse<ParsedCsvRow>(csv, {
     header: true,
     skipEmptyLines: true
   });
   assert.deepEqual(parsed.errors, [], `${filePath} should parse without errors`);
-  const headers = parsed.meta.fields ?? [];
+  const sourceHeaders = parsed.meta.fields ?? [];
+  const headerMap = new Map(sourceHeaders.map((header) => [header, `${header} ${marker}-${templateVariant}`]));
+  const headers = sourceHeaders.map((header) => headerMap.get(header) ?? header);
   const mapping = inferMapping(headers, sourceType);
   assert.ok(mapping.transactionDate, `${sourceType} should infer transactionDate`);
   assert.ok(mapping.description, `${sourceType} should infer description`);
-  const rows = parsed.data.slice(0, rowCount).map((row, index) => uniqueRow(row, mapping.description, mapping.transactionDate, index));
+  const rows = parsed.data
+    .slice(0, rowCount)
+    .map((row) => remapRowHeaders(row, headerMap))
+    .map((row, index) => uniqueRow(row, mapping.description, mapping.transactionDate, index));
+  const originalFileText = Papa.unparse(rows, { columns: headers });
 
   const payload = await requestJson<{
     ok?: boolean;
@@ -232,9 +245,9 @@ async function importSample(companyId: string, sourceType: SourceType, filePath:
       companyId,
       sourceType,
       originalFileName: `${marker}-${sourceType}.csv`,
-      originalFileText: csv,
+      originalFileText,
       originalFileMimeType: "text/csv",
-      originalFileSize: Buffer.byteLength(csv, "utf8"),
+      originalFileSize: Buffer.byteLength(originalFileText, "utf8"),
       mapping,
       headers,
       rows
@@ -264,11 +277,18 @@ async function importSample(companyId: string, sourceType: SourceType, filePath:
   assert.equal(originalFilePayload.originalFileName, `${marker}-${sourceType}.csv`, `${sourceType} original CSV filename`);
   assert.ok(originalFilePayload.originalFileText?.includes(headers[0] ?? ""), `${sourceType} original CSV should include header`);
   cleanup.importBatchIds.push(payload.importBatchId);
+  if (payload.csvTemplate?.id && payload.csvTemplate.headerSignature?.includes(marker)) {
+    cleanup.csvTemplateIds.push(payload.csvTemplate.id);
+  }
   return payload.transactions ?? [];
 }
 
 function isSameCsvTemplate(template: CsvTemplate, sourceType: SourceType, headers: string[], mapping: CsvColumnMapping) {
   return template.sourceType === sourceType && template.headerSignature === headers.join("|") && JSON.stringify(template.mapping) === JSON.stringify(mapping);
+}
+
+function remapRowHeaders(row: ParsedCsvRow, headerMap: Map<string, string>) {
+  return Object.fromEntries(Object.entries(row).map(([key, value]) => [headerMap.get(key) ?? key, value]));
 }
 
 function uniqueRow(row: ParsedCsvRow, descriptionColumn: string | undefined, dateColumn: string | undefined, index: number) {
@@ -325,6 +345,14 @@ async function cleanupCreatedData() {
     await requestJson("/api/imports", {
       method: "DELETE",
       body: { importBatchId },
+      allowFailure: true
+    });
+  }
+
+  for (const csvTemplateId of cleanup.csvTemplateIds.reverse()) {
+    await requestJson("/api/csv-templates", {
+      method: "DELETE",
+      body: { id: csvTemplateId },
       allowFailure: true
     });
   }
