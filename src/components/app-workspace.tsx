@@ -112,6 +112,16 @@ type FilingSubmissionGuideRow = {
   "마감 전 확인": string;
 };
 
+type FilingInputSummaryRow = {
+  신고: string;
+  "입력 항목": string;
+  값: string;
+  근거: string;
+  상태: string;
+  톤: StatusTone;
+  "최종 확인": string;
+};
+
 type JournalIntegrityRow = {
   점검: string;
   상태: string;
@@ -2343,6 +2353,14 @@ function ReportsPanel({
     isPeriodClosed,
     canClosePeriod
   });
+  const filingInputSummaryRows = buildFilingInputSummaryRows({
+    summary: reportSummary,
+    withholdingRows,
+    journalEntries: filteredJournalEntries,
+    ledgerRows,
+    financialStatementRows,
+    bankBalanceRows
+  });
   const vatPrepRows = buildVatCsv(reportSummary, filteredTransactions);
   const visibleTaxReports = taxReports.slice(0, 6);
   const selectedTaxReport = taxReports.find((taxReport) => taxReport.id === selectedTaxReportId) ?? null;
@@ -2361,6 +2379,7 @@ function ReportsPanel({
       filingReadinessRows,
       filingScheduleRows,
       submissionGuideRows,
+      filingInputSummaryRows,
       dataSourceRows,
       filingPackageRows,
       withholdingRows,
@@ -2409,6 +2428,7 @@ function ReportsPanel({
             filingReadinessRows,
             filingScheduleRows,
             submissionGuideRows,
+            filingInputSummaryRows,
             dataSourceRows,
             filingPackageRows,
             reviewItems: buildReviewCsv(reviews),
@@ -2495,6 +2515,7 @@ function ReportsPanel({
               filingReadinessRows,
               filingScheduleRows,
               submissionGuideRows,
+              filingInputSummaryRows,
               dataSourceRows,
               filingPackageRows,
               reviewItems: buildReviewCsv(reviews),
@@ -2750,6 +2771,50 @@ function ReportsPanel({
       <section className="panel">
         <div className="panel-header">
           <div>
+            <h2 className="panel-title">신고서 입력값 요약</h2>
+            <p className="panel-subtitle">홈택스 입력 전 금액과 상태를 신고 유형별로 대조</p>
+          </div>
+          <div className="toolbar">
+            <span className="status blue">{formatNumber(filingInputSummaryRows.length)}개 값</span>
+            <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("filing-input-summary", selectedPeriod), filingInputSummaryRows)}>
+              <Download size={16} />
+              입력값
+            </button>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>신고</th>
+                <th>입력 항목</th>
+                <th className="amount">값</th>
+                <th>근거</th>
+                <th>상태</th>
+                <th>최종 확인</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filingInputSummaryRows.map((row) => (
+                <tr key={`${row.신고}-${row["입력 항목"]}`}>
+                  <td>{row.신고}</td>
+                  <td>{row["입력 항목"]}</td>
+                  <td className="amount">{row.값}</td>
+                  <td>{row.근거}</td>
+                  <td>
+                    <span className={`status ${row.톤}`}>{row.상태}</span>
+                  </td>
+                  <td>{row["최종 확인"]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
             <h2 className="panel-title">자료 수집 현황</h2>
             <p className="panel-subtitle">신고 전 통장, 카드, 홈택스, PG 자료 반영 여부 확인</p>
           </div>
@@ -2920,6 +2985,39 @@ function ReportsPanel({
                     <td>{row.확인}</td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="table-wrap snapshot-detail">
+            <table>
+              <thead>
+                <tr>
+                  <th>신고</th>
+                  <th>입력 항목</th>
+                  <th className="amount">값</th>
+                  <th>근거</th>
+                  <th>상태</th>
+                  <th>최종 확인</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedPayload.filingInputSummaryRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="empty-cell">저장된 신고서 입력값 요약이 없습니다.</td>
+                  </tr>
+                ) : (
+                  selectedPayload.filingInputSummaryRows.map((row) => (
+                    <tr key={`${row.신고}-${row["입력 항목"]}`}>
+                      <td>{row.신고}</td>
+                      <td>{row["입력 항목"]}</td>
+                      <td className="amount">{row.값}</td>
+                      <td>{row.근거}</td>
+                      <td>{row.상태}</td>
+                      <td>{row["최종 확인"]}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -5425,6 +5523,7 @@ function buildTaxReportPayload({
   filingReadinessRows,
   filingScheduleRows,
   submissionGuideRows,
+  filingInputSummaryRows,
   dataSourceRows,
   filingPackageRows,
   reviewItems,
@@ -5444,6 +5543,7 @@ function buildTaxReportPayload({
   filingReadinessRows: ReturnType<typeof buildFilingReadinessRows>;
   filingScheduleRows: ReturnType<typeof buildFilingScheduleRows>;
   submissionGuideRows: ReturnType<typeof buildFilingSubmissionGuideRows>;
+  filingInputSummaryRows: FilingInputSummaryRow[];
   dataSourceRows: ReturnType<typeof buildDataSourceRows>;
   filingPackageRows: ReturnType<typeof buildFilingPackageRows>;
   reviewItems: ReturnType<typeof buildReviewCsv>;
@@ -5464,6 +5564,7 @@ function buildTaxReportPayload({
     filingReadinessRows,
     filingScheduleRows,
     submissionGuideRows,
+    filingInputSummaryRows,
     dataSourceRows,
     filingPackageRows,
     reviewItems,
@@ -5528,6 +5629,7 @@ function parseDetailedTaxReportPayload(payload: unknown) {
     filingReadinessRows: parseStringNumberRecordRows(record.filingReadinessRows) as ReturnType<typeof buildFilingReadinessRows>,
     filingScheduleRows: parseStringNumberRecordRows(record.filingScheduleRows) as ReturnType<typeof buildFilingScheduleRows>,
     submissionGuideRows: parseStringNumberRecordRows(record.submissionGuideRows) as ReturnType<typeof buildFilingSubmissionGuideRows>,
+    filingInputSummaryRows: parseStringNumberRecordRows(record.filingInputSummaryRows) as FilingInputSummaryRow[],
     dataSourceRows: parseStringNumberRecordRows(record.dataSourceRows) as ReturnType<typeof buildDataSourceRows>,
     filingPackageRows: parseStringNumberRecordRows(record.filingPackageRows) as ReturnType<typeof buildFilingPackageRows>,
     reviewItems: parseStringNumberRecordRows(record.reviewItems) as ReturnType<typeof buildReviewCsv>,
@@ -5668,6 +5770,7 @@ function downloadFilingPackageZip(fileName: string, payload: ReturnType<typeof b
     "csv/filing-readiness.csv",
     "csv/filing-schedule.csv",
     "csv/submission-guide.csv",
+    "csv/filing-input-summary.csv",
     "csv/data-sources.csv",
     "csv/filing-package.csv",
     "csv/transactions.csv",
@@ -5704,6 +5807,7 @@ function downloadFilingPackageZip(fileName: string, payload: ReturnType<typeof b
     { path: "csv/filing-readiness.csv", content: toCsvFileContent(payload.filingReadinessRows) },
     { path: "csv/filing-schedule.csv", content: toCsvFileContent(payload.filingScheduleRows) },
     { path: "csv/submission-guide.csv", content: toCsvFileContent(payload.submissionGuideRows) },
+    { path: "csv/filing-input-summary.csv", content: toCsvFileContent(payload.filingInputSummaryRows) },
     { path: "csv/data-sources.csv", content: toCsvFileContent(payload.dataSourceRows) },
     { path: "csv/filing-package.csv", content: toCsvFileContent(payload.filingPackageRows) },
     { path: "csv/transactions.csv", content: toCsvFileContent(payload.tables.transactions) },
@@ -6268,6 +6372,7 @@ function buildFilingWorkbookSheets(payload: ReturnType<typeof buildFilingPackage
     { name: "최종점검", rows: payload.filingReadinessRows },
     { name: "신고일정", rows: payload.filingScheduleRows },
     { name: "제출가이드", rows: payload.submissionGuideRows },
+    { name: "입력값요약", rows: payload.filingInputSummaryRows },
     { name: "자료수집", rows: payload.dataSourceRows },
     { name: "신고패키지", rows: payload.filingPackageRows },
     { name: "거래", rows: payload.tables.transactions },
@@ -6302,6 +6407,7 @@ function buildFilingSummaryRows(payload: ReturnType<typeof buildFilingPackagePay
     { 항목: "통장 잔액 대조", 값: summarizeBankBalanceRows(payload.tables.bankBalanceCheck).status },
     { 항목: "통장 잔액 차이", 값: summarizeBankBalanceRows(payload.tables.bankBalanceCheck).difference },
     { 항목: "제출 가이드 단계", 값: payload.submissionGuideRows.length },
+    { 항목: "신고서 입력값", 값: payload.filingInputSummaryRows.length },
     { 항목: "확인 필요 자료", 값: payload.dataSourceRows.filter((row) => row.상태 === "확인 필요").length },
     { 항목: "매출", 값: payload.summary.revenue },
     { 항목: "비용", 값: payload.summary.expense },
@@ -6584,6 +6690,7 @@ function buildFilingPackagePayload({
   filingReadinessRows,
   filingScheduleRows,
   submissionGuideRows,
+  filingInputSummaryRows,
   dataSourceRows,
   filingPackageRows,
   withholdingRows,
@@ -6605,6 +6712,7 @@ function buildFilingPackagePayload({
   filingReadinessRows: ReturnType<typeof buildFilingReadinessRows>;
   filingScheduleRows: ReturnType<typeof buildFilingScheduleRows>;
   submissionGuideRows: ReturnType<typeof buildFilingSubmissionGuideRows>;
+  filingInputSummaryRows: FilingInputSummaryRow[];
   dataSourceRows: ReturnType<typeof buildDataSourceRows>;
   filingPackageRows: ReturnType<typeof buildFilingPackageRows>;
   withholdingRows: ReturnType<typeof buildWithholdingRows>;
@@ -6635,6 +6743,7 @@ function buildFilingPackagePayload({
     filingReadinessRows,
     filingScheduleRows,
     submissionGuideRows,
+    filingInputSummaryRows,
     dataSourceRows,
     filingPackageRows,
     journalIntegrityRows,
@@ -6643,6 +6752,7 @@ function buildFilingPackagePayload({
     tables: {
       filingReadiness: filingReadinessRows,
       submissionGuide: submissionGuideRows,
+      filingInputSummary: filingInputSummaryRows,
       dataSources: dataSourceRows,
       transactions: buildTransactionCsv(transactions),
       evidences: buildEvidenceCsv(evidences),
@@ -7293,6 +7403,122 @@ function buildFilingSubmissionGuideRows({
       톤: closeTone,
       "입력 기준": `분류 ${classificationReadiness?.상태 ?? "-"} · 분개 ${journalReadiness?.상태 ?? "-"}`,
       "마감 전 확인": isPeriodClosed ? "잠금 후 변경 차단됨" : "스냅샷 저장 후 마감 잠금"
+    }
+  ];
+}
+
+function buildFilingInputSummaryRows({
+  summary,
+  withholdingRows,
+  journalEntries,
+  ledgerRows,
+  financialStatementRows,
+  bankBalanceRows
+}: {
+  summary: ReturnType<typeof summarizeTransactions>;
+  withholdingRows: ReturnType<typeof buildWithholdingRows>;
+  journalEntries: AppJournalEntry[];
+  ledgerRows: ReturnType<typeof buildLedgerRows>;
+  financialStatementRows: ReturnType<typeof buildFinancialStatementRows>;
+  bankBalanceRows: BankBalanceCheckRow[];
+}): FilingInputSummaryRow[] {
+  const withholdingPaymentTotal = withholdingRows.reduce((sum, row) => sum + row.지급액, 0);
+  const withholdingTaxTotal = withholdingRows.reduce((sum, row) => sum + row["예상 원천세"], 0);
+  const approvedJournalCount = journalEntries.filter((entry) => entry.status === "APPROVED").length;
+  const bankBalanceStatus = summarizeBankBalanceRows(bankBalanceRows);
+  const ledgerReady = approvedJournalCount > 0 && ledgerRows.length > 0;
+  const financialStatementReady = financialStatementRows.length > 0;
+
+  return [
+    {
+      신고: "부가세",
+      "입력 항목": "과세 매출 공급가액",
+      값: formatKRW(summary.revenue),
+      근거: "과세 매출 거래 공급가액 합계",
+      상태: summary.revenue > 0 ? "집계됨" : "매출 없음",
+      톤: summary.revenue > 0 ? "green" : "blue",
+      "최종 확인": "홈택스 매출 세금계산서, 카드/PG 매출, 통장 입금 대조"
+    },
+    {
+      신고: "부가세",
+      "입력 항목": "매출세액",
+      값: formatKRW(summary.vatOutput),
+      근거: "과세 매출 부가세 합계",
+      상태: summary.vatOutput > 0 ? "집계됨" : "세액 없음",
+      톤: summary.vatOutput > 0 ? "green" : "blue",
+      "최종 확인": "전자세금계산서 매출세액과 카드/현금영수증 매출세액 중복 여부 확인"
+    },
+    {
+      신고: "부가세",
+      "입력 항목": "매입세액 공제 추정",
+      값: formatKRW(summary.vatInput),
+      근거: "비용 거래의 매입 부가세 후보 합계",
+      상태: summary.missingEvidenceAmount > 0 ? "증빙 확인" : summary.vatInput > 0 ? "공제 후보" : "공제 없음",
+      톤: summary.missingEvidenceAmount > 0 ? "amber" : "green",
+      "최종 확인": "세금계산서, 카드전표, 현금영수증 적격증빙과 불공제 후보 확인"
+    },
+    {
+      신고: "부가세",
+      "입력 항목": "예상 납부/환급",
+      값: formatKRW(summary.vatPayable),
+      근거: "매출세액 - 매입세액",
+      상태: summary.vatPayable > 0 ? "납부 예상" : summary.vatPayable < 0 ? "환급 예상" : "차액 없음",
+      톤: summary.missingEvidenceAmount > 0 ? "amber" : "green",
+      "최종 확인": "신고서 입력 전 공제 보류 후보와 증빙 누락 금액 반영 여부 확인"
+    },
+    {
+      신고: "원천세",
+      "입력 항목": "원천세 후보 지급액",
+      값: formatKRW(withholdingPaymentTotal),
+      근거: `급여/외주/기타소득 후보 ${formatNumber(withholdingRows.length)}건`,
+      상태: withholdingRows.length > 0 ? "후보 있음" : "대상 없음",
+      톤: withholdingRows.length > 0 ? "amber" : "green",
+      "최종 확인": "세금계산서 수취 거래와 3.3% 원천징수 대상 지급을 구분"
+    },
+    {
+      신고: "원천세",
+      "입력 항목": "예상 원천세",
+      값: formatKRW(withholdingTaxTotal),
+      근거: "사업소득/기타소득 후보 지급액 기준 추정",
+      상태: withholdingTaxTotal > 0 ? "납부 후보" : "없음",
+      톤: withholdingTaxTotal > 0 ? "amber" : "green",
+      "최종 확인": "실제 원천세율, 지방소득세, 지급명세서 제출 여부 확인"
+    },
+    {
+      신고: "법인세",
+      "입력 항목": "기간 손익",
+      값: formatKRW(summary.profit),
+      근거: "매출 공급가액 - 비용 공급가액",
+      상태: summary.profit >= 0 ? "이익" : "손실",
+      톤: summary.profit >= 0 ? "green" : "amber",
+      "최종 확인": "대표자 거래, 미분류 거래, 증빙 누락 비용을 반영한 뒤 확인"
+    },
+    {
+      신고: "법인세",
+      "입력 항목": "승인 분개/원장",
+      값: `${formatNumber(approvedJournalCount)}개 / ${formatNumber(ledgerRows.length)}행`,
+      근거: "승인된 자동분개와 계정별 원장 행 수",
+      상태: ledgerReady ? "원장 있음" : "승인 필요",
+      톤: ledgerReady ? "green" : "amber",
+      "최종 확인": "자동분개 초안을 승인한 뒤 차변/대변과 계정별 원장 대조"
+    },
+    {
+      신고: "법인세",
+      "입력 항목": "재무제표 초안",
+      값: `${formatNumber(financialStatementRows.length)}개 계정`,
+      근거: "승인 분개 기준 재무상태표/손익계산서 초안",
+      상태: financialStatementReady ? "생성됨" : "대기",
+      톤: financialStatementReady ? "green" : "amber",
+      "최종 확인": "자산, 부채, 자본, 수익, 비용 계정별 잔액 검토"
+    },
+    {
+      신고: "법인세",
+      "입력 항목": "통장 잔액 대조",
+      값: formatReportAmount(bankBalanceStatus.difference),
+      근거: bankBalanceStatus.detail,
+      상태: bankBalanceStatus.status,
+      톤: bankBalanceStatus.tone,
+      "최종 확인": bankBalanceStatus.nextAction
     }
   ];
 }
