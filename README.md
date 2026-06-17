@@ -91,7 +91,7 @@ RAILWAY_EXPECTED_COMMIT=$(git rev-parse HEAD) npm run verify:railway
 - 검토함
 - 검토 항목 처리 상태 관리
 - 주요 작업 활동 로그
-- 월별 손익, 부가세 준비, 위험거래 리포트
+- 월별 손익, 부가세 신고 입력 전 정리표, 위험거래 리포트
 - 신고 일정과 신고 준비 순서 안내
 - 승인 분개 기준 계정별 원장과 재무제표 초안
 - 신고 준비자료 XLSX 통합 문서와 JSON/CSV/DB 보관 증빙 ZIP 패키지 다운로드

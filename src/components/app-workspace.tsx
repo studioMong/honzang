@@ -2059,7 +2059,7 @@ function ReportsPanel({
                 <Download size={16} />
                 거래
               </button>
-              <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("vat-report", selectedPeriod), buildVatCsv(reportSummary))}>
+              <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("vat-report", selectedPeriod), buildVatCsv(reportSummary, filteredTransactions))}>
                 <Download size={16} />
                 부가세
               </button>
@@ -3934,17 +3934,124 @@ function buildTransactionCsv(transactions: AppTransaction[]) {
   }));
 }
 
-function buildVatCsv(summary: ReturnType<typeof summarizeTransactions>) {
-  return [
-    { 항목: "과세 매출 공급가액", 금액: summary.revenue },
-    { 항목: "매출 부가세", 금액: summary.vatOutput },
-    { 항목: "매입 공급가액", 금액: summary.expense },
-    { 항목: "매입 부가세", 금액: summary.vatInput },
-    { 항목: "예상 납부/환급액", 금액: summary.vatPayable },
-    { 항목: "증빙 누락 비용", 금액: summary.missingEvidenceAmount },
-    { 항목: "검토 필요 건수", 금액: summary.reviewCount },
-    { 항목: "위험 거래 건수", 금액: summary.riskCount }
+function buildVatCsv(summary: ReturnType<typeof summarizeTransactions>, transactions: AppTransaction[]) {
+  const revenueTransactions = transactions.filter(isVatRevenueTransaction);
+  const expenseTransactions = transactions.filter(isVatExpenseTransaction);
+  const deductibleExpenses = expenseTransactions.filter(isDeductibleVatExpense);
+  const heldExpenses = expenseTransactions.filter(isHeldVatExpense);
+  const reviewExpenses = expenseTransactions.filter((transaction) => !isDeductibleVatExpense(transaction) && !isHeldVatExpense(transaction));
+  const heldVatAmount = heldExpenses.reduce((sum, transaction) => sum + vatInputCandidateAmount(transaction), 0);
+  const reviewVatAmount = reviewExpenses.reduce((sum, transaction) => sum + vatEstimatedAmount(transaction), 0);
+
+  const summaryRows = [
+    buildVatPrepRow("요약", "과세표준 및 매출세액", summary.revenue, summary.vatOutput, revenueTransactions.length, "과세 매출 합계", "세금계산서, 카드, PG 매출과 입금 매칭 확인"),
+    buildVatPrepRow("요약", "매입세액 공제 추정", summary.expense, summary.vatInput, expenseTransactions.length, "매입/비용 합계", "증빙 누락과 불공제 후보 차감 전 추정치"),
+    buildVatPrepRow("요약", "공제 보류 후보", heldExpenses.reduce((sum, transaction) => sum + vatSupplyAmount(transaction), 0), heldVatAmount, heldExpenses.length, "증빙 미확인 매입", "증빙 매칭 전에는 공제 반영 보류"),
+    buildVatPrepRow("요약", "불공제/검토 후보", reviewExpenses.reduce((sum, transaction) => sum + vatSupplyAmount(transaction), 0), reviewVatAmount, reviewExpenses.length, "해외 SaaS, 불공제 가능 비용", "홈택스 입력 전 공제 가능 여부 확인"),
+    buildVatPrepRow("요약", "예상 납부/환급", "", summary.vatPayable, transactions.length, "매출세액 - 매입세액", "확정 신고 전 검토용")
   ];
+
+  const transactionRows = [
+    ...revenueTransactions.map((transaction) =>
+      buildVatPrepRow("매출 거래", "과세표준 및 매출세액", vatSupplyAmount(transaction), vatOutputCandidateAmount(transaction), 1, vatTransactionLabel(transaction), "매출 자료 원천과 입금 매칭")
+    ),
+    ...deductibleExpenses.map((transaction) =>
+      buildVatPrepRow("매입 공제 후보", "매입세액 공제", vatSupplyAmount(transaction), vatInputCandidateAmount(transaction), 1, vatTransactionLabel(transaction), "적격증빙 확인 후 공제 반영")
+    ),
+    ...heldExpenses.map((transaction) =>
+      buildVatPrepRow("매입 공제 보류", "매입세액 공제 보류", vatSupplyAmount(transaction), vatInputCandidateAmount(transaction), 1, vatTransactionLabel(transaction), "증빙함에서 세금계산서, 카드전표, 현금영수증 매칭 필요")
+    ),
+    ...reviewExpenses.map((transaction) =>
+      buildVatPrepRow("매입 검토 후보", "불공제/공제여부 검토", vatSupplyAmount(transaction), vatEstimatedAmount(transaction), 1, vatTransactionLabel(transaction), vatReviewMemo(transaction))
+    )
+  ];
+
+  return [...summaryRows, ...transactionRows];
+}
+
+function buildVatPrepRow(
+  category: string,
+  location: string,
+  supplyAmount: string | number,
+  vatAmount: string | number,
+  count: number,
+  basis: string,
+  review: string
+) {
+  return {
+    구분: category,
+    "신고서 입력/확인 위치": location,
+    공급가액: supplyAmount,
+    세액: vatAmount,
+    건수: count,
+    "거래/근거": basis,
+    검토: review
+  };
+}
+
+function isVatRevenueTransaction(transaction: AppTransaction) {
+  const account = getTransactionAccount(transaction);
+  if (transaction.depositAmount <= 0) return false;
+  if (account) return account.type === "REVENUE";
+  return transaction.sourceType === "HOMETAX_SALES";
+}
+
+function isVatExpenseTransaction(transaction: AppTransaction) {
+  const account = getTransactionAccount(transaction);
+  if (transaction.withdrawalAmount <= 0) return false;
+  return account ? account.type === "EXPENSE" : true;
+}
+
+function isDeductibleVatExpense(transaction: AppTransaction) {
+  return vatInputCandidateAmount(transaction) > 0 && !hasMissingVatEvidence(transaction) && !hasForeignSaasSignal(transaction);
+}
+
+function isHeldVatExpense(transaction: AppTransaction) {
+  return vatInputCandidateAmount(transaction) > 0 && hasMissingVatEvidence(transaction) && !hasForeignSaasSignal(transaction);
+}
+
+function vatGrossAmount(transaction: AppTransaction) {
+  return transaction.depositAmount || transaction.withdrawalAmount || 0;
+}
+
+function vatSupplyAmount(transaction: AppTransaction) {
+  return transaction.supplyAmount ?? Math.round(vatGrossAmount(transaction) / 1.1);
+}
+
+function vatEstimatedAmount(transaction: AppTransaction) {
+  return transaction.vatAmount ?? Math.round(vatGrossAmount(transaction) - vatSupplyAmount(transaction));
+}
+
+function vatOutputCandidateAmount(transaction: AppTransaction) {
+  return transaction.vatAmount ?? vatEstimatedAmount(transaction);
+}
+
+function vatInputCandidateAmount(transaction: AppTransaction) {
+  if (transaction.vatAmount !== null && transaction.vatAmount !== undefined) return transaction.vatAmount;
+  const account = getTransactionAccount(transaction);
+  if (account?.taxCategory === "VAT_INPUT" && !hasForeignSaasSignal(transaction)) return vatEstimatedAmount(transaction);
+  return 0;
+}
+
+function hasForeignSaasSignal(transaction: AppTransaction) {
+  const text = `${transaction.description} ${transaction.counterparty ?? ""}`.toLowerCase();
+  return ["openai", "aws", "github", "vercel", "railway", "stripe"].some((keyword) => text.includes(keyword));
+}
+
+function hasMissingVatEvidence(transaction: AppTransaction) {
+  return ["UNCHECKED", "MISSING"].includes(transaction.evidenceStatus);
+}
+
+function vatTransactionLabel(transaction: AppTransaction) {
+  return `${transaction.transactionDate} · ${SOURCE_TYPE_LABELS[transaction.sourceType]} · ${transaction.counterparty ?? "-"} · ${transaction.description}`;
+}
+
+function vatReviewMemo(transaction: AppTransaction) {
+  if (hasForeignSaasSignal(transaction)) return "해외 SaaS 또는 외화 결제는 영세율/대리납부/불공제 여부 검토";
+  if (hasMissingVatEvidence(transaction)) return "증빙 매칭 전 공제 반영 보류";
+  const account = getTransactionAccount(transaction);
+  if (account?.taxCategory !== "VAT_INPUT") return "계정과목상 매입세액 공제 대상인지 확인";
+  return "홈택스 입력 전 공제 가능 여부 확인";
 }
 
 function buildReviewCsv(items: ReturnType<typeof buildReviewItems>) {
@@ -4027,7 +4134,7 @@ function buildFilingPackagePayload({
     tables: {
       transactions: buildTransactionCsv(transactions),
       evidences: buildEvidenceCsv(evidences),
-      vatReport: buildVatCsv(summary),
+      vatReport: buildVatCsv(summary, transactions),
       reviewItems: buildReviewCsv(reviews),
       withholdingCandidates: withholdingRows,
       corporateTaxPrep: corporateTaxRows,
