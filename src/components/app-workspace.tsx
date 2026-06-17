@@ -67,6 +67,16 @@ const mappingFields: Array<{ key: keyof CsvColumnMapping; label: string; require
 
 const sourceOptions: SourceType[] = ["BANK", "CARD", "HOMETAX_SALES", "HOMETAX_PURCHASES", "CASH_RECEIPT", "PG"];
 
+const sampleCsvLinks: Record<SourceType, { label: string; href: string }> = {
+  BANK: { label: "통장 샘플", href: "/samples/bank-transactions.csv" },
+  CARD: { label: "카드 샘플", href: "/samples/card-transactions.csv" },
+  HOMETAX_SALES: { label: "홈택스 매출 샘플", href: "/samples/hometax-sales.csv" },
+  HOMETAX_PURCHASES: { label: "홈택스 매입 샘플", href: "/samples/hometax-purchases.csv" },
+  CASH_RECEIPT: { label: "현금영수증 샘플", href: "/samples/hometax-purchases.csv" },
+  PG: { label: "PG 정산 샘플", href: "/samples/pg-settlements.csv" },
+  MANUAL: { label: "수기 샘플", href: "/samples/bank-transactions.csv" }
+};
+
 export function AppWorkspace({ initialView = "dashboard" }: { initialView?: ViewKey }) {
   const [activeView, setActiveView] = useState<ViewKey>(initialView);
   const [company, setCompany] = useState<AppCompany>(sampleCompany);
@@ -401,6 +411,10 @@ function CsvImportPanel({
                 </option>
               ))}
             </select>
+            <a className="secondary-button" href={sampleCsvLinks[sourceType].href} download>
+              <Download size={16} />
+              {sampleCsvLinks[sourceType].label}
+            </a>
             <button className="primary-button" disabled={!canImport || saving} onClick={() => void submitImport()}>
               {saving ? <Loader2 size={17} /> : <CheckCircle2 size={17} />}
               가져오기
@@ -424,6 +438,14 @@ function CsvImportPanel({
                 <span>{preview ? `${formatNumber(preview.rows.length)}행 · ${formatNumber(preview.headers.length)}개 컬럼` : "통장, 카드, 홈택스, PG"}</span>
               </span>
             </label>
+
+            <div className="sample-links">
+              {sourceOptions.map((option) => (
+                <a key={option} href={sampleCsvLinks[option].href} download>
+                  {SOURCE_TYPE_LABELS[option]}
+                </a>
+              ))}
+            </div>
 
             {previewRows.length > 0 && (
               <div className="table-wrap" style={{ marginTop: 16 }}>
