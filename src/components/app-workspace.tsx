@@ -868,6 +868,7 @@ function ReportsPanel({
   const periodOptions = useMemo(() => buildPeriodOptions(transactions), [transactions]);
   const [period, setPeriod] = useState(() => periodOptions[0]?.value ?? "ALL");
   const [savingReport, setSavingReport] = useState(false);
+  const [selectedTaxReportId, setSelectedTaxReportId] = useState<string | null>(null);
   const selectedPeriod = period === "ALL" || periodOptions.some((option) => option.value === period) ? period : periodOptions[0]?.value ?? "ALL";
   const filteredTransactions = useMemo(() => filterTransactionsByPeriod(transactions, selectedPeriod), [selectedPeriod, transactions]);
   const filteredJournalEntries = useMemo(() => filterJournalEntriesByPeriod(journalEntries, selectedPeriod), [journalEntries, selectedPeriod]);
@@ -881,6 +882,8 @@ function ReportsPanel({
   const periodLabel = formatPeriodLabel(selectedPeriod);
   const periodRange = getReportPeriodRange(selectedPeriod, filteredTransactions);
   const visibleTaxReports = taxReports.slice(0, 6);
+  const selectedTaxReport = taxReports.find((taxReport) => taxReport.id === selectedTaxReportId) ?? null;
+  const selectedPayload = selectedTaxReport ? parseDetailedTaxReportPayload(selectedTaxReport.calculatedPayload) : null;
 
   async function saveSnapshot() {
     setSavingReport(true);
@@ -952,6 +955,7 @@ function ReportsPanel({
                   <th className="amount">거래</th>
                   <th className="amount">손익</th>
                   <th className="amount">예상 부가세</th>
+                  <th>작업</th>
                 </tr>
               </thead>
               <tbody>
@@ -967,9 +971,138 @@ function ReportsPanel({
                       <td className="amount">{formatNumber(payload.transactionCount ?? 0)}건</td>
                       <td className="amount">{formatKRW(payload.profit ?? 0)}</td>
                       <td className="amount">{formatKRW(payload.vatPayable ?? 0)}</td>
+                      <td>
+                        <button className="ghost-button" onClick={() => setSelectedTaxReportId(taxReport.id)}>열기</button>
+                      </td>
                     </tr>
                   );
                 })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {selectedTaxReport && selectedPayload && (
+        <section className="panel">
+          <div className="panel-header">
+            <h2 className="panel-title">리포트 상세</h2>
+            <div className="toolbar">
+              <span className="status blue">{selectedPayload.periodLabel || taxReportTypeLabel(selectedTaxReport.reportType)}</span>
+              <button
+                className="secondary-button"
+                onClick={() => downloadJson(`honzang-report-${selectedTaxReport.periodStart}-${selectedTaxReport.id}.json`, selectedTaxReport)}
+              >
+                <Download size={16} />
+                JSON
+              </button>
+              <button className="ghost-button" onClick={() => setSelectedTaxReportId(null)}>닫기</button>
+            </div>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>항목</th>
+                  <th className="amount">값</th>
+                  <th>확인</th>
+                </tr>
+              </thead>
+              <tbody>
+                {buildTaxReportDetailRows(selectedTaxReport, selectedPayload).map((row) => (
+                  <tr key={row.항목}>
+                    <td>{row.항목}</td>
+                    <td className="amount">{row.값}</td>
+                    <td>{row.확인}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="split snapshot-detail">
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>신고 패키지</th>
+                    <th>상태</th>
+                    <th className="amount">금액/건수</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedPayload.filingPackageRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="empty-cell">저장된 신고 패키지 항목이 없습니다.</td>
+                    </tr>
+                  ) : (
+                    selectedPayload.filingPackageRows.map((row) => (
+                      <tr key={row.구분}>
+                        <td>{row.구분}</td>
+                        <td>{row.상태}</td>
+                        <td className="amount">{row["금액/건수"]}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>법인세 체크</th>
+                    <th className="amount">값</th>
+                    <th>상태</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedPayload.corporateTaxRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="empty-cell">저장된 법인세 체크 항목이 없습니다.</td>
+                    </tr>
+                  ) : (
+                    selectedPayload.corporateTaxRows.map((row) => (
+                      <tr key={row.항목}>
+                        <td>{row.항목}</td>
+                        <td className="amount">{row.값}</td>
+                        <td>{row.상태}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="table-wrap snapshot-detail">
+            <table>
+              <thead>
+                <tr>
+                  <th>원천세 후보</th>
+                  <th>거래처</th>
+                  <th className="amount">지급액</th>
+                  <th className="amount">예상 원천세</th>
+                  <th>확인</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedPayload.withholdingRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="empty-cell">저장된 원천세 후보가 없습니다.</td>
+                  </tr>
+                ) : (
+                  selectedPayload.withholdingRows.map((row) => (
+                    <tr key={`${row.거래일}-${row.거래처}-${row.지급액}`}>
+                      <td>{formatDate(row.거래일)}</td>
+                      <td>{row.거래처}</td>
+                      <td className="amount">{formatKRW(row.지급액)}</td>
+                      <td className="amount">{row["예상 원천세"] ? formatKRW(row["예상 원천세"]) : "-"}</td>
+                      <td>{row.확인}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -1535,6 +1668,62 @@ function parseTaxReportPayload(payload: unknown) {
   };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function parseStringNumberRecordRows(rows: unknown): Array<Record<string, string | number>> {
+  if (!Array.isArray(rows)) return [];
+  return rows.flatMap((row) => {
+    if (!isRecord(row)) return [];
+    const normalized: Record<string, string | number> = {};
+    Object.entries(row).forEach(([key, value]) => {
+      if (typeof value === "string" || typeof value === "number") normalized[key] = value;
+    });
+    return [normalized];
+  });
+}
+
+function parseDetailedTaxReportPayload(payload: unknown) {
+  const record = isRecord(payload) ? payload : {};
+  const summary = isRecord(record.summary) ? record.summary : {};
+  return {
+    period: typeof record.period === "string" ? record.period : "",
+    periodLabel: typeof record.periodLabel === "string" ? record.periodLabel : "",
+    summary: {
+      revenue: typeof summary.revenue === "number" ? summary.revenue : 0,
+      expense: typeof summary.expense === "number" ? summary.expense : 0,
+      profit: typeof summary.profit === "number" ? summary.profit : 0,
+      vatOutput: typeof summary.vatOutput === "number" ? summary.vatOutput : 0,
+      vatInput: typeof summary.vatInput === "number" ? summary.vatInput : 0,
+      vatPayable: typeof summary.vatPayable === "number" ? summary.vatPayable : 0,
+      missingEvidenceAmount: typeof summary.missingEvidenceAmount === "number" ? summary.missingEvidenceAmount : 0,
+      reviewCount: typeof summary.reviewCount === "number" ? summary.reviewCount : 0,
+      riskCount: typeof summary.riskCount === "number" ? summary.riskCount : 0
+    },
+    filingPackageRows: parseStringNumberRecordRows(record.filingPackageRows) as ReturnType<typeof buildFilingPackageRows>,
+    withholdingRows: parseStringNumberRecordRows(record.withholdingRows) as ReturnType<typeof buildWithholdingRows>,
+    corporateTaxRows: parseStringNumberRecordRows(record.corporateTaxRows) as ReturnType<typeof buildCorporateTaxRows>,
+    ledgerRows: parseStringNumberRecordRows(record.ledgerRows),
+    transactionCount: typeof record.transactionCount === "number" ? record.transactionCount : 0,
+    journalEntryCount: typeof record.journalEntryCount === "number" ? record.journalEntryCount : 0
+  };
+}
+
+function buildTaxReportDetailRows(taxReport: AppTaxReport, payload: ReturnType<typeof parseDetailedTaxReportPayload>) {
+  return [
+    { 항목: "기간", 값: `${formatDate(taxReport.periodStart)} - ${formatDate(taxReport.periodEnd)}`, 확인: payload.periodLabel || taxReportTypeLabel(taxReport.reportType) },
+    { 항목: "거래", 값: `${formatNumber(payload.transactionCount)}건`, 확인: "저장 당시 기간 필터 기준" },
+    { 항목: "승인 분개", 값: `${formatNumber(payload.journalEntryCount)}개`, 확인: "저장 당시 승인 분개 기준" },
+    { 항목: "매출 공급가액", 값: formatKRW(payload.summary.revenue), 확인: "부채성 입금 제외" },
+    { 항목: "비용 공급가액", 값: formatKRW(payload.summary.expense), 확인: "비용 계정 출금 기준" },
+    { 항목: "손익", 값: formatKRW(payload.summary.profit), 확인: payload.summary.profit >= 0 ? "이익" : "손실" },
+    { 항목: "예상 부가세", 값: formatKRW(payload.summary.vatPayable), 확인: "확정 전 신고 준비 금액" },
+    { 항목: "증빙 누락", 값: formatKRW(payload.summary.missingEvidenceAmount), 확인: `${formatNumber(payload.summary.reviewCount)}건 검토` },
+    { 항목: "계정별 원장", 값: `${formatNumber(payload.ledgerRows.length)}행`, 확인: "저장 당시 원장 행 수" }
+  ];
+}
+
 function taxReportTypeLabel(type: AppTaxReport["reportType"]) {
   const labels: Record<AppTaxReport["reportType"], string> = {
     MONTHLY_PROFIT: "월 손익",
@@ -1602,6 +1791,18 @@ function saveLocalMapping(sourceType: SourceType, headers: string[], mapping: Cs
 function downloadCsv(fileName: string, rows: Array<Record<string, string | number>>) {
   const csv = toCsv(rows);
   const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function downloadJson(fileName: string, payload: unknown) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;

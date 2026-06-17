@@ -497,6 +497,14 @@ th.amount {
   gap: 6px;
 }
 
+.snapshot-detail {
+  margin: 16px 18px 18px;
+}
+
+.snapshot-detail table {
+  min-width: 520px;
+}
+
 .muted {
   color: var(--muted);
 }
