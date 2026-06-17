@@ -5,6 +5,7 @@ import { getPrisma } from "@/lib/db";
 import { sampleCompany } from "@/lib/sample-data";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
+import { parseJsonRequest } from "@/lib/server/request-json";
 import { serializeClassificationRule, serializeCsvTemplate } from "@/lib/server/serializers";
 
 const companySchema = z.object({
@@ -60,10 +61,8 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
-  const parsed = companySchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
-  }
+  const parsed = await parseJsonRequest(request, companySchema, { label: "회사 설정 저장 요청" });
+  if (!parsed.ok) return parsed.response;
 
   const db = getPrisma();
   if (!db) {

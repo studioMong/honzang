@@ -4,6 +4,7 @@ import { DEFAULT_COMPANY_ID } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
+import { parseJsonRequest } from "@/lib/server/request-json";
 import { serializeClassificationRule } from "@/lib/server/serializers";
 
 const sourceTypeSchema = z.enum(["BANK", "CARD", "HOMETAX_SALES", "HOMETAX_PURCHASES", "CASH_RECEIPT", "PG", "MANUAL"]);
@@ -51,10 +52,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const parsed = ruleSchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
-  }
+  const parsed = await parseJsonRequest(request, ruleSchema, { label: "자동 분류 규칙 추가 요청" });
+  if (!parsed.ok) return parsed.response;
 
   const payload = parsed.data;
   const db = getPrisma();
@@ -119,10 +118,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const parsed = patchSchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
-  }
+  const parsed = await parseJsonRequest(request, patchSchema, { label: "자동 분류 규칙 수정 요청" });
+  if (!parsed.ok) return parsed.response;
 
   const payload = parsed.data;
   const db = getPrisma();
@@ -193,10 +190,8 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const parsed = deleteSchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
-  }
+  const parsed = await parseJsonRequest(request, deleteSchema, { label: "자동 분류 규칙 삭제 요청" });
+  if (!parsed.ok) return parsed.response;
 
   const payload = parsed.data;
   const db = getPrisma();

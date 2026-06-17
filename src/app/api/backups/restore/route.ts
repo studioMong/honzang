@@ -18,8 +18,11 @@ import {
   validateEvidenceFileUrl
 } from "@/lib/server/evidence-validation";
 import { validateJsonPayloadSize } from "@/lib/server/json-payload-validation";
+import { parseJsonRequest } from "@/lib/server/request-json";
 import { MAX_ORIGINAL_FILE_TEXT_SIZE, validateOriginalFileText } from "@/lib/server/source-file-validation";
 import { validateTransactionAmounts } from "@/lib/server/transaction-validation";
+
+const MAX_BACKUP_RESTORE_REQUEST_BYTES = 25_000_000;
 
 const sourceTypeSchema = z.enum(["BANK", "CARD", "HOMETAX_SALES", "HOMETAX_PURCHASES", "CASH_RECEIPT", "PG", "MANUAL"]);
 const accountTypeSchema = z.enum(["ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"]);
@@ -265,13 +268,10 @@ type WorkspaceBackup = z.infer<typeof workspaceBackupSchema>;
 type RestoreDb = NonNullable<ReturnType<typeof getPrisma>>;
 
 export async function POST(request: Request) {
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ ok: false, message: "백업 JSON 요청 본문을 읽을 수 없습니다." }, { status: 400 });
-  }
+  const parsedBody = await parseJsonRequest(request, z.unknown(), { label: "백업 복원 요청", maxBytes: MAX_BACKUP_RESTORE_REQUEST_BYTES });
+  if (!parsedBody.ok) return parsedBody.response;
 
+  const body = parsedBody.data;
   if (!isRecord(body)) {
     return NextResponse.json({ ok: false, message: "백업 복원 요청 형식이 아닙니다." }, { status: 400 });
   }

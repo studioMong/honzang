@@ -78,6 +78,12 @@ try {
   await expectInvalidCsvImportRows();
   await expectInvalidCsvImportTaxAmounts();
   await expectInvalidCsvOriginalFile();
+  await expectMalformedJson("/api/imports");
+  await expectMalformedJson("/api/companies", "PATCH");
+  await expectMalformedJson("/api/reviews", "PATCH");
+  await expectMalformedJson("/api/vendors");
+  await expectMalformedJson("/api/classification-rules");
+  await expectMalformedJson("/api/csv-templates", "DELETE");
   await expectInvalidManualTransactionDate();
   await expectInvalidManualTransactionJson();
   await expectInvalidManualTransactionAmounts();
@@ -178,6 +184,22 @@ async function expectSecurityHeaders(path) {
   const issues = findSecurityHeaderIssues(response.headers);
   if (issues.length > 0) {
     throw new Error(`${path} missing security headers: ${issues.join(", ")}`);
+  }
+}
+
+async function expectMalformedJson(path, method = "POST") {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: "{"
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`${method} ${path} should reject malformed JSON, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_JSON_PAYLOAD") {
+    throw new Error(`${method} ${path} returned unexpected invalid JSON payload: ${text}`);
   }
 }
 

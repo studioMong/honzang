@@ -4,6 +4,7 @@ import { DEFAULT_COMPANY_ID } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
+import { parseJsonRequest } from "@/lib/server/request-json";
 import { serializeVendor } from "@/lib/server/serializers";
 
 const withholdingTypes = ["NONE", "TAX_INVOICE", "BUSINESS_INCOME", "OTHER_INCOME", "PAYROLL"] as const;
@@ -48,10 +49,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const parsed = vendorSchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
-  }
+  const parsed = await parseJsonRequest(request, vendorSchema, { label: "거래처 추가 요청" });
+  if (!parsed.ok) return parsed.response;
 
   const db = getPrisma();
   if (!db) {
@@ -105,10 +104,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const parsed = vendorPatchSchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
-  }
+  const parsed = await parseJsonRequest(request, vendorPatchSchema, { label: "거래처 수정 요청" });
+  if (!parsed.ok) return parsed.response;
 
   const db = getPrisma();
   if (!db) {
@@ -161,10 +158,8 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const parsed = vendorDeleteSchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
-  }
+  const parsed = await parseJsonRequest(request, vendorDeleteSchema, { label: "거래처 삭제 요청" });
+  if (!parsed.ok) return parsed.response;
 
   const db = getPrisma();
   if (!db) {

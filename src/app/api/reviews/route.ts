@@ -7,6 +7,7 @@ import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { closedPeriodResponse, findClosedPeriodForDate } from "@/lib/server/closing-periods";
 import { buildEvidenceAmountReviewItems } from "@/lib/server/evidence-amount-reviews";
+import { parseJsonRequest } from "@/lib/server/request-json";
 import { serializeEvidence, serializeReviewItem, serializeTransaction } from "@/lib/server/serializers";
 import type { ReviewItem } from "@/types";
 
@@ -123,10 +124,8 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
-  const parsed = reviewStatusSchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
-  }
+  const parsed = await parseJsonRequest(request, reviewStatusSchema, { label: "검토 상태 변경 요청" });
+  if (!parsed.ok) return parsed.response;
 
   const db = getPrisma();
   if (!db) {

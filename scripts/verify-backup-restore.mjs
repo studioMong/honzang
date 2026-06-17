@@ -165,6 +165,7 @@ try {
   await waitForServer();
   await verifySettingsUi();
   await verifyDryRun();
+  await verifyMalformedJson();
   await verifyInvalidDateBackup();
   await verifyInvalidCsvTemplateBackup();
   await verifyInvalidJsonPayloadBackup();
@@ -236,6 +237,19 @@ async function verifyDryRun() {
   assert.equal(body.restoredCounts?.auditEvents, 1, "dry-run should count audit events");
   assert.equal(body.restoredCounts?.closingPeriods, 1, "dry-run should count closing periods");
   assert.equal(body.restoredCounts?.evidences, 1, "dry-run should count evidences");
+}
+
+async function verifyMalformedJson() {
+  const response = await fetch(`${baseUrl}/api/backups/restore`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{",
+    cache: "no-store"
+  });
+  const text = await response.text();
+  assert.equal(response.status, 400, `/api/backups/restore should reject malformed JSON: ${text}`);
+  const body = JSON.parse(text);
+  assert.equal(body.code, "INVALID_JSON_PAYLOAD", "backup restore should use the shared malformed JSON error code");
 }
 
 async function verifyInvalidEvidenceBackup() {

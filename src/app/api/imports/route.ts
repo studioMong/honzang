@@ -9,6 +9,7 @@ import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { closedPeriodResponse, findClosedPeriodForDates } from "@/lib/server/closing-periods";
 import { parseStrictDate } from "@/lib/server/date-validation";
+import { parseJsonRequest } from "@/lib/server/request-json";
 import { MAX_ORIGINAL_FILE_TEXT_SIZE, validateOriginalFileText } from "@/lib/server/source-file-validation";
 import { validateTransactionTaxAmounts } from "@/lib/server/transaction-validation";
 import {
@@ -22,6 +23,7 @@ import {
 import type { CsvColumnMapping, ParsedCsvRow, SourceType } from "@/types";
 
 const MAX_IMPORT_VALIDATION_ISSUES = 25;
+const MAX_IMPORT_REQUEST_BYTES = MAX_ORIGINAL_FILE_TEXT_SIZE + 3_000_000;
 
 const mappingSchema = z.object({
   transactionDate: z.string().optional(),
@@ -195,10 +197,8 @@ export async function GET(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const parsed = deleteImportSchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
-  }
+  const parsed = await parseJsonRequest(request, deleteImportSchema, { label: "가져오기 삭제 요청" });
+  if (!parsed.ok) return parsed.response;
 
   const db = getPrisma();
   if (!db) {
@@ -311,10 +311,8 @@ export async function DELETE(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const parsed = importSchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
-  }
+  const parsed = await parseJsonRequest(request, importSchema, { label: "CSV 가져오기 요청", maxBytes: MAX_IMPORT_REQUEST_BYTES });
+  if (!parsed.ok) return parsed.response;
 
   const payload = parsed.data;
   const originalFileIssue = validateOriginalFileText(payload);

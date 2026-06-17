@@ -4,6 +4,7 @@ import { DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
+import { parseJsonRequest } from "@/lib/server/request-json";
 
 const deleteSchema = z.object({
   companyId: z.string().default(DEFAULT_COMPANY_ID),
@@ -11,10 +12,8 @@ const deleteSchema = z.object({
 });
 
 export async function DELETE(request: Request) {
-  const parsed = deleteSchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
-  }
+  const parsed = await parseJsonRequest(request, deleteSchema, { label: "CSV 매핑 템플릿 삭제 요청" });
+  if (!parsed.ok) return parsed.response;
 
   const db = getPrisma();
   if (!db) {
