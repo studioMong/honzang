@@ -8,6 +8,7 @@ import { applyClassificationRules, applyVendorDefaults, normalizeCsvRow, parseMo
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { closedPeriodResponse, findClosedPeriodForDates } from "@/lib/server/closing-periods";
+import { parseStrictDate } from "@/lib/server/date-validation";
 import { MAX_ORIGINAL_FILE_TEXT_SIZE, validateOriginalFileText } from "@/lib/server/source-file-validation";
 import { validateTransactionTaxAmounts } from "@/lib/server/transaction-validation";
 import {
@@ -114,7 +115,7 @@ function validateImportRows(payload: ImportPayloadData) {
     const supplyAmount = mapping.supplyAmount ? parseMoney(getMappedCsvValue(sourceRow, mapping.supplyAmount)) : null;
     const vatAmount = mapping.vatAmount ? parseMoney(getMappedCsvValue(sourceRow, mapping.vatAmount)) : null;
 
-    if (!parseStrictImportDate(transactionDate)) {
+    if (!parseStrictDate(String(transactionDate ?? ""))) {
       pushIssue(`${rowNumber}행 거래일 값이 비어 있거나 날짜 형식이 아닙니다.`);
     }
     if (!String(description ?? "").trim()) {
@@ -145,34 +146,6 @@ function validateImportRows(payload: ImportPayloadData) {
 
 function getMappedCsvValue(row: ParsedCsvRow, column?: string) {
   return column?.trim() ? row[column.trim()] : undefined;
-}
-
-function parseStrictImportDate(value: unknown) {
-  const text = String(value ?? "").trim();
-  if (!text) return null;
-
-  const dotted = text.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})/);
-  if (dotted) {
-    const [, year, month, day] = dotted;
-    return validDateParts(Number(year), Number(month), Number(day));
-  }
-
-  const compact = text.match(/^(\d{4})(\d{2})(\d{2})/);
-  if (compact) {
-    const [, year, month, day] = compact;
-    return validDateParts(Number(year), Number(month), Number(day));
-  }
-
-  const parsed = new Date(text);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toISOString().slice(0, 10);
-}
-
-function validDateParts(year: number, month: number, day: number) {
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  const date = new Date(Date.UTC(year, month - 1, day));
-  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 export async function GET(request: Request) {
