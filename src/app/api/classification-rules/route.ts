@@ -128,6 +128,16 @@ export async function PATCH(request: Request) {
   }
 
   const company = await ensureDefaultCompany(db);
+  const existing = await db.classificationRule.findFirst({
+    where: {
+      id: payload.id,
+      companyId: company.id
+    }
+  });
+  if (!existing) {
+    return NextResponse.json({ ok: false, message: "자동 분류 규칙을 찾을 수 없습니다." }, { status: 404 });
+  }
+
   const account = payload.accountCode
     ? await db.account.findFirst({
         where: {
@@ -151,10 +161,7 @@ export async function PATCH(request: Request) {
   if (payload.isActive !== undefined) data.isActive = payload.isActive;
 
   const updated = await db.classificationRule.update({
-    where: {
-      id: payload.id,
-      companyId: company.id
-    },
+    where: { id: existing.id },
     data
   });
   await recordAuditEvent(db, {
@@ -192,11 +199,18 @@ export async function DELETE(request: Request) {
   }
 
   const company = await ensureDefaultCompany(db);
-  const deleted = await db.classificationRule.delete({
+  const existing = await db.classificationRule.findFirst({
     where: {
       id: payload.id,
       companyId: company.id
     }
+  });
+  if (!existing) {
+    return NextResponse.json({ ok: false, message: "자동 분류 규칙을 찾을 수 없습니다." }, { status: 404 });
+  }
+
+  const deleted = await db.classificationRule.delete({
+    where: { id: existing.id }
   });
   await recordAuditEvent(db, {
     companyId: company.id,

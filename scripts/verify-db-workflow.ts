@@ -78,6 +78,29 @@ try {
   assert.equal(invalidClassificationRulePatchPayload.ok, false, "classification rule patch with a missing account should fail");
   assert.match(invalidClassificationRulePatchPayload.message ?? "", /계정과목/, "classification rule patch should report a missing account");
 
+  const missingClassificationRulePatchPayload = await requestJson<{ ok?: boolean; message?: string }>("/api/classification-rules", {
+    method: "PATCH",
+    expectedStatus: 404,
+    body: {
+      companyId,
+      id: `${marker}-missing-rule`,
+      isActive: false
+    }
+  });
+  assert.equal(missingClassificationRulePatchPayload.ok, false, "missing classification rule patch should fail");
+  assert.match(missingClassificationRulePatchPayload.message ?? "", /자동 분류 규칙/, "missing classification rule patch should report a missing rule");
+
+  const missingClassificationRuleDeletePayload = await requestJson<{ ok?: boolean; message?: string }>("/api/classification-rules", {
+    method: "DELETE",
+    expectedStatus: 404,
+    body: {
+      companyId,
+      id: `${marker}-missing-rule`
+    }
+  });
+  assert.equal(missingClassificationRuleDeletePayload.ok, false, "missing classification rule delete should fail");
+  assert.match(missingClassificationRuleDeletePayload.message ?? "", /자동 분류 규칙/, "missing classification rule delete should report a missing rule");
+
   await requestJson<{ ok?: boolean; mode?: string; transaction?: AppTransaction }>("/api/transactions", {
     method: "PATCH",
     body: {
