@@ -56,6 +56,8 @@ try {
   await expectInvalidEvidenceDate();
   await expectInvalidEvidenceFile();
   await expectInvalidEvidenceFileUrl();
+  await expectInvalidReportPeriod();
+  await expectInvalidReportPeriodRange();
   await expectText("/", (body) =>
     ["혼자장부", "최근 월 신고 준비", "오늘 할 일", "1인법인 신고 준비"].every((text) => body.includes(text))
   );
@@ -369,6 +371,48 @@ async function expectInvalidEvidenceFileUrl() {
   const body = JSON.parse(text);
   if (body.code !== "INVALID_EVIDENCE_FILE_URL") {
     throw new Error(`/api/evidences returned unexpected file URL validation payload: ${text}`);
+  }
+}
+
+async function expectInvalidReportPeriod() {
+  const response = await fetch(`${baseUrl}/api/reports`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      reportType: "CORPORATE_TAX_PREP",
+      periodStart: "2026-02-31",
+      periodEnd: "2026-12-31",
+      calculatedPayload: {}
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/reports should reject invalid report periods, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_REPORT_PERIOD") {
+    throw new Error(`/api/reports returned unexpected period validation payload: ${text}`);
+  }
+}
+
+async function expectInvalidReportPeriodRange() {
+  const response = await fetch(`${baseUrl}/api/reports`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      reportType: "CORPORATE_TAX_PREP",
+      periodStart: "2026-12-31",
+      periodEnd: "2026-01-01",
+      calculatedPayload: {}
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/reports should reject reversed report periods, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_REPORT_PERIOD_RANGE") {
+    throw new Error(`/api/reports returned unexpected period range validation payload: ${text}`);
   }
 }
 

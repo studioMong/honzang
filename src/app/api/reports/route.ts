@@ -6,7 +6,8 @@ import { getPrisma } from "@/lib/db";
 import { sampleTaxReports } from "@/lib/sample-data";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
-import { closedPeriodResponse, findClosedPeriodForDate } from "@/lib/server/closing-periods";
+import { closedPeriodResponse, findClosedPeriodForDates } from "@/lib/server/closing-periods";
+import { parseStrictDate } from "@/lib/server/date-validation";
 import { serializeTaxReport } from "@/lib/server/serializers";
 
 const taxReportSchema = z.object({
@@ -45,11 +46,31 @@ export async function POST(request: Request) {
   }
 
   const payload = parsed.data;
-  const periodStart = new Date(payload.periodStart);
-  const periodEnd = new Date(payload.periodEnd);
+  const normalizedPeriodStart = parseStrictDate(payload.periodStart);
+  const normalizedPeriodEnd = parseStrictDate(payload.periodEnd);
 
-  if (Number.isNaN(periodStart.getTime()) || Number.isNaN(periodEnd.getTime())) {
-    return NextResponse.json({ ok: false, message: "기간 날짜가 올바르지 않습니다." }, { status: 400 });
+  if (!normalizedPeriodStart || !normalizedPeriodEnd) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_REPORT_PERIOD",
+        message: "리포트 기간 날짜가 올바르지 않습니다."
+      },
+      { status: 400 }
+    );
+  }
+
+  const periodStart = new Date(normalizedPeriodStart);
+  const periodEnd = new Date(normalizedPeriodEnd);
+  if (periodStart > periodEnd) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_REPORT_PERIOD_RANGE",
+        message: "리포트 기간 종료일은 시작일보다 빠를 수 없습니다."
+      },
+      { status: 400 }
+    );
   }
 
   const db = getPrisma();
@@ -59,8 +80,8 @@ export async function POST(request: Request) {
       taxReport: {
         id: `tax-report-preview-${Date.now()}`,
         reportType: payload.reportType,
-        periodStart: payload.periodStart,
-        periodEnd: payload.periodEnd,
+        periodStart: normalizedPeriodStart,
+        periodEnd: normalizedPeriodEnd,
         calculatedPayload: payload.calculatedPayload,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -70,7 +91,7 @@ export async function POST(request: Request) {
   }
 
   const company = await ensureDefaultCompany(db);
-  const closedPeriod = await findClosedPeriodForDate(db, company.id, periodStart);
+  const closedPeriod = await findClosedPeriodForDates(db, company.id, [periodStart, periodEnd]);
   if (closedPeriod) return closedPeriodResponse(closedPeriod.period);
 
   const taxReport = await db.taxReport.create({
@@ -90,8 +111,8 @@ export async function POST(request: Request) {
     summary: `${payload.reportType} 리포트 스냅샷을 저장했습니다.`,
     metadata: {
       reportType: payload.reportType,
-      periodStart: payload.periodStart,
-      periodEnd: payload.periodEnd
+      periodStart: normalizedPeriodStart,
+      periodEnd: normalizedPeriodEnd
     }
   });
 
@@ -120,7 +141,7 @@ export async function DELETE(request: Request) {
   if (!taxReport) {
     return NextResponse.json({ ok: false, message: "리포트를 찾을 수 없습니다." }, { status: 404 });
   }
-  const closedPeriod = await findClosedPeriodForDate(db, company.id, taxReport.periodStart);
+  const closedPeriod = await findClosedPeriodForDates(db, company.id, [taxReport.periodStart, taxReport.periodEnd]);
   if (closedPeriod) return closedPeriodResponse(closedPeriod.period);
 
   await db.taxReport.delete({ where: { id: taxReport.id } });
