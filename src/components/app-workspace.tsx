@@ -670,6 +670,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
             onSaved={setCompany}
             onVendorsChanged={setVendors}
             onRulesChanged={setClassificationRules}
+            onCsvTemplatesChanged={setCsvTemplates}
             onRestored={refresh}
           />
         )}
@@ -3509,6 +3510,7 @@ function SettingsPanel({
   onSaved,
   onVendorsChanged,
   onRulesChanged,
+  onCsvTemplatesChanged,
   onRestored
 }: {
   mode: "sample" | "database";
@@ -3528,6 +3530,7 @@ function SettingsPanel({
   onSaved: (company: AppCompany) => void;
   onVendorsChanged: (vendors: AppVendor[]) => void;
   onRulesChanged: (rules: AppClassificationRule[]) => void;
+  onCsvTemplatesChanged: (templates: CsvTemplate[]) => void;
   onRestored: () => Promise<void>;
 }) {
   const restoreInputRef = useRef<HTMLInputElement | null>(null);
@@ -3549,6 +3552,7 @@ function SettingsPanel({
   const [saving, setSaving] = useState(false);
   const [savingVendor, setSavingVendor] = useState(false);
   const [savingRule, setSavingRule] = useState(false);
+  const [deletingCsvTemplateId, setDeletingCsvTemplateId] = useState<string | null>(null);
   const [exportingBackup, setExportingBackup] = useState(false);
   const [restoringBackup, setRestoringBackup] = useState(false);
   const [backupMessage, setBackupMessage] = useState<{ tone: "green" | "red" | "amber"; text: string } | null>(null);
@@ -3568,6 +3572,7 @@ function SettingsPanel({
     classificationRules,
     auditEvents,
     closingPeriods,
+    csvTemplates,
     reviewItems
   });
   const backupReadinessRows = buildBackupReadinessRows({
@@ -3763,6 +3768,27 @@ function SettingsPanel({
       if (!response.ok) onRulesChanged(previous);
     } catch {
       onRulesChanged(previous);
+    }
+  }
+
+  async function deleteCsvTemplate(templateId: string) {
+    const template = csvTemplates.find((item) => item.id === templateId);
+    if (!window.confirm(`${template?.name ?? "선택한 CSV 매핑 템플릿"}을 삭제할까요? 같은 구조의 CSV를 다시 올리면 매핑을 새로 확인해야 합니다.`)) return;
+
+    const previous = csvTemplates;
+    onCsvTemplatesChanged(csvTemplates.filter((item) => item.id !== templateId));
+    setDeletingCsvTemplateId(templateId);
+    try {
+      const response = await fetch("/api/csv-templates", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyId: company.id || DEFAULT_COMPANY_ID, id: templateId })
+      });
+      if (!response.ok) onCsvTemplatesChanged(previous);
+    } catch {
+      onCsvTemplatesChanged(previous);
+    } finally {
+      setDeletingCsvTemplateId(null);
     }
   }
 
@@ -3973,16 +3999,17 @@ function SettingsPanel({
                 <th>금액 매핑</th>
                 <th>선택 매핑</th>
                 <th>수정</th>
+                <th>작업</th>
               </tr>
             </thead>
             <tbody>
               {csvTemplateRows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="empty-cell">저장된 CSV 매핑 템플릿이 없습니다. CSV를 한 번 가져오면 자동 저장됩니다.</td>
+                  <td colSpan={8} className="empty-cell">저장된 CSV 매핑 템플릿이 없습니다. CSV를 한 번 가져오면 자동 저장됩니다.</td>
                 </tr>
               ) : (
                 csvTemplateRows.map((row) => (
-                  <tr key={`${row.자료}-${row.템플릿}-${row.수정}`}>
+                  <tr key={row.ID}>
                     <td>{row.자료}</td>
                     <td>{row.템플릿}</td>
                     <td>{row.헤더}</td>
@@ -3990,6 +4017,11 @@ function SettingsPanel({
                     <td>{row["금액 매핑"]}</td>
                     <td>{row["선택 매핑"]}</td>
                     <td>{row.수정}</td>
+                    <td>
+                      <button className="ghost-button" onClick={() => void deleteCsvTemplate(row.ID)} disabled={deletingCsvTemplateId === row.ID}>
+                        {deletingCsvTemplateId === row.ID ? "삭제 중" : "삭제"}
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}
@@ -4792,6 +4824,7 @@ function auditActionLabel(action: string) {
     VENDOR_CREATE: "거래처 추가",
     VENDOR_UPDATE: "거래처 수정",
     VENDOR_DELETE: "거래처 삭제",
+    CSV_TEMPLATE_DELETE: "CSV 템플릿 삭제",
     CLASSIFICATION_RULE_CREATE: "규칙 추가",
     CLASSIFICATION_RULE_UPDATE: "규칙 수정",
     CLASSIFICATION_RULE_DELETE: "규칙 삭제",
@@ -4810,6 +4843,7 @@ function auditEntityLabel(entityType: string) {
     JOURNAL_ENTRY: "분개",
     TAX_REPORT: "리포트",
     VENDOR: "거래처",
+    CSV_TEMPLATE: "CSV 템플릿",
     CLASSIFICATION_RULE: "자동 분류",
     REVIEW_ITEM: "검토 항목",
     WORKSPACE_BACKUP: "워크스페이스"
@@ -5457,6 +5491,7 @@ function buildCsvTemplateRows(csvTemplates: CsvTemplate[]) {
 
     return {
       자료: SOURCE_TYPE_LABELS[template.sourceType],
+      ID: template.id,
       템플릿: template.name,
       헤더: headers.length > 0 ? `${formatNumber(headers.length)}개 · ${headers.slice(0, 4).join(", ")}${headers.length > 4 ? "..." : ""}` : "-",
       "전체 헤더": headers.join(", ") || "-",
@@ -5478,6 +5513,7 @@ function buildDataRetentionRows({
   classificationRules,
   auditEvents,
   closingPeriods,
+  csvTemplates,
   reviewItems
 }: {
   importBatches: AppImportBatch[];
@@ -5489,6 +5525,7 @@ function buildDataRetentionRows({
   classificationRules: AppClassificationRule[];
   auditEvents: AppAuditEvent[];
   closingPeriods: AppClosingPeriod[];
+  csvTemplates: CsvTemplate[];
   reviewItems: ReviewItem[];
 }): DataRetentionRow[] {
   const originalCsvCount = importBatches.filter((batch) => batch.hasOriginalFile).length;
@@ -5540,6 +5577,15 @@ function buildDataRetentionRows({
       삭제방법: "리포트 삭제, 마감 해제 후 수정, 전체 교체는 백업 복원",
       상태: taxReports.length > 0 || closingPeriods.length > 0 ? "보관 중" : "대기",
       톤: taxReports.length > 0 || closingPeriods.length > 0 ? "green" : "amber"
+    },
+    {
+      데이터: "CSV 매핑 템플릿",
+      포함정보: "자료 유형, CSV 헤더 시그니처, 거래일/내용/금액/잔액 컬럼 매핑",
+      보관위치: "Postgres CsvTemplate, 백업 JSON, 설정 화면 템플릿 목록 CSV",
+      보관기준: "같은 구조의 CSV를 반복 업로드하는 동안 보관",
+      삭제방법: "설정 화면에서 개별 삭제",
+      상태: csvTemplates.length > 0 ? "보관 중" : "대기",
+      톤: csvTemplates.length > 0 ? "green" : "amber"
     },
     {
       데이터: "거래처/분류 규칙",
@@ -5704,6 +5750,7 @@ function buildWorkspaceBackupPayload({
     classificationRules,
     auditEvents,
     closingPeriods,
+    csvTemplates,
     reviewItems
   });
   const backupReadinessRows = buildBackupReadinessRows({
