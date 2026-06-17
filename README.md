@@ -131,6 +131,18 @@ RAILWAY_AUDIT_SOFT=1 npm run audit:railway
 - 월 마감 잠금/해제로 확정 기간의 거래, 증빙, 분개, 리포트 변경 차단
 - 원본 CSV, 증빙 파일, 월 마감 상태, 데이터 보관/삭제 기준, 백업 점검표를 포함한 전체 워크스페이스 백업 JSON/ZIP 다운로드와 백업 JSON 복원
 
+## 파일 및 요청 한도
+
+현재 MVP는 Railway Postgres에 소형 원본과 증빙을 직접 보관하는 구조입니다.
+
+- 원본 CSV 보관: 파일당 2MB 이하
+- CSV 가져오기 요청: JSON body 5MB 이하
+- DB 보관 증빙 파일: 파일당 750KB 이하
+- 백업 JSON 복원 요청: JSON body 25MB 이하
+- 일반 설정/장부 API 요청: JSON body 750KB 이하
+
+위 한도는 `src/lib/file-limits.ts`와 `src/lib/server/request-json.ts`에 고정되어 있습니다. 더 큰 원본, 증빙, 백업을 다뤄야 하면 Postgres 직접 보관이 아니라 오브젝트 스토리지와 스트리밍 업로드를 별도 도입합니다.
+
 ## CSV 샘플 제공 방식
 
 실제 은행/카드/홈택스에서 내려받은 CSV를 사용합니다. 계좌번호, 사업자번호, 거래처명, 카드번호는 마스킹해도 됩니다. 중요한 것은 실제 컬럼 구조를 유지하는 것입니다.
