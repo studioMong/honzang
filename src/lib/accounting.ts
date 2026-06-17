@@ -49,6 +49,10 @@ export function inferAccount(description: string, counterparty?: string | null):
   return { account, reason: rule?.reason };
 }
 
+function getAccountType(code: string) {
+  return DEFAULT_ACCOUNTS.find((item) => item.code === code)?.type;
+}
+
 export function normalizeCsvRow(
   row: ParsedCsvRow,
   mapping: CsvColumnMapping,
@@ -242,7 +246,10 @@ export function generateJournalDraft(transaction: AppTransaction): JournalDraft 
     entryDate: date,
     memo,
     status: "DRAFT",
-    lines,
+    lines: lines.map((line) => ({
+      ...line,
+      accountType: line.accountType ?? getAccountType(line.accountCode)
+    })),
     warnings: [...new Set(warnings)]
   };
 }

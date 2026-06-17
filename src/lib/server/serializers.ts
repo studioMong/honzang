@@ -1,5 +1,5 @@
-import type { Account, Evidence, Transaction } from "@prisma/client";
-import type { AppAccount, AppEvidence, AppTransaction } from "@/types";
+import type { Account, Evidence, JournalEntry, JournalLine, Transaction } from "@prisma/client";
+import type { AppAccount, AppEvidence, AppJournalEntry, AppTransaction } from "@/types";
 
 type TransactionWithAccounts = Transaction & {
   suggestedAccount?: Account | null;
@@ -51,5 +51,30 @@ export function serializeEvidence(evidence: Evidence & { transaction?: Transacti
     fileUrl: evidence.fileUrl,
     transactionId: evidence.transactionId,
     transaction: evidence.transaction ? serializeTransaction(evidence.transaction) : null
+  };
+}
+
+export function serializeJournalEntry(
+  journalEntry: JournalEntry & {
+    lines: Array<JournalLine & { account: Account }>;
+    transaction?: TransactionWithAccounts | null;
+  }
+): AppJournalEntry {
+  return {
+    id: journalEntry.id,
+    transactionId: journalEntry.transactionId,
+    entryDate: journalEntry.entryDate.toISOString().slice(0, 10),
+    memo: journalEntry.memo,
+    status: journalEntry.status,
+    transaction: journalEntry.transaction ? serializeTransaction(journalEntry.transaction) : null,
+    lines: journalEntry.lines.map((line) => ({
+      accountCode: line.account.code,
+      accountName: line.account.name,
+      accountType: line.account.type,
+      debitAmount: Number(line.debitAmount),
+      creditAmount: Number(line.creditAmount),
+      vatType: line.vatType,
+      memo: line.memo ?? undefined
+    }))
   };
 }

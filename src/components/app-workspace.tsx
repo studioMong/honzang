@@ -24,6 +24,7 @@ import type {
   AppAccount,
   AppCompany,
   AppEvidence,
+  AppJournalEntry,
   AppTransaction,
   CsvColumnMapping,
   CsvTemplate,
@@ -35,7 +36,7 @@ import type {
 import { DEFAULT_ACCOUNTS, DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/defaults";
 import { generateJournalDraft, normalizeCsvRow, summarizeTransactions } from "@/lib/accounting";
 import { formatDate, formatKRW, formatNumber } from "@/lib/format";
-import { sampleCompany, sampleEvidences, sampleTransactions } from "@/lib/sample-data";
+import { sampleCompany, sampleEvidences, sampleJournalEntries, sampleTransactions } from "@/lib/sample-data";
 
 export type ViewKey = "dashboard" | "imports" | "transactions" | "evidences" | "journals" | "reviews" | "reports" | "settings";
 
@@ -72,6 +73,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
   const [csvTemplates, setCsvTemplates] = useState<CsvTemplate[]>([]);
   const [transactions, setTransactions] = useState<AppTransaction[]>(sampleTransactions);
   const [evidences, setEvidences] = useState<AppEvidence[]>(sampleEvidences);
+  const [journalEntries, setJournalEntries] = useState<AppJournalEntry[]>(sampleJournalEntries);
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<"sample" | "database">("sample");
 
@@ -86,21 +88,32 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
         fetch("/api/transactions", { cache: "no-store" })
       ]);
       const evidenceResponse = await fetch("/api/evidences", { cache: "no-store" });
+      const journalResponse = await fetch("/api/journals", { cache: "no-store" });
       const companyPayload = await companyResponse.json();
       const transactionPayload = await transactionResponse.json();
       const evidencePayload = await evidenceResponse.json();
+      const journalPayload = await journalResponse.json();
       setCompany(companyPayload.company ?? sampleCompany);
       setAccounts(companyPayload.accounts ?? DEFAULT_ACCOUNTS);
       setCsvTemplates(companyPayload.csvTemplates ?? []);
       setTransactions(transactionPayload.transactions?.length ? transactionPayload.transactions : sampleTransactions);
       setEvidences(evidencePayload.evidences?.length ? evidencePayload.evidences : sampleEvidences);
-      setMode(companyPayload.mode === "database" || transactionPayload.mode === "database" || evidencePayload.mode === "database" ? "database" : "sample");
+      setJournalEntries(journalPayload.journalEntries ?? []);
+      setMode(
+        companyPayload.mode === "database" ||
+          transactionPayload.mode === "database" ||
+          evidencePayload.mode === "database" ||
+          journalPayload.mode === "database"
+          ? "database"
+          : "sample"
+      );
     } catch {
       setCompany(sampleCompany);
       setAccounts(DEFAULT_ACCOUNTS);
       setCsvTemplates([]);
       setTransactions(sampleTransactions);
       setEvidences(sampleEvidences);
+      setJournalEntries(sampleJournalEntries);
       setMode("sample");
     } finally {
       setLoading(false);
@@ -225,9 +238,18 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
             }}
           />
         )}
-        {activeView === "journals" && <JournalDraftsPanel transactions={transactions} />}
+        {activeView === "journals" && (
+          <JournalDraftsPanel
+            companyId={company.id || DEFAULT_COMPANY_ID}
+            transactions={transactions}
+            journalEntries={journalEntries}
+            onApproved={(entry) => {
+              setJournalEntries((current) => [entry, ...current.filter((item) => item.transactionId !== entry.transactionId)]);
+            }}
+          />
+        )}
         {activeView === "reviews" && <ReviewsPanel items={reviewItems} />}
-        {activeView === "reports" && <ReportsPanel summary={summary} transactions={transactions} />}
+        {activeView === "reports" && <ReportsPanel summary={summary} transactions={transactions} journalEntries={journalEntries} />}
         {activeView === "settings" && <SettingsPanel company={company} accounts={accounts} onSaved={setCompany} />}
       </main>
     </div>
@@ -676,8 +698,42 @@ function EvidencesPanel({
   );
 }
 
-function JournalDraftsPanel({ transactions }: { transactions: AppTransaction[] }) {
+function JournalDraftsPanel({
+  companyId,
+  transactions,
+  journalEntries,
+  onApproved
+}: {
+  companyId: string;
+  transactions: AppTransaction[];
+  journalEntries: AppJournalEntry[];
+  onApproved: (entry: AppJournalEntry) => void;
+}) {
   const drafts = transactions.map(generateJournalDraft);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const approvedTransactionIds = new Set(journalEntries.map((entry) => entry.transactionId).filter(Boolean));
+
+  async function approveDraft(draft: ReturnType<typeof generateJournalDraft>) {
+    setSavingId(draft.transactionId);
+    try {
+      const response = await fetch("/api/journals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId,
+          transactionId: draft.transactionId,
+          entryDate: draft.entryDate,
+          memo: draft.memo,
+          status: "APPROVED",
+          lines: draft.lines
+        })
+      });
+      const payload = await response.json();
+      if (payload.journalEntry) onApproved(payload.journalEntry);
+    } finally {
+      setSavingId(null);
+    }
+  }
 
   return (
     <div className="content">
@@ -687,14 +743,27 @@ function JournalDraftsPanel({ transactions }: { transactions: AppTransaction[] }
           <span className="status blue">{formatNumber(drafts.length)}건</span>
         </div>
         <div className="panel-body review-list">
-          {drafts.map((draft) => (
+          {drafts.map((draft) => {
+            const isApproved = approvedTransactionIds.has(draft.transactionId);
+            return (
             <article key={draft.transactionId} className="journal-card">
               <div className="review-row">
                 <div>
                   <strong>{draft.memo}</strong>
                   <div className="muted">{draft.entryDate} · 차변 {formatKRW(draft.lines.reduce((sum, line) => sum + line.debitAmount, 0))} · 대변 {formatKRW(draft.lines.reduce((sum, line) => sum + line.creditAmount, 0))}</div>
                 </div>
-                <span className={draft.warnings.length ? "status amber" : "status green"}>{draft.warnings.length ? "검토 필요" : "균형"}</span>
+                <div className="toolbar">
+                  {isApproved && <span className="status green">승인됨</span>}
+                  <span className={draft.warnings.length ? "status amber" : "status green"}>{draft.warnings.length ? "검토 필요" : "균형"}</span>
+                  <button
+                    className="secondary-button"
+                    disabled={isApproved || savingId === draft.transactionId || draft.lines.length === 0}
+                    onClick={() => void approveDraft(draft)}
+                  >
+                    {savingId === draft.transactionId ? <Loader2 size={16} className="spin" /> : <CheckCircle2 size={16} />}
+                    {isApproved ? "저장 완료" : "승인 저장"}
+                  </button>
+                </div>
               </div>
               <div className="table-wrap">
                 <table>
@@ -728,7 +797,8 @@ function JournalDraftsPanel({ transactions }: { transactions: AppTransaction[] }
                 </div>
               )}
             </article>
-          ))}
+            );
+          })}
         </div>
       </section>
     </div>
@@ -767,9 +837,18 @@ function ReviewsPanel({ items }: { items: ReturnType<typeof buildReviewItems> })
   );
 }
 
-function ReportsPanel({ summary, transactions }: { summary: ReturnType<typeof summarizeTransactions>; transactions: AppTransaction[] }) {
+function ReportsPanel({
+  summary,
+  transactions,
+  journalEntries
+}: {
+  summary: ReturnType<typeof summarizeTransactions>;
+  transactions: AppTransaction[];
+  journalEntries: AppJournalEntry[];
+}) {
   const expenseByAccount = groupExpensesByAccount(transactions);
   const reviews = buildReviewItems(transactions);
+  const ledgerRows = buildLedgerRows(journalEntries);
   return (
     <div className="content">
       <section className="kpi-grid">
@@ -835,6 +914,53 @@ function ReportsPanel({ summary, transactions }: { summary: ReturnType<typeof su
           </div>
         </section>
       </div>
+
+      <section className="panel">
+        <div className="panel-header">
+          <h2 className="panel-title">계정별 원장</h2>
+          <div className="toolbar">
+            <span className="status blue">{formatNumber(journalEntries.length)}개 분개</span>
+            <button className="secondary-button" onClick={() => downloadCsv("honzang-ledger.csv", buildLedgerCsv(ledgerRows))}>
+              <Download size={16} />
+              원장
+            </button>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>일자</th>
+                <th>계정</th>
+                <th>적요</th>
+                <th className="amount">차변</th>
+                <th className="amount">대변</th>
+                <th className="amount">잔액</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ledgerRows.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="empty-cell">승인된 분개가 없습니다. 자동분개 탭에서 초안을 승인하면 원장이 생성됩니다.</td>
+                </tr>
+              ) : (
+                ledgerRows.map((row, index) => (
+                  <tr key={`${row.entryDate}-${row.accountCode}-${index}`}>
+                    <td>{formatDate(row.entryDate)}</td>
+                    <td>
+                      {row.accountCode} {row.accountName}
+                    </td>
+                    <td>{row.memo}</td>
+                    <td className="amount">{row.debitAmount ? formatKRW(row.debitAmount) : "-"}</td>
+                    <td className="amount">{row.creditAmount ? formatKRW(row.creditAmount) : "-"}</td>
+                    <td className="amount">{formatKRW(row.balance)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   );
 }
@@ -1194,6 +1320,46 @@ function buildReviewCsv(items: ReturnType<typeof buildReviewItems>) {
     적요: item.transaction?.description ?? "",
     거래처: item.transaction?.counterparty ?? "",
     금액: item.transaction?.withdrawalAmount || item.transaction?.depositAmount || 0
+  }));
+}
+
+function buildLedgerRows(journalEntries: AppJournalEntry[]) {
+  const defaultAccountTypeByCode = new Map(DEFAULT_ACCOUNTS.map((account) => [account.code, account.type]));
+  const rows = journalEntries
+    .filter((entry) => entry.status === "APPROVED")
+    .flatMap((entry) =>
+      entry.lines.map((line) => ({
+        entryDate: entry.entryDate,
+        accountCode: line.accountCode,
+        accountName: line.accountName,
+        accountType: line.accountType ?? defaultAccountTypeByCode.get(line.accountCode),
+        memo: line.memo ?? entry.memo,
+        debitAmount: line.debitAmount,
+        creditAmount: line.creditAmount
+      }))
+    )
+    .sort((a, b) => `${a.accountCode}-${a.entryDate}`.localeCompare(`${b.accountCode}-${b.entryDate}`));
+
+  const balances = new Map<string, number>();
+  return rows.map((row) => {
+    const current = balances.get(row.accountCode) ?? 0;
+    const isCreditNormal = row.accountType === "LIABILITY" || row.accountType === "EQUITY" || row.accountType === "REVENUE";
+    const next = current + (isCreditNormal ? row.creditAmount - row.debitAmount : row.debitAmount - row.creditAmount);
+    balances.set(row.accountCode, next);
+    return { ...row, balance: next };
+  });
+}
+
+function buildLedgerCsv(rows: ReturnType<typeof buildLedgerRows>) {
+  return rows.map((row) => ({
+    일자: row.entryDate,
+    계정코드: row.accountCode,
+    계정과목: row.accountName,
+    계정유형: row.accountType ?? "",
+    적요: row.memo,
+    차변: row.debitAmount,
+    대변: row.creditAmount,
+    잔액: row.balance
   }));
 }
 

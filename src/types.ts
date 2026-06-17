@@ -75,8 +75,10 @@ export type AppEvidence = {
 export type JournalDraftLine = {
   accountCode: string;
   accountName: string;
+  accountType?: AccountType;
   debitAmount: number;
   creditAmount: number;
+  vatType?: string | null;
   memo?: string;
 };
 
@@ -87,6 +89,16 @@ export type JournalDraft = {
   status: "DRAFT";
   lines: JournalDraftLine[];
   warnings: string[];
+};
+
+export type AppJournalEntry = {
+  id: string;
+  transactionId?: string | null;
+  entryDate: string;
+  memo: string;
+  status: "DRAFT" | "APPROVED" | "VOID";
+  lines: JournalDraftLine[];
+  transaction?: AppTransaction | null;
 };
 
 export type CsvColumnMapping = {

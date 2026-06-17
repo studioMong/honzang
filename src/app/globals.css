@@ -409,6 +409,12 @@ th.amount {
   font-variant-numeric: tabular-nums;
 }
 
+.empty-cell {
+  padding: 28px 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
 .status {
   display: inline-flex;
   align-items: center;
