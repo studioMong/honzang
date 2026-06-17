@@ -44,6 +44,7 @@ import type {
   ReviewItem,
   SourceType
 } from "@/types";
+import { RESTORE_CONFIRMATION_TEXT } from "@/lib/backup-restore";
 import { DEFAULT_ACCOUNTS, DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/defaults";
 import { applyClassificationRules, buildReviewItems, generateJournalDraft, inferMapping, normalizeCsvRow, parseMoney, summarizeTransactions } from "@/lib/accounting";
 import { formatDate, formatDateTime, formatKRW, formatNumber } from "@/lib/format";
@@ -3905,11 +3906,17 @@ function SettingsPanel({
         "현재 DB의 회사 데이터, 거래, 증빙, 분개, 리포트, 마감, 규칙을 백업 파일 내용으로 교체할까요?"
       ].join("\n");
       if (!window.confirm(restoreText)) return;
+      const typedConfirmation = window.prompt(`전체 교체를 진행하려면 "${RESTORE_CONFIRMATION_TEXT}"를 입력하세요.`);
+      const restoreConfirmation = typedConfirmation?.trim() ?? "";
+      if (restoreConfirmation !== RESTORE_CONFIRMATION_TEXT) {
+        setBackupMessage({ tone: "amber", text: "확인 문구가 일치하지 않아 백업 복원을 취소했습니다." });
+        return;
+      }
 
       const response = await fetch("/api/backups/restore", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ backup, confirmReplace: true })
+        body: JSON.stringify({ backup, confirmReplace: true, restoreConfirmation })
       });
       const payload = await response.json();
       if (!response.ok) {

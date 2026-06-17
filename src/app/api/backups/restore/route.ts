@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { RESTORE_CONFIRMATION_TEXT } from "@/lib/backup-restore";
 import { DEFAULT_ACCOUNTS } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/server/audit";
@@ -408,8 +409,16 @@ export async function POST(request: Request) {
     });
   }
 
-  if (body.confirmReplace !== true) {
-    return NextResponse.json({ ok: false, message: "복원하려면 confirmReplace 값을 true로 보내야 합니다." }, { status: 400 });
+  const restoreConfirmation = typeof body.restoreConfirmation === "string" ? body.restoreConfirmation.trim() : "";
+  if (body.confirmReplace !== true || restoreConfirmation !== RESTORE_CONFIRMATION_TEXT) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "RESTORE_CONFIRMATION_REQUIRED",
+        message: `복원하려면 confirmReplace 값과 restoreConfirmation="${RESTORE_CONFIRMATION_TEXT}" 값을 함께 보내야 합니다.`
+      },
+      { status: 400 }
+    );
   }
 
   const db = getPrisma();

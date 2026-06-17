@@ -11,6 +11,7 @@ const serverPath = ".next/standalone/server.js";
 const evidenceFileText = "dry-run-evidence";
 const originalCsvText = "거래일,적요,입금\n2026-06-17,dry run,1000\n";
 const oversizedJsonText = "x".repeat(500_001);
+const restoreConfirmationText = "혼자장부 전체교체";
 
 if (!existsSync(serverPath)) {
   console.error(`${serverPath} not found. Run npm run build before npm run verify:backup-restore.`);
@@ -571,7 +572,21 @@ async function verifyInvalidOriginalImportFileBackup() {
 async function verifyConfirmGuard() {
   const body = await postJson("/api/backups/restore", { backup }, 400);
   assert.equal(body.ok, false, "restore without confirmReplace should fail");
+  assert.equal(body.code, "RESTORE_CONFIRMATION_REQUIRED", "restore should require an explicit confirmation code");
   assert.match(body.message ?? "", /confirmReplace/, "restore should require confirmReplace");
+  assert.match(body.message ?? "", /restoreConfirmation/, "restore should require restoreConfirmation text");
+
+  const wrongConfirmationBody = await postJson("/api/backups/restore", { backup, confirmReplace: true, restoreConfirmation: "wrong" }, 400);
+  assert.equal(wrongConfirmationBody.ok, false, "restore with wrong confirmation text should fail");
+  assert.equal(wrongConfirmationBody.code, "RESTORE_CONFIRMATION_REQUIRED", "restore should reject wrong confirmation text");
+
+  const sampleModeBody = await postJson(
+    "/api/backups/restore",
+    { backup, confirmReplace: true, restoreConfirmation: restoreConfirmationText },
+    409
+  );
+  assert.equal(sampleModeBody.ok, false, "restore with valid confirmation should reach sample-mode DB guard");
+  assert.equal(sampleModeBody.mode, "sample", "restore should still be blocked without Postgres");
 }
 
 async function postJson(path, payload, expectedStatus) {
