@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import Papa from "papaparse";
 import { applyClassificationRules, applyVendorDefaults, generateJournalDraft, inferMapping, normalizeCsvRow, parseDate, parseMoney, summarizeTransactions } from "../src/lib/accounting";
 import { DEFAULT_ACCOUNTS } from "../src/lib/defaults";
+import { sanitizeCsvCellValue } from "../src/lib/export-safety";
 import { parseStrictDate } from "../src/lib/server/date-validation";
 import { buildEvidenceAmountReviewItems, resolveTransactionEvidenceStatus, type EvidenceAmountReviewTransaction } from "../src/lib/server/evidence-amount-reviews";
 import type { AppClassificationRule, AppTransaction, ParsedCsvRow, SourceType } from "../src/types";
@@ -84,6 +85,10 @@ assert.equal(parseStrictDate("2026.6.7 13:20"), "2026-06-07", "strict dates shou
 assert.equal(parseStrictDate("2026-06-07T13:20:00+09:00"), "2026-06-07", "strict dates should allow ISO datetime suffixes");
 assert.equal(parseStrictDate("2026-06-07Tgarbage"), null, "strict dates should reject arbitrary datetime suffixes");
 assert.equal(parseStrictDate("2026-06-07 25:00"), null, "strict dates should reject invalid time suffixes");
+assert.equal(sanitizeCsvCellValue("=IMPORTXML(\"https://example.com\")"), "'=IMPORTXML(\"https://example.com\")", "CSV exports should neutralize formula-like text");
+assert.equal(sanitizeCsvCellValue("  +1+1"), "'  +1+1", "CSV exports should neutralize formula-like text after leading spaces");
+assert.equal(sanitizeCsvCellValue(-1234), "-1234", "CSV exports should preserve numeric negative amounts");
+assert.equal(sanitizeCsvCellValue("정상 거래처"), "정상 거래처", "CSV exports should preserve ordinary text");
 
 function parseSampleCsv(filePath: string) {
   const csv = readFileSync(resolve(filePath), "utf8");

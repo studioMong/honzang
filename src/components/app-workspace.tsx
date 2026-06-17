@@ -46,6 +46,7 @@ import type {
 } from "@/types";
 import { RESTORE_CONFIRMATION_TEXT } from "@/lib/backup-restore";
 import { DEFAULT_ACCOUNTS, DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/defaults";
+import { sanitizeCsvCellValue } from "@/lib/export-safety";
 import { applyClassificationRules, buildReviewItems, generateJournalDraft, inferMapping, normalizeCsvRow, parseMoney, summarizeTransactions } from "@/lib/accounting";
 import { formatDate, formatDateTime, formatKRW, formatNumber } from "@/lib/format";
 import { sampleCompany, sampleEvidences, sampleJournalEntries, sampleTaxReports, sampleTransactions } from "@/lib/sample-data";
@@ -5689,7 +5690,7 @@ function toCsv(rows: Array<Record<string, string | number>>) {
   if (rows.length === 0) return "";
   const headers = Object.keys(rows[0]);
   const escapeCell = (value: string | number) => {
-    const text = String(value ?? "");
+    const text = sanitizeCsvCellValue(value);
     return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
   };
   return [headers.join(","), ...rows.map((row) => headers.map((header) => escapeCell(row[header])).join(","))].join("\n");
