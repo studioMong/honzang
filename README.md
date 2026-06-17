@@ -27,7 +27,7 @@ npm run build
 npm run smoke:prod
 ```
 
-로컬/저장소 기준 MVP 회귀 검증은 아래 명령으로 한 번에 실행합니다. 이 명령은 실제 DB를 변경하지 않습니다.
+로컬/저장소 기준 MVP 회귀 검증은 아래 명령으로 한 번에 실행합니다. 이 명령은 실제 DB를 변경하지 않으며, production smoke에서 대시보드와 리포트 핵심 UI 문구까지 확인합니다.
 
 ```bash
 npm run verify:mvp
