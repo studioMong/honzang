@@ -35,10 +35,13 @@ NEXT_PUBLIC_APP_URL=https://honzang-production.up.railway.app
 
 Railway는 GitHub 저장소를 연결한 뒤 다음 설정을 사용합니다.
 
+- Builder: Dockerfile
 - Build: `npm run build`
 - Pre-deploy: `npm run db:deploy`
 - Start: `npm run start`
 - Healthcheck: `/api/health`
+
+루트 `Dockerfile`로 Node/Next 서버 빌드를 강제합니다. Railway 배포 로그에서 Dockerfile 빌드가 감지되는지 확인해야 합니다.
 
 루트에 정적 `index.html`을 두면 Railway가 정적 사이트로 감지할 수 있으므로, 참고용 HTML 문서는 `attachments/` 아래에 보관합니다.
 
