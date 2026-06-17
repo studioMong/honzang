@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { DEFAULT_COMPANY_ID } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
+import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { serializeClassificationRule } from "@/lib/server/serializers";
 
@@ -93,6 +94,19 @@ export async function POST(request: Request) {
       isActive: payload.isActive
     }
   });
+  await recordAuditEvent(db, {
+    companyId: company.id,
+    action: "CLASSIFICATION_RULE_CREATE",
+    entityType: "CLASSIFICATION_RULE",
+    entityId: created.id,
+    summary: `자동 분류 규칙을 추가했습니다: ${payload.name}`,
+    metadata: {
+      keyword: payload.keyword,
+      accountCode: payload.accountCode,
+      sourceType: payload.sourceType ?? null,
+      priority: payload.priority
+    }
+  });
 
   return NextResponse.json({
     ok: true,
@@ -129,6 +143,18 @@ export async function PATCH(request: Request) {
     },
     data
   });
+  await recordAuditEvent(db, {
+    companyId: company.id,
+    action: "CLASSIFICATION_RULE_UPDATE",
+    entityType: "CLASSIFICATION_RULE",
+    entityId: updated.id,
+    summary: `자동 분류 규칙을 수정했습니다: ${updated.name}`,
+    metadata: {
+      sourceType: updated.sourceType,
+      priority: updated.priority,
+      isActive: updated.isActive
+    }
+  });
   const accounts = await db.account.findMany({ where: { companyId: company.id } });
   const accountByCode = new Map(accounts.map((account) => [account.code, account]));
 
@@ -152,10 +178,22 @@ export async function DELETE(request: Request) {
   }
 
   const company = await ensureDefaultCompany(db);
-  await db.classificationRule.delete({
+  const deleted = await db.classificationRule.delete({
     where: {
       id: payload.id,
       companyId: company.id
+    }
+  });
+  await recordAuditEvent(db, {
+    companyId: company.id,
+    action: "CLASSIFICATION_RULE_DELETE",
+    entityType: "CLASSIFICATION_RULE",
+    entityId: payload.id,
+    summary: `자동 분류 규칙을 삭제했습니다: ${deleted.name}`,
+    metadata: {
+      sourceType: deleted.sourceType,
+      priority: deleted.priority,
+      isActive: deleted.isActive
     }
   });
 

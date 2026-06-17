@@ -37,6 +37,7 @@ try {
   await expectJson("/api/health", (body) => body.ok === true && body.app === "honzang");
   await expectJson("/api/reviews", (body) => Array.isArray(body.reviewItems));
   await expectJson("/api/vendors", (body) => Array.isArray(body.vendors));
+  await expectJson("/api/audit-events", (body) => Array.isArray(body.auditEvents));
   await expectText("/", (body) => body.includes("혼자장부"));
   console.log(`Production smoke passed at ${baseUrl}`);
 } catch (error) {

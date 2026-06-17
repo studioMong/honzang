@@ -95,6 +95,7 @@ model Company {
   classificationRules             ClassificationRule[]
   reviewItems                     ReviewItem[]
   taxReports                      TaxReport[]
+  auditEvents                     AuditEvent[]
 }
 
 model Account {
@@ -317,4 +318,21 @@ model TaxReport {
   company               Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([companyId, reportType, periodStart, periodEnd])
+}
+
+model AuditEvent {
+  id                    String      @id @default(cuid())
+  companyId             String
+  action                String
+  entityType            String
+  entityId              String?
+  summary               String
+  metadata              Json?
+  createdAt             DateTime    @default(now())
+
+  company               Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, createdAt])
+  @@index([companyId, action])
+  @@index([companyId, entityType])
 }

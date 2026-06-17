@@ -83,6 +83,12 @@ try {
   const reports = await requestJson<{ taxReports?: Array<{ id: string; calculatedPayload?: unknown }> }>("/api/reports");
   assert.ok(reports.taxReports?.some((report) => report.id === reportPayload.taxReport?.id), "saved report should be listed");
 
+  const auditEvents = await requestJson<{ auditEvents?: Array<{ action: string; entityId?: string | null }> }>("/api/audit-events");
+  const auditActions = new Set(auditEvents.auditEvents?.map((event) => event.action));
+  assert.ok(auditActions.has("IMPORT_CREATE"), "audit log should include import creation");
+  assert.ok(auditActions.has("JOURNAL_CREATE"), "audit log should include journal creation");
+  assert.ok(auditActions.has("REPORT_CREATE"), "audit log should include report creation");
+
   console.log(`DB workflow verification passed at ${baseUrl}`);
 } finally {
   await cleanupCreatedData();

@@ -1,6 +1,7 @@
-import type { Account, ClassificationRule, Evidence, ImportBatch, JournalEntry, JournalLine, ReviewItem, TaxReport, Transaction, Vendor } from "@prisma/client";
+import type { Account, AuditEvent, ClassificationRule, Evidence, ImportBatch, JournalEntry, JournalLine, ReviewItem, TaxReport, Transaction, Vendor } from "@prisma/client";
 import type {
   AppAccount,
+  AppAuditEvent,
   AppClassificationRule,
   AppEvidence,
   AppImportBatch,
@@ -185,5 +186,17 @@ export function serializeTaxReport(taxReport: TaxReport): AppTaxReport {
     calculatedPayload: taxReport.calculatedPayload,
     createdAt: taxReport.createdAt.toISOString(),
     updatedAt: taxReport.updatedAt.toISOString()
+  };
+}
+
+export function serializeAuditEvent(auditEvent: AuditEvent): AppAuditEvent {
+  return {
+    id: auditEvent.id,
+    action: auditEvent.action,
+    entityType: auditEvent.entityType,
+    entityId: auditEvent.entityId,
+    summary: auditEvent.summary,
+    metadata: auditEvent.metadata,
+    createdAt: auditEvent.createdAt.toISOString()
   };
 }

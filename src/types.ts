@@ -198,6 +198,16 @@ export type ReviewItem = {
   transaction?: AppTransaction | null;
 };
 
+export type AppAuditEvent = {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId?: string | null;
+  summary: string;
+  metadata?: unknown;
+  createdAt: string;
+};
+
 export type SummaryReport = {
   periodLabel: string;
   revenue: number;

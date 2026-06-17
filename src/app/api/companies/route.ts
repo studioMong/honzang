@@ -3,6 +3,7 @@ import { z } from "zod";
 import { DEFAULT_ACCOUNTS } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
 import { sampleCompany } from "@/lib/sample-data";
+import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { serializeClassificationRule } from "@/lib/server/serializers";
 
@@ -70,6 +71,19 @@ export async function PATCH(request: Request) {
   const updated = await db.company.update({
     where: { id: company.id },
     data: parsed.data
+  });
+  await recordAuditEvent(db, {
+    companyId: company.id,
+    action: "COMPANY_UPDATE",
+    entityType: "COMPANY",
+    entityId: company.id,
+    summary: "회사 설정을 저장했습니다.",
+    metadata: {
+      name: updated.name,
+      vatType: updated.vatType,
+      fiscalYearEndMonth: updated.fiscalYearEndMonth,
+      billingModel: updated.billingModel
+    }
   });
 
   return NextResponse.json({ ok: true, company: updated, mode: "database" });

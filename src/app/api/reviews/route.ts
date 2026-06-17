@@ -3,6 +3,7 @@ import { z } from "zod";
 import { buildReviewItems } from "@/lib/accounting";
 import { getPrisma } from "@/lib/db";
 import { sampleTransactions } from "@/lib/sample-data";
+import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { serializeReviewItem, serializeTransaction } from "@/lib/server/serializers";
 import type { ReviewItem } from "@/types";
@@ -122,6 +123,18 @@ export async function PATCH(request: Request) {
     where: { id: parsed.data.id },
     data: { status: parsed.data.status },
     include: reviewInclude
+  });
+  await recordAuditEvent(db, {
+    companyId: company.id,
+    action: "REVIEW_STATUS_UPDATE",
+    entityType: "REVIEW_ITEM",
+    entityId: reviewItem.id,
+    summary: `검토 항목 상태를 ${parsed.data.status}로 변경했습니다: ${reviewItem.reason}`,
+    metadata: {
+      transactionId: reviewItem.transactionId ?? null,
+      status: parsed.data.status,
+      severity: reviewItem.severity
+    }
   });
 
   return NextResponse.json({ ok: true, reviewItem: serializeReviewItem(reviewItem), mode: "database" });

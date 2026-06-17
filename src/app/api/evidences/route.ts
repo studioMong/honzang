@@ -3,6 +3,7 @@ import { z } from "zod";
 import { DEFAULT_COMPANY_ID } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
 import { sampleEvidences } from "@/lib/sample-data";
+import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { serializeEvidence } from "@/lib/server/serializers";
 
@@ -110,6 +111,19 @@ export async function POST(request: Request) {
         data: { evidenceStatus: "MATCHED" }
       });
     }
+    await recordAuditEvent(tx, {
+      companyId: company.id,
+      action: "EVIDENCE_CREATE",
+      entityType: "EVIDENCE",
+      entityId: created.id,
+      summary: `증빙을 추가했습니다: ${payload.evidenceType}`,
+      metadata: {
+        transactionId: transaction?.id ?? null,
+        counterparty: payload.counterparty ?? null,
+        totalAmount: payload.totalAmount ?? null,
+        hasFile: Boolean(payload.fileDataUrl || payload.fileUrl)
+      }
+    });
 
     return tx.evidence.findUniqueOrThrow({
       where: { id: created.id },

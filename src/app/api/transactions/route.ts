@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getPrisma } from "@/lib/db";
 import { sampleTransactions } from "@/lib/sample-data";
+import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { serializeTransaction, serializeVendor } from "@/lib/server/serializers";
 import { applyVendorDefaults, inferAccount, summarizeTransactions } from "@/lib/accounting";
@@ -150,6 +151,19 @@ export async function POST(request: Request) {
       confirmedAccount: true
     }
   });
+  await recordAuditEvent(db, {
+    companyId: company.id,
+    action: "TRANSACTION_CREATE",
+    entityType: "TRANSACTION",
+    entityId: transaction.id,
+    summary: `수기 거래를 추가했습니다: ${transaction.description}`,
+    metadata: {
+      transactionDate: transaction.transactionDate.toISOString().slice(0, 10),
+      depositAmount: Number(transaction.depositAmount),
+      withdrawalAmount: Number(transaction.withdrawalAmount),
+      evidenceStatus: transaction.evidenceStatus
+    }
+  });
 
   return NextResponse.json({ ok: true, transaction: serializeTransaction(transaction), mode: "database" });
 }
@@ -181,6 +195,18 @@ export async function PATCH(request: Request) {
   if (transaction.companyId !== company.id) {
     return NextResponse.json({ ok: false, message: "Invalid company transaction." }, { status: 403 });
   }
+  await recordAuditEvent(db, {
+    companyId: company.id,
+    action: "TRANSACTION_UPDATE",
+    entityType: "TRANSACTION",
+    entityId: transaction.id,
+    summary: `거래를 수정했습니다: ${transaction.description}`,
+    metadata: {
+      confirmedAccountId: body.confirmedAccountId ?? null,
+      evidenceStatus: body.evidenceStatus ?? null,
+      memoChanged: body.memo !== undefined
+    }
+  });
 
   return NextResponse.json({ ok: true, transaction: serializeTransaction(transaction), mode: "database" });
 }

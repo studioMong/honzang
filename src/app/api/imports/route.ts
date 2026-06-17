@@ -4,6 +4,7 @@ import { z } from "zod";
 import { DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
 import { applyClassificationRules, applyVendorDefaults, normalizeCsvRow, summarizeTransactions } from "@/lib/accounting";
+import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { serializeAccount, serializeClassificationRule, serializeImportBatch, serializeTransaction, serializeVendor } from "@/lib/server/serializers";
 import type { CsvColumnMapping, ParsedCsvRow, SourceType } from "@/types";
@@ -174,6 +175,17 @@ export async function DELETE(request: Request) {
       });
     }
     await tx.importBatch.delete({ where: { id: importBatch.id } });
+    await recordAuditEvent(tx, {
+      companyId: company.id,
+      action: "IMPORT_DELETE",
+      entityType: "IMPORT_BATCH",
+      entityId: importBatch.id,
+      summary: `${importBatch.originalFileName} 업로드 이력을 삭제했습니다.`,
+      metadata: {
+        sourceType: importBatch.sourceType,
+        deletedTransactions: transactionIds.length
+      }
+    });
     return { deletedTransactions: transactionIds.length };
   });
 
@@ -352,6 +364,19 @@ export async function POST(request: Request) {
       })
     )
   );
+  await recordAuditEvent(db, {
+    companyId: company.id,
+    action: "IMPORT_CREATE",
+    entityType: "IMPORT_BATCH",
+    entityId: importBatch.id,
+    summary: `${payload.originalFileName} 파일에서 거래 ${classified.length}건을 가져왔습니다.`,
+    metadata: {
+      sourceType: payload.sourceType,
+      rowCount: classified.length,
+      hasOriginalFile: Boolean(payload.originalFileText),
+      originalFileHash
+    }
+  });
 
   const saved = await db.transaction.findMany({
     where: { importBatchId: importBatch.id },

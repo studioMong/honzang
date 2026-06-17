@@ -4,6 +4,7 @@ import { z } from "zod";
 import { DEFAULT_COMPANY_ID } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
 import { sampleTaxReports } from "@/lib/sample-data";
+import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { serializeTaxReport } from "@/lib/server/serializers";
 
@@ -77,6 +78,18 @@ export async function POST(request: Request) {
       calculatedPayload: payload.calculatedPayload as Prisma.InputJsonValue
     }
   });
+  await recordAuditEvent(db, {
+    companyId: company.id,
+    action: "REPORT_CREATE",
+    entityType: "TAX_REPORT",
+    entityId: taxReport.id,
+    summary: `${payload.reportType} 리포트 스냅샷을 저장했습니다.`,
+    metadata: {
+      reportType: payload.reportType,
+      periodStart: payload.periodStart,
+      periodEnd: payload.periodEnd
+    }
+  });
 
   return NextResponse.json({ ok: true, taxReport: serializeTaxReport(taxReport), mode: "database" });
 }
@@ -105,6 +118,18 @@ export async function DELETE(request: Request) {
   }
 
   await db.taxReport.delete({ where: { id: taxReport.id } });
+  await recordAuditEvent(db, {
+    companyId: company.id,
+    action: "REPORT_DELETE",
+    entityType: "TAX_REPORT",
+    entityId: taxReport.id,
+    summary: `${taxReport.reportType} 리포트 스냅샷을 삭제했습니다.`,
+    metadata: {
+      reportType: taxReport.reportType,
+      periodStart: taxReport.periodStart.toISOString().slice(0, 10),
+      periodEnd: taxReport.periodEnd.toISOString().slice(0, 10)
+    }
+  });
 
   return NextResponse.json({ ok: true, id: taxReport.id, mode: "database" });
 }

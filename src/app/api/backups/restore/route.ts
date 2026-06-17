@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { DEFAULT_ACCOUNTS } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
+import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 
 const sourceTypeSchema = z.enum(["BANK", "CARD", "HOMETAX_SALES", "HOMETAX_PURCHASES", "CASH_RECEIPT", "PG", "MANUAL"]);
@@ -184,6 +185,18 @@ const reviewItemSchema = z
   })
   .passthrough();
 
+const auditEventSchema = z
+  .object({
+    id: z.string().min(1).max(160),
+    action: z.string().min(1).max(120),
+    entityType: z.string().min(1).max(120),
+    entityId: z.string().max(160).optional().nullable(),
+    summary: z.string().min(1).max(500),
+    metadata: z.unknown().optional().nullable(),
+    createdAt: z.string().optional().nullable()
+  })
+  .passthrough();
+
 const workspaceBackupSchema = z
   .object({
     app: z.literal("혼자장부"),
@@ -199,6 +212,7 @@ const workspaceBackupSchema = z
     taxReports: z.array(taxReportSchema).default([]),
     vendors: z.array(vendorSchema).default([]),
     classificationRules: z.array(classificationRuleSchema).default([]),
+    auditEvents: z.array(auditEventSchema).default([]),
     reviewItems: z.array(reviewItemSchema).default([])
   })
   .passthrough();
@@ -278,6 +292,15 @@ async function restoreWorkspace(db: RestoreDb, backup: WorkspaceBackup) {
     await restoreVendors(tx, company.id, backup.vendors, accountByCode);
     await restoreClassificationRules(tx, company.id, backup.classificationRules, accountByCode);
     await restoreReviewItems(tx, company.id, backup.reviewItems, transactionIdMap);
+    await restoreAuditEvents(tx, company.id, backup.auditEvents);
+    await recordAuditEvent(tx, {
+      companyId: company.id,
+      action: "BACKUP_RESTORE",
+      entityType: "WORKSPACE_BACKUP",
+      entityId: null,
+      summary: "워크스페이스 백업을 복원했습니다.",
+      metadata: buildRestoreCounts(backup)
+    });
 
     return {
       company: restoredCompany,
@@ -305,6 +328,7 @@ async function clearCompanyData(tx: Prisma.TransactionClient, companyId: string)
   await tx.vendor.deleteMany({ where: { companyId } });
   await tx.classificationRule.deleteMany({ where: { companyId } });
   await tx.csvTemplate.deleteMany({ where: { companyId } });
+  await tx.auditEvent.deleteMany({ where: { companyId } });
 }
 
 async function restoreAccounts(tx: Prisma.TransactionClient, companyId: string, backupAccounts: WorkspaceBackup["accounts"]) {
@@ -597,6 +621,23 @@ async function restoreReviewItems(
   }
 }
 
+async function restoreAuditEvents(tx: Prisma.TransactionClient, companyId: string, auditEvents: WorkspaceBackup["auditEvents"]) {
+  for (const event of uniqueById(auditEvents)) {
+    await tx.auditEvent.create({
+      data: {
+        id: event.id,
+        companyId,
+        action: event.action,
+        entityType: event.entityType,
+        entityId: event.entityId ?? null,
+        summary: event.summary,
+        metadata: event.metadata === null || event.metadata === undefined ? undefined : (event.metadata as Prisma.InputJsonValue),
+        createdAt: dateOrNow(event.createdAt)
+      }
+    });
+  }
+}
+
 function uniqueByCode<T extends { code: string }>(items: T[]) {
   const byCode = new Map<string, T>();
   for (const item of items) {
@@ -619,6 +660,7 @@ function buildRestoreCounts(backup: WorkspaceBackup) {
     taxReports: uniqueById(backup.taxReports).length,
     vendors: uniqueById(backup.vendors).length,
     classificationRules: uniqueById(backup.classificationRules).length,
+    auditEvents: uniqueById(backup.auditEvents).length,
     reviewItems: uniqueById(backup.reviewItems).filter((item) => item.transaction?.id && transactionIds.has(item.transaction.id)).length
   };
 }

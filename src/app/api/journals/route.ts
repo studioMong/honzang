@@ -3,6 +3,7 @@ import { z } from "zod";
 import { DEFAULT_COMPANY_ID } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
 import { sampleJournalEntries } from "@/lib/sample-data";
+import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { serializeJournalEntry } from "@/lib/server/serializers";
 
@@ -152,6 +153,21 @@ export async function POST(request: Request) {
       }
     });
 
+    await recordAuditEvent(tx, {
+      companyId: company.id,
+      action: "JOURNAL_CREATE",
+      entityType: "JOURNAL_ENTRY",
+      entityId: entry.id,
+      summary: `${payload.status === "APPROVED" ? "분개를 승인했습니다" : "분개를 저장했습니다"}: ${payload.memo}`,
+      metadata: {
+        transactionId: transaction?.id ?? null,
+        status: payload.status,
+        lineCount: payload.lines.length,
+        debit,
+        credit
+      }
+    });
+
     return entry;
   });
 
@@ -202,6 +218,17 @@ export async function PATCH(request: Request) {
           confirmedAccount: true
         }
       }
+    }
+  });
+  await recordAuditEvent(db, {
+    companyId: company.id,
+    action: "JOURNAL_STATUS_UPDATE",
+    entityType: "JOURNAL_ENTRY",
+    entityId: journalEntry.id,
+    summary: `분개 상태를 ${parsed.data.status}로 변경했습니다.`,
+    metadata: {
+      transactionId: journalEntry.transactionId ?? null,
+      status: parsed.data.status
     }
   });
 

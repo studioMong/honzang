@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { DEFAULT_COMPANY_ID } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
+import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { serializeVendor } from "@/lib/server/serializers";
 
@@ -85,6 +86,17 @@ export async function POST(request: Request) {
     },
     include: includeDefaultAccount
   });
+  await recordAuditEvent(db, {
+    companyId: company.id,
+    action: "VENDOR_CREATE",
+    entityType: "VENDOR",
+    entityId: vendor.id,
+    summary: `거래처 기본값을 추가했습니다: ${vendor.name}`,
+    metadata: {
+      withholdingType: vendor.withholdingType,
+      defaultAccountId: vendor.defaultAccountId
+    }
+  });
 
   return NextResponse.json({ ok: true, vendor: serializeVendor(vendor), mode: "database" });
 }
@@ -127,6 +139,17 @@ export async function PATCH(request: Request) {
     },
     include: includeDefaultAccount
   });
+  await recordAuditEvent(db, {
+    companyId: company.id,
+    action: "VENDOR_UPDATE",
+    entityType: "VENDOR",
+    entityId: vendor.id,
+    summary: `거래처 기본값을 수정했습니다: ${vendor.name}`,
+    metadata: {
+      withholdingType: vendor.withholdingType,
+      defaultAccountId: vendor.defaultAccountId
+    }
+  });
 
   return NextResponse.json({ ok: true, vendor: serializeVendor(vendor), mode: "database" });
 }
@@ -154,6 +177,17 @@ export async function DELETE(request: Request) {
   }
 
   await db.vendor.delete({ where: { id: existing.id } });
+  await recordAuditEvent(db, {
+    companyId: company.id,
+    action: "VENDOR_DELETE",
+    entityType: "VENDOR",
+    entityId: existing.id,
+    summary: `거래처 기본값을 삭제했습니다: ${existing.name}`,
+    metadata: {
+      withholdingType: existing.withholdingType,
+      defaultAccountId: existing.defaultAccountId
+    }
+  });
   return NextResponse.json({ ok: true, mode: "database", id: existing.id });
 }
 

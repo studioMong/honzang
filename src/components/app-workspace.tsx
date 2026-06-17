@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import type {
   AppAccount,
+  AppAuditEvent,
   AppClassificationRule,
   AppCompany,
   AppEvidence,
@@ -97,6 +98,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
   const [journalEntries, setJournalEntries] = useState<AppJournalEntry[]>(sampleJournalEntries);
   const [taxReports, setTaxReports] = useState<AppTaxReport[]>(sampleTaxReports);
   const [vendors, setVendors] = useState<AppVendor[]>([]);
+  const [auditEvents, setAuditEvents] = useState<AppAuditEvent[]>([]);
   const [reviewItems, setReviewItems] = useState<ReviewItem[]>(buildReviewItems(sampleTransactions));
   const [reviewStatusOverrides, setReviewStatusOverrides] = useState<Record<string, ReviewItem["status"]>>({});
   const [loading, setLoading] = useState(false);
@@ -126,6 +128,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       const reportResponse = await fetch("/api/reports", { cache: "no-store" });
       const reviewResponse = await fetch("/api/reviews", { cache: "no-store" });
       const vendorResponse = await fetch("/api/vendors", { cache: "no-store" });
+      const auditResponse = await fetch("/api/audit-events", { cache: "no-store" });
       const companyPayload = await companyResponse.json();
       const transactionPayload = await transactionResponse.json();
       const importPayload = await importResponse.json();
@@ -134,6 +137,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       const reportPayload = await reportResponse.json();
       const reviewPayload = await reviewResponse.json();
       const vendorPayload = await vendorResponse.json();
+      const auditPayload = await auditResponse.json();
       const isDatabaseMode =
         companyPayload.mode === "database" ||
         transactionPayload.mode === "database" ||
@@ -142,7 +146,8 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
         journalPayload.mode === "database" ||
         reportPayload.mode === "database" ||
         reviewPayload.mode === "database" ||
-        vendorPayload.mode === "database";
+        vendorPayload.mode === "database" ||
+        auditPayload.mode === "database";
       const nextTransactions = isDatabaseMode ? transactionPayload.transactions ?? [] : transactionPayload.transactions?.length ? transactionPayload.transactions : sampleTransactions;
       setCompany(companyPayload.company ?? sampleCompany);
       setAccounts(companyPayload.accounts ?? DEFAULT_ACCOUNTS);
@@ -154,6 +159,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       setJournalEntries(journalPayload.journalEntries ?? []);
       setTaxReports(reportPayload.taxReports ?? []);
       setVendors(vendorPayload.vendors ?? []);
+      setAuditEvents(auditPayload.auditEvents ?? []);
       setReviewItems(reviewPayload.reviewItems ?? buildReviewItems(nextTransactions));
       setMode(isDatabaseMode ? "database" : "sample");
     } catch {
@@ -167,6 +173,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       setJournalEntries(sampleJournalEntries);
       setTaxReports(sampleTaxReports);
       setVendors([]);
+      setAuditEvents([]);
       setReviewItems(buildReviewItems(sampleTransactions));
       setMode("sample");
     } finally {
@@ -379,6 +386,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
             taxReports={taxReports}
             vendors={vendors}
             classificationRules={classificationRules}
+            auditEvents={auditEvents}
             reviewItems={visibleReviewItems}
             onSaved={setCompany}
             onVendorsChanged={setVendors}
@@ -2215,6 +2223,7 @@ function SettingsPanel({
   taxReports,
   vendors,
   classificationRules,
+  auditEvents,
   reviewItems,
   onSaved,
   onVendorsChanged,
@@ -2232,6 +2241,7 @@ function SettingsPanel({
   taxReports: AppTaxReport[];
   vendors: AppVendor[];
   classificationRules: AppClassificationRule[];
+  auditEvents: AppAuditEvent[];
   reviewItems: ReviewItem[];
   onSaved: (company: AppCompany) => void;
   onVendorsChanged: (vendors: AppVendor[]) => void;
@@ -2277,6 +2287,7 @@ function SettingsPanel({
       taxReports,
       vendors,
       classificationRules,
+      auditEvents,
       reviewItems
     });
   }
@@ -2781,6 +2792,44 @@ function SettingsPanel({
 
       <section className="panel">
         <div className="panel-header">
+          <div>
+            <h2 className="panel-title">활동 로그</h2>
+            <p className="panel-subtitle">가져오기, 거래 수정, 분개, 리포트, 복원 등 주요 변경 이력</p>
+          </div>
+          <span className="status blue">{formatNumber(auditEvents.length)}개</span>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>시각</th>
+                <th>작업</th>
+                <th>대상</th>
+                <th>내용</th>
+              </tr>
+            </thead>
+            <tbody>
+              {auditEvents.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="empty-cell">아직 기록된 활동 로그가 없습니다.</td>
+                </tr>
+              ) : (
+                auditEvents.slice(0, 30).map((event) => (
+                  <tr key={event.id}>
+                    <td>{formatDateTime(event.createdAt)}</td>
+                    <td>{auditActionLabel(event.action)}</td>
+                    <td>{auditEntityLabel(event.entityType)}</td>
+                    <td>{event.summary}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
           <h2 className="panel-title">계정과목</h2>
           <span className="status blue">{formatNumber(accounts.length)}개</span>
         </div>
@@ -2938,6 +2987,46 @@ function billingModelLabel(value: AppCompany["billingModel"]) {
     SAAS_ANNUAL: "SaaS 연 구독"
   };
   return labels[value];
+}
+
+function auditActionLabel(action: string) {
+  const labels: Record<string, string> = {
+    COMPANY_UPDATE: "회사 설정",
+    IMPORT_CREATE: "CSV 가져오기",
+    IMPORT_DELETE: "업로드 삭제",
+    TRANSACTION_CREATE: "거래 추가",
+    TRANSACTION_UPDATE: "거래 수정",
+    EVIDENCE_CREATE: "증빙 추가",
+    JOURNAL_CREATE: "분개 저장",
+    JOURNAL_STATUS_UPDATE: "분개 상태",
+    REPORT_CREATE: "리포트 저장",
+    REPORT_DELETE: "리포트 삭제",
+    VENDOR_CREATE: "거래처 추가",
+    VENDOR_UPDATE: "거래처 수정",
+    VENDOR_DELETE: "거래처 삭제",
+    CLASSIFICATION_RULE_CREATE: "규칙 추가",
+    CLASSIFICATION_RULE_UPDATE: "규칙 수정",
+    CLASSIFICATION_RULE_DELETE: "규칙 삭제",
+    REVIEW_STATUS_UPDATE: "검토 처리",
+    BACKUP_RESTORE: "백업 복원"
+  };
+  return labels[action] ?? action;
+}
+
+function auditEntityLabel(entityType: string) {
+  const labels: Record<string, string> = {
+    COMPANY: "회사",
+    IMPORT_BATCH: "업로드",
+    TRANSACTION: "거래",
+    EVIDENCE: "증빙",
+    JOURNAL_ENTRY: "분개",
+    TAX_REPORT: "리포트",
+    VENDOR: "거래처",
+    CLASSIFICATION_RULE: "자동 분류",
+    REVIEW_ITEM: "검토 항목",
+    WORKSPACE_BACKUP: "워크스페이스"
+  };
+  return labels[entityType] ?? entityType;
 }
 
 function SetupStatusItem({ item }: { item: CompanySetupItem }) {
@@ -3458,6 +3547,7 @@ function buildWorkspaceBackupPayload({
   taxReports,
   vendors,
   classificationRules,
+  auditEvents,
   reviewItems
 }: {
   mode: "sample" | "database";
@@ -3472,6 +3562,7 @@ function buildWorkspaceBackupPayload({
   taxReports: AppTaxReport[];
   vendors: AppVendor[];
   classificationRules: AppClassificationRule[];
+  auditEvents: AppAuditEvent[];
   reviewItems: ReviewItem[];
 }) {
   return {
@@ -3490,6 +3581,7 @@ function buildWorkspaceBackupPayload({
       taxReports: taxReports.length,
       vendors: vendors.length,
       classificationRules: classificationRules.length,
+      auditEvents: auditEvents.length,
       reviewItems: reviewItems.length
     },
     company,
@@ -3503,6 +3595,7 @@ function buildWorkspaceBackupPayload({
     taxReports,
     vendors,
     classificationRules,
+    auditEvents,
     reviewItems,
     notes: [
       "혼자장부 전체 백업 파일입니다.",

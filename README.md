@@ -90,6 +90,7 @@ RAILWAY_EXPECTED_COMMIT=$(git rev-parse HEAD) npm run verify:railway
 - 소형 증빙 파일 DB 보관 및 다운로드
 - 검토함
 - 검토 항목 처리 상태 관리
+- 주요 작업 활동 로그
 - 월별 손익, 부가세 준비, 위험거래 리포트
 - 신고 일정과 신고 준비 순서 안내
 - 승인 분개 기준 계정별 원장과 재무제표 초안

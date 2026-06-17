@@ -68,6 +68,16 @@ const backup = {
   taxReports: [],
   vendors: [],
   classificationRules: [],
+  auditEvents: [
+    {
+      id: "audit-dry-run-1",
+      action: "IMPORT_CREATE",
+      entityType: "IMPORT_BATCH",
+      entityId: "import-dry-run-1",
+      summary: "dry run audit event",
+      createdAt: "2026-06-17T00:00:00.000Z"
+    }
+  ],
   reviewItems: []
 };
 
@@ -131,6 +141,7 @@ async function verifySettingsUi() {
   assert.match(body, /백업 JSON/, "settings page should expose JSON backup action");
   assert.match(body, /백업 ZIP/, "settings page should expose ZIP backup action");
   assert.match(body, /백업 복원/, "settings page should expose restore action");
+  assert.match(body, /활동 로그/, "settings page should expose audit log section");
 }
 
 async function verifyDryRun() {
@@ -140,6 +151,7 @@ async function verifyDryRun() {
   assert.equal(body.restoredCounts?.transactions, 1, "dry-run should count transactions");
   assert.equal(body.restoredCounts?.importBatches, 1, "dry-run should count import batches");
   assert.equal(body.restoredCounts?.originalImportFiles, 1, "dry-run should count original CSV files");
+  assert.equal(body.restoredCounts?.auditEvents, 1, "dry-run should count audit events");
   assert.equal(body.restoredCounts?.evidences, 0, "dry-run should count evidences");
 }
 
