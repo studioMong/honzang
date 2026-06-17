@@ -109,23 +109,21 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       const evidencePayload = await evidenceResponse.json();
       const journalPayload = await journalResponse.json();
       const reportPayload = await reportResponse.json();
+      const isDatabaseMode =
+        companyPayload.mode === "database" ||
+        transactionPayload.mode === "database" ||
+        evidencePayload.mode === "database" ||
+        journalPayload.mode === "database" ||
+        reportPayload.mode === "database";
       setCompany(companyPayload.company ?? sampleCompany);
       setAccounts(companyPayload.accounts ?? DEFAULT_ACCOUNTS);
       setCsvTemplates(companyPayload.csvTemplates ?? []);
       setClassificationRules(companyPayload.classificationRules ?? []);
-      setTransactions(transactionPayload.transactions?.length ? transactionPayload.transactions : sampleTransactions);
-      setEvidences(evidencePayload.evidences?.length ? evidencePayload.evidences : sampleEvidences);
+      setTransactions(isDatabaseMode ? transactionPayload.transactions ?? [] : transactionPayload.transactions?.length ? transactionPayload.transactions : sampleTransactions);
+      setEvidences(isDatabaseMode ? evidencePayload.evidences ?? [] : evidencePayload.evidences?.length ? evidencePayload.evidences : sampleEvidences);
       setJournalEntries(journalPayload.journalEntries ?? []);
       setTaxReports(reportPayload.taxReports ?? []);
-      setMode(
-        companyPayload.mode === "database" ||
-          transactionPayload.mode === "database" ||
-          evidencePayload.mode === "database" ||
-          journalPayload.mode === "database" ||
-          reportPayload.mode === "database"
-          ? "database"
-          : "sample"
-      );
+      setMode(isDatabaseMode ? "database" : "sample");
     } catch {
       setCompany(sampleCompany);
       setAccounts(DEFAULT_ACCOUNTS);
@@ -241,7 +239,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
             csvTemplates={csvTemplates}
             classificationRules={classificationRules}
             onImported={(imported) => {
-              setTransactions(imported);
+              setTransactions((current) => mergeTransactions(current, imported));
               setActiveView("transactions");
             }}
           />
@@ -2068,6 +2066,14 @@ function buildEvidenceMatchCandidates(form: EvidenceFormState, transactions: App
     .filter((candidate) => candidate.score > 0)
     .sort((left, right) => right.score - left.score)
     .slice(0, 5);
+}
+
+function mergeTransactions(current: AppTransaction[], incoming: AppTransaction[]) {
+  const byId = new Map(current.map((transaction) => [transaction.id, transaction]));
+  incoming.forEach((transaction) => {
+    byId.set(transaction.id, transaction);
+  });
+  return [...byId.values()].sort((left, right) => right.transactionDate.localeCompare(left.transactionDate));
 }
 
 function daysBetween(left: Date, right: Date) {
