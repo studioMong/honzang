@@ -147,44 +147,47 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: "계정과목을 찾을 수 없습니다." }, { status: 404 });
   }
 
-  const transaction = await db.transaction.create({
-    data: {
-      companyId: company.id,
-      sourceType: "MANUAL",
-      transactionDate: new Date(transactionDate),
-      description: payload.description,
-      counterparty: payload.counterparty,
-      direction: payload.depositAmount > 0 ? "DEPOSIT" : "WITHDRAWAL",
-      depositAmount: payload.depositAmount,
-      withdrawalAmount: payload.withdrawalAmount,
-      supplyAmount: payload.supplyAmount,
-      vatAmount: payload.vatAmount,
-      suggestedAccountId: suggestedAccount?.id ?? null,
-      confirmedAccountId: confirmedAccount?.id ?? null,
-      evidenceStatus: payload.evidenceStatus,
-      memo: payload.memo,
-      rawPayload: {
-        manual: true,
-        reviewReasons: vendorApplied.reviewReasons ?? []
+  const transaction = await db.$transaction(async (tx) => {
+    const created = await tx.transaction.create({
+      data: {
+        companyId: company.id,
+        sourceType: "MANUAL",
+        transactionDate: new Date(transactionDate),
+        description: payload.description,
+        counterparty: payload.counterparty,
+        direction: payload.depositAmount > 0 ? "DEPOSIT" : "WITHDRAWAL",
+        depositAmount: payload.depositAmount,
+        withdrawalAmount: payload.withdrawalAmount,
+        supplyAmount: payload.supplyAmount,
+        vatAmount: payload.vatAmount,
+        suggestedAccountId: suggestedAccount?.id ?? null,
+        confirmedAccountId: confirmedAccount?.id ?? null,
+        evidenceStatus: payload.evidenceStatus,
+        memo: payload.memo,
+        rawPayload: {
+          manual: true,
+          reviewReasons: vendorApplied.reviewReasons ?? []
+        }
+      },
+      include: {
+        suggestedAccount: true,
+        confirmedAccount: true
       }
-    },
-    include: {
-      suggestedAccount: true,
-      confirmedAccount: true
-    }
-  });
-  await recordAuditEvent(db, {
-    companyId: company.id,
-    action: "TRANSACTION_CREATE",
-    entityType: "TRANSACTION",
-    entityId: transaction.id,
-    summary: `수기 거래를 추가했습니다: ${transaction.description}`,
-    metadata: {
-      transactionDate: transaction.transactionDate.toISOString().slice(0, 10),
-      depositAmount: Number(transaction.depositAmount),
-      withdrawalAmount: Number(transaction.withdrawalAmount),
-      evidenceStatus: transaction.evidenceStatus
-    }
+    });
+    await recordAuditEvent(tx, {
+      companyId: company.id,
+      action: "TRANSACTION_CREATE",
+      entityType: "TRANSACTION",
+      entityId: created.id,
+      summary: `수기 거래를 추가했습니다: ${created.description}`,
+      metadata: {
+        transactionDate: created.transactionDate.toISOString().slice(0, 10),
+        depositAmount: Number(created.depositAmount),
+        withdrawalAmount: Number(created.withdrawalAmount),
+        evidenceStatus: created.evidenceStatus
+      }
+    });
+    return created;
   });
 
   return NextResponse.json({ ok: true, transaction: serializeTransaction(transaction), mode: "database" });
@@ -268,28 +271,31 @@ export async function PATCH(request: Request) {
   if (hasEvidenceStatus && payload.evidenceStatus) updateData.evidenceStatus = payload.evidenceStatus;
   if (hasMemo) updateData.memo = payload.memo ?? null;
 
-  const transaction = await db.transaction.update({
-    where: {
-      id: existing.id
-    },
-    data: updateData,
-    include: {
-      suggestedAccount: true,
-      confirmedAccount: true
-    }
-  });
-  await recordAuditEvent(db, {
-    companyId: company.id,
-    action: "TRANSACTION_UPDATE",
-    entityType: "TRANSACTION",
-    entityId: transaction.id,
-    summary: `거래를 수정했습니다: ${transaction.description}`,
-    metadata: transactionUpdateMetadata({
-      hasConfirmedAccountId,
-      confirmedAccountId: payload.confirmedAccountId,
-      evidenceStatus: payload.evidenceStatus,
-      memoChanged: hasMemo
-    })
+  const transaction = await db.$transaction(async (tx) => {
+    const updated = await tx.transaction.update({
+      where: {
+        id: existing.id
+      },
+      data: updateData,
+      include: {
+        suggestedAccount: true,
+        confirmedAccount: true
+      }
+    });
+    await recordAuditEvent(tx, {
+      companyId: company.id,
+      action: "TRANSACTION_UPDATE",
+      entityType: "TRANSACTION",
+      entityId: updated.id,
+      summary: `거래를 수정했습니다: ${updated.description}`,
+      metadata: transactionUpdateMetadata({
+        hasConfirmedAccountId,
+        confirmedAccountId: payload.confirmedAccountId,
+        evidenceStatus: payload.evidenceStatus,
+        memoChanged: hasMemo
+      })
+    });
+    return updated;
   });
 
   return NextResponse.json({ ok: true, transaction: serializeTransaction(transaction), mode: "database" });
