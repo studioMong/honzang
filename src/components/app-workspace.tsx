@@ -587,6 +587,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
             summary={summary}
             reviewItems={openReviewItems}
             transactions={transactions}
+            importBatches={importBatches}
             evidences={evidences}
             journalEntries={journalEntries}
             taxReports={taxReports}
@@ -721,6 +722,7 @@ function Dashboard({
   summary,
   reviewItems,
   transactions,
+  importBatches,
   evidences,
   journalEntries,
   taxReports,
@@ -731,6 +733,7 @@ function Dashboard({
   summary: ReturnType<typeof summarizeTransactions>;
   reviewItems: ReviewItem[];
   transactions: AppTransaction[];
+  importBatches: AppImportBatch[];
   evidences: AppEvidence[];
   journalEntries: AppJournalEntry[];
   taxReports: AppTaxReport[];
@@ -750,12 +753,12 @@ function Dashboard({
   const dashboardCashFlowRows = buildCashFlowRows(dashboardTransactions);
   const dashboardCashFlowTotals = buildCashFlowTotals(dashboardCashFlowRows);
   const dashboardBankBalanceRows = buildBankBalanceCheckRows(dashboardTransactions, dashboardCashFlowTotals);
-  const dashboardDataSourceRows = buildDataSourceRows(dashboardTransactions);
+  const dashboardDataSourceRows = buildDataSourceRows(dashboardTransactions, importBatches);
   const requiredDataSourceRows = dashboardDataSourceRows.filter((row) => row.자료 !== SOURCE_TYPE_LABELS.PG);
   const completedRequiredDataSources = requiredDataSourceRows.filter((row) => row.상태 === "반영됨").length;
   const dataSourceActions = dashboardDataSourceRows.map((row) => ({
     title: row.자료,
-    detail: `${row.기간} · ${row["다음 확인"]}`,
+    detail: `${row.기간} · ${row.업로드} · ${row.원본} · ${row["다음 확인"]}`,
     status: `${row.상태} · ${row.거래}`,
     tone: row.톤 as DashboardAction["tone"],
     target: "imports" as ViewKey,
@@ -7164,9 +7167,11 @@ function buildClosingBlockerRows(rows: FilingReadinessRow[]) {
   return rows.filter((row) => row.톤 === "red" && row.점검 !== "월 마감");
 }
 
-function buildDataSourceRows(transactions: AppTransaction[]) {
+function buildDataSourceRows(transactions: AppTransaction[], importBatches: AppImportBatch[] = []) {
   return sourceOptions.map((sourceType) => {
     const sourceTransactions = transactions.filter((transaction) => transaction.sourceType === sourceType);
+    const sourceBatches = importBatches.filter((batch) => batch.sourceType === sourceType);
+    const originalFileCount = sourceBatches.filter((batch) => batch.hasOriginalFile).length;
     const dates = sourceTransactions.map((transaction) => transaction.transactionDate).filter(Boolean).sort();
     const hasTransactions = sourceTransactions.length > 0;
     const optionalSource = sourceType === "PG";
@@ -7176,6 +7181,8 @@ function buildDataSourceRows(transactions: AppTransaction[]) {
       상태: hasTransactions ? "반영됨" : optionalSource ? "선택" : "확인 필요",
       톤: hasTransactions ? "green" : optionalSource ? "blue" : "amber",
       거래: `${formatNumber(sourceTransactions.length)}건`,
+      업로드: sourceBatches.length > 0 ? `${formatNumber(sourceBatches.length)}개 업로드` : "업로드 이력 없음",
+      원본: sourceBatches.length > 0 ? `원본 CSV ${formatNumber(originalFileCount)}/${formatNumber(sourceBatches.length)}개` : "원본 CSV 없음",
       기간: hasTransactions ? `${formatDate(dates[0])} - ${formatDate(dates.at(-1) ?? dates[0])}` : "-",
       "다음 확인": hasTransactions ? dataSourceReadyMessage(sourceType) : dataSourceMissingMessage(sourceType)
     };
