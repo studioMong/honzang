@@ -29,6 +29,19 @@ const taxReportTypeSchema = z.enum(["MONTHLY_PROFIT", "VAT_PREP", "WITHHOLDING_C
 const reviewSeveritySchema = z.enum(["INFO", "WARNING", "DANGER"]);
 const reviewStatusSchema = z.enum(["OPEN", "RESOLVED", "IGNORED"]);
 
+const csvMappingFieldLabels = [
+  ["transactionDate", "거래일"],
+  ["description", "내용/적요"],
+  ["counterparty", "거래처"],
+  ["depositAmount", "입금"],
+  ["withdrawalAmount", "출금"],
+  ["amount", "금액"],
+  ["supplyAmount", "공급가액"],
+  ["vatAmount", "부가세"],
+  ["balance", "잔액"],
+  ["approvalNumber", "승인번호"]
+] as const;
+
 const accountSchema = z
   .object({
     id: z.string().optional().nullable(),
@@ -276,6 +289,19 @@ export async function POST(request: Request) {
         code: "INVALID_BACKUP_DATES",
         message: "백업 날짜 데이터가 올바르지 않습니다.",
         issues: dateIssues
+      },
+      { status: 400 }
+    );
+  }
+
+  const csvTemplateIssues = validateBackupCsvTemplates(parsed.data.csvTemplates);
+  if (csvTemplateIssues.length > 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_BACKUP_CSV_TEMPLATES",
+        message: "백업 CSV 매핑 템플릿 데이터가 올바르지 않습니다.",
+        issues: csvTemplateIssues
       },
       { status: 400 }
     );
@@ -810,6 +836,45 @@ function buildRestoreCounts(backup: WorkspaceBackup) {
     auditEvents: uniqueById(backup.auditEvents).length,
     reviewItems: uniqueById(backup.reviewItems).filter((item) => item.transaction?.id && transactionIds.has(item.transaction.id)).length
   };
+}
+
+function validateBackupCsvTemplates(csvTemplates: WorkspaceBackup["csvTemplates"]) {
+  const issues: string[] = [];
+
+  for (const template of uniqueById(csvTemplates)) {
+    const label = `CSV 템플릿 ${template.id ?? template.name}`;
+    const mapping = isRecord(template.mapping) ? template.mapping : {};
+    const mappedValue = (key: string) => {
+      const value = mapping[key];
+      return typeof value === "string" ? value.trim() : "";
+    };
+
+    for (const [key, fieldLabel] of csvMappingFieldLabels) {
+      const value = mapping[key];
+      if (value !== undefined && value !== null && typeof value !== "string") {
+        issues.push(`${label}: ${fieldLabel} 매핑 값은 문자열이어야 합니다.`);
+      }
+    }
+
+    if (!mappedValue("transactionDate")) issues.push(`${label}: 거래일 컬럼을 매핑해야 합니다.`);
+    if (!mappedValue("description")) issues.push(`${label}: 내용/적요 컬럼을 매핑해야 합니다.`);
+    if (!mappedValue("amount") && !mappedValue("depositAmount") && !mappedValue("withdrawalAmount")) {
+      issues.push(`${label}: 금액 또는 입금/출금 컬럼 중 하나를 매핑해야 합니다.`);
+    }
+
+    const headers = template.headerSignature?.split("|").map((header) => header.trim()).filter(Boolean) ?? [];
+    if (headers.length > 0) {
+      const headerSet = new Set(headers);
+      for (const [key, fieldLabel] of csvMappingFieldLabels) {
+        const column = mappedValue(key);
+        if (column && !headerSet.has(column)) {
+          issues.push(`${label}: ${fieldLabel} 매핑 컬럼(${column})이 헤더 서명에 없습니다.`);
+        }
+      }
+    }
+  }
+
+  return issues;
 }
 
 function validateBackupEvidences(backup: WorkspaceBackup) {

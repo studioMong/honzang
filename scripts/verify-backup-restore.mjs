@@ -164,6 +164,7 @@ try {
   await verifySettingsUi();
   await verifyDryRun();
   await verifyInvalidDateBackup();
+  await verifyInvalidCsvTemplateBackup();
   await verifyInvalidTransactionAmountBackup();
   await verifyInvalidTransactionImportBatchBackup();
   await verifyInvalidTransactionAccountBackup();
@@ -380,6 +381,31 @@ async function verifyInvalidDateBackup() {
   assert.ok(body.issues.some((issue) => issue.includes("report-invalid-period-1")), "restore should report reversed report periods");
   assert.ok(body.issues.some((issue) => issue.includes("periodStart는 2026-06-01")), "restore should report mismatched closing period start");
   assert.ok(body.issues.some((issue) => issue.includes("periodEnd는 2026-06-30")), "restore should report mismatched closing period end");
+}
+
+async function verifyInvalidCsvTemplateBackup() {
+  const invalidBackup = structuredClone(backup);
+  invalidBackup.csvTemplates = [
+    {
+      id: "csv-template-invalid-1",
+      name: "깨진 매핑 템플릿",
+      sourceType: "BANK",
+      headerSignature: "거래일|적요|입금",
+      mapping: {
+        transactionDate: "없는거래일",
+        description: 123,
+        depositAmount: "입금"
+      }
+    }
+  ];
+
+  const body = await postJson("/api/backups/restore", { backup: invalidBackup, dryRun: true }, 400);
+  assert.equal(body.ok, false, "restore should reject invalid CSV template mappings");
+  assert.equal(body.code, "INVALID_BACKUP_CSV_TEMPLATES", "restore should return CSV template validation code");
+  assert.ok(Array.isArray(body.issues), "restore should return CSV template validation issues");
+  assert.ok(body.issues.some((issue) => issue.includes("내용/적요 매핑 값은 문자열")), "restore should report non-string mapping values");
+  assert.ok(body.issues.some((issue) => issue.includes("내용/적요 컬럼을 매핑")), "restore should report missing required description mapping");
+  assert.ok(body.issues.some((issue) => issue.includes("거래일 매핑 컬럼(없는거래일)")), "restore should report mapping columns absent from header signature");
 }
 
 async function verifyInvalidTransactionAmountBackup() {
