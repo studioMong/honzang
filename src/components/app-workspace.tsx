@@ -2263,20 +2263,23 @@ function SettingsPanel({
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const setupItems = buildCompanySetupItems(form);
   const missingCount = setupItems.filter((item) => item.tone === "red").length;
-  const backupPayload = buildWorkspaceBackupPayload({
-    mode,
-    company: form,
-    accounts,
-    csvTemplates,
-    importBatches,
-    transactions,
-    evidences,
-    journalEntries,
-    taxReports,
-    vendors,
-    classificationRules,
-    reviewItems
-  });
+  function buildCurrentBackupPayload(originalImportFiles: OriginalImportFile[] = []) {
+    return buildWorkspaceBackupPayload({
+      mode,
+      company: form,
+      accounts,
+      csvTemplates,
+      importBatches,
+      originalImportFiles,
+      transactions,
+      evidences,
+      journalEntries,
+      taxReports,
+      vendors,
+      classificationRules,
+      reviewItems
+    });
+  }
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -2420,15 +2423,21 @@ function SettingsPanel({
     }
   }
 
-  function downloadWorkspaceBackupJson() {
-    downloadJson(buildWorkspaceBackupFileName("json"), backupPayload);
+  async function downloadWorkspaceBackupJson() {
+    setExportingBackup(true);
+    try {
+      const originalImportFiles = await fetchOriginalImportFiles(importBatches);
+      downloadJson(buildWorkspaceBackupFileName("json"), buildCurrentBackupPayload(originalImportFiles));
+    } finally {
+      setExportingBackup(false);
+    }
   }
 
   async function downloadWorkspaceBackupZip() {
     setExportingBackup(true);
     try {
-      const importSourceFiles = await buildImportSourceZipEntries(importBatches);
-      downloadWorkspaceBackupArchive(buildWorkspaceBackupFileName("zip"), backupPayload, evidences, importSourceFiles);
+      const originalImportFiles = await fetchOriginalImportFiles(importBatches);
+      downloadWorkspaceBackupArchive(buildWorkspaceBackupFileName("zip"), buildCurrentBackupPayload(originalImportFiles), evidences);
     } finally {
       setExportingBackup(false);
     }
@@ -2462,6 +2471,7 @@ function SettingsPanel({
         `거래 ${formatNumber(dryRunCounts.transactions ?? 0)}건`,
         `증빙 ${formatNumber(dryRunCounts.evidences ?? 0)}건`,
         `분개 ${formatNumber(dryRunCounts.journalEntries ?? 0)}개`,
+        `원본 CSV ${formatNumber(dryRunCounts.originalImportFiles ?? 0)}개`,
         "현재 DB의 회사 데이터, 거래, 증빙, 분개, 리포트, 규칙을 백업 파일 내용으로 교체할까요?"
       ].join("\n");
       if (!window.confirm(restoreText)) return;
@@ -2480,7 +2490,7 @@ function SettingsPanel({
       const counts = payload.restoredCounts ?? {};
       setBackupMessage({
         tone: "green",
-        text: `복원 완료: 거래 ${formatNumber(counts.transactions ?? 0)}건, 증빙 ${formatNumber(counts.evidences ?? 0)}건, 분개 ${formatNumber(counts.journalEntries ?? 0)}개`
+        text: `복원 완료: 거래 ${formatNumber(counts.transactions ?? 0)}건, 증빙 ${formatNumber(counts.evidences ?? 0)}건, 분개 ${formatNumber(counts.journalEntries ?? 0)}개, 원본 CSV ${formatNumber(counts.originalImportFiles ?? 0)}개`
       });
       await onRestored();
     } catch {
@@ -2805,8 +2815,8 @@ function SettingsPanel({
             <p className="panel-subtitle">현재 회사 데이터, 거래, 증빙, 분개, 리포트, 규칙을 파일로 보관</p>
           </div>
           <div className="toolbar">
-            <button className="secondary-button" onClick={downloadWorkspaceBackupJson}>
-              <Download size={16} />
+            <button className="secondary-button" onClick={() => void downloadWorkspaceBackupJson()} disabled={exportingBackup}>
+              {exportingBackup ? <Loader2 size={16} className="spin" /> : <Download size={16} />}
               백업 JSON
             </button>
             <button className="secondary-button" onClick={() => void downloadWorkspaceBackupZip()} disabled={exportingBackup}>
@@ -3426,12 +3436,22 @@ function buildWorkspaceBackupFileName(extension: "json" | "zip") {
   return `honzang-${new Date().toISOString().slice(0, 10)}-workspace-backup.${extension}`;
 }
 
+type OriginalImportFile = {
+  importBatchId: string;
+  originalFileName: string;
+  originalFileHash?: string | null;
+  originalFileMimeType?: string | null;
+  originalFileSize?: number | null;
+  originalFileText: string;
+};
+
 function buildWorkspaceBackupPayload({
   mode,
   company,
   accounts,
   csvTemplates,
   importBatches,
+  originalImportFiles,
   transactions,
   evidences,
   journalEntries,
@@ -3445,6 +3465,7 @@ function buildWorkspaceBackupPayload({
   accounts: AppAccount[];
   csvTemplates: CsvTemplate[];
   importBatches: AppImportBatch[];
+  originalImportFiles: OriginalImportFile[];
   transactions: AppTransaction[];
   evidences: AppEvidence[];
   journalEntries: AppJournalEntry[];
@@ -3462,6 +3483,7 @@ function buildWorkspaceBackupPayload({
       accounts: accounts.length,
       csvTemplates: csvTemplates.length,
       importBatches: importBatches.length,
+      originalImportFiles: originalImportFiles.length,
       transactions: transactions.length,
       evidences: evidences.length,
       journalEntries: journalEntries.length,
@@ -3474,6 +3496,7 @@ function buildWorkspaceBackupPayload({
     accounts,
     csvTemplates,
     importBatches,
+    originalImportFiles,
     transactions,
     evidences,
     journalEntries,
@@ -3484,7 +3507,8 @@ function buildWorkspaceBackupPayload({
     notes: [
       "혼자장부 전체 백업 파일입니다.",
       "민감한 거래처, 금액, 증빙 파일 정보가 포함될 수 있으므로 안전한 위치에 보관하세요.",
-      "ZIP 백업에는 가능한 경우 원본 CSV와 DB 보관 증빙 파일이 별도 파일로 함께 포함됩니다."
+      "가능한 경우 원본 CSV는 originalImportFiles에 포함되며 ZIP 백업에는 별도 CSV 파일로도 함께 포함됩니다.",
+      "DB 보관 증빙 파일은 백업 JSON과 ZIP의 evidences 폴더에 포함됩니다."
     ]
   };
 }
@@ -3492,9 +3516,9 @@ function buildWorkspaceBackupPayload({
 function downloadWorkspaceBackupArchive(
   fileName: string,
   payload: ReturnType<typeof buildWorkspaceBackupPayload>,
-  evidences: AppEvidence[],
-  importSourceFiles: ZipFile[]
+  evidences: AppEvidence[]
 ) {
+  const importSourceFiles = buildImportSourceZipEntries(payload.originalImportFiles);
   const evidenceFiles = buildEvidenceFileZipEntries(evidences);
   const files: ZipFile[] = [
     {
@@ -3526,9 +3550,8 @@ function downloadWorkspaceBackupArchive(
   downloadBlob(fileName, createZipBlob(files));
 }
 
-async function buildImportSourceZipEntries(importBatches: AppImportBatch[]) {
-  const usedPaths = new Set<string>();
-  const files: ZipFile[] = [];
+async function fetchOriginalImportFiles(importBatches: AppImportBatch[]) {
+  const originalImportFiles: OriginalImportFile[] = [];
 
   for (const batch of importBatches) {
     if (!batch.hasOriginalFile) continue;
@@ -3536,17 +3559,31 @@ async function buildImportSourceZipEntries(importBatches: AppImportBatch[]) {
       const response = await fetch(`/api/imports?importBatchId=${encodeURIComponent(batch.id)}`, { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok || typeof payload.originalFileText !== "string") continue;
-      const fileName = safeArchiveFileName(payload.originalFileName ?? batch.originalFileName, `${batch.sourceType}-${batch.id}.csv`);
-      files.push({
-        path: uniqueZipPath(`imports/original-csv/${fileName}`, usedPaths),
-        content: payload.originalFileText
+      originalImportFiles.push({
+        importBatchId: batch.id,
+        originalFileName: payload.originalFileName ?? batch.originalFileName,
+        originalFileHash: payload.originalFileHash ?? batch.originalFileHash ?? null,
+        originalFileMimeType: payload.originalFileMimeType ?? batch.originalFileMimeType ?? null,
+        originalFileSize: payload.originalFileSize ?? batch.originalFileSize ?? payload.originalFileText.length,
+        originalFileText: payload.originalFileText
       });
     } catch {
       // Backup still succeeds with the structured data even if one source CSV cannot be fetched.
     }
   }
 
-  return files;
+  return originalImportFiles;
+}
+
+function buildImportSourceZipEntries(originalImportFiles: OriginalImportFile[]) {
+  const usedPaths = new Set<string>();
+  return originalImportFiles.map((file) => {
+    const fileName = safeArchiveFileName(file.originalFileName, `${file.importBatchId}.csv`);
+    return {
+      path: uniqueZipPath(`imports/original-csv/${fileName}`, usedPaths),
+      content: file.originalFileText
+    };
+  });
 }
 
 function buildFilingWorkbookSheets(payload: ReturnType<typeof buildFilingPackagePayload>): XlsxSheet[] {

@@ -27,11 +27,34 @@ const backup = {
   },
   accounts: [],
   csvTemplates: [],
-  importBatches: [],
+  importBatches: [
+    {
+      id: "import-dry-run-1",
+      sourceType: "BANK",
+      originalFileName: "dry-run-bank.csv",
+      originalFileHash: "dry-run-hash",
+      originalFileMimeType: "text/csv",
+      originalFileSize: 42,
+      rowCount: 1,
+      importedAt: "2026-06-17T00:00:00.000Z"
+    }
+  ],
+  originalImportFiles: [
+    {
+      importBatchId: "import-dry-run-1",
+      originalFileName: "dry-run-bank.csv",
+      originalFileHash: "dry-run-hash",
+      originalFileMimeType: "text/csv",
+      originalFileSize: 42,
+      originalFileText: "거래일,적요,입금\n2026-06-17,dry run,1000\n"
+    }
+  ],
   transactions: [
     {
       id: "tx-dry-run-1",
-      sourceType: "MANUAL",
+      importBatchId: "import-dry-run-1",
+      sourceRowNumber: 1,
+      sourceType: "BANK",
       transactionDate: "2026-06-17",
       description: "dry run",
       direction: "DEPOSIT",
@@ -115,6 +138,8 @@ async function verifyDryRun() {
   assert.equal(body.ok, true, "dry-run should succeed");
   assert.equal(body.dryRun, true, "dry-run response should be marked");
   assert.equal(body.restoredCounts?.transactions, 1, "dry-run should count transactions");
+  assert.equal(body.restoredCounts?.importBatches, 1, "dry-run should count import batches");
+  assert.equal(body.restoredCounts?.originalImportFiles, 1, "dry-run should count original CSV files");
   assert.equal(body.restoredCounts?.evidences, 0, "dry-run should count evidences");
 }
 

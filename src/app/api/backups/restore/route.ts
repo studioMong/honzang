@@ -62,6 +62,17 @@ const importBatchSchema = z
   })
   .passthrough();
 
+const originalImportFileSchema = z
+  .object({
+    importBatchId: z.string().min(1).max(128),
+    originalFileName: z.string().min(1).max(240),
+    originalFileHash: z.string().optional().nullable(),
+    originalFileMimeType: z.string().max(120).optional().nullable(),
+    originalFileSize: z.coerce.number().int().nonnegative().max(2_000_000).optional().nullable(),
+    originalFileText: z.string().max(2_000_000)
+  })
+  .passthrough();
+
 const transactionSchema = z
   .object({
     id: z.string().min(1).max(128),
@@ -181,6 +192,7 @@ const workspaceBackupSchema = z
     accounts: z.array(accountSchema).default([]),
     csvTemplates: z.array(csvTemplateSchema).default([]),
     importBatches: z.array(importBatchSchema).default([]),
+    originalImportFiles: z.array(originalImportFileSchema).default([]),
     transactions: z.array(transactionSchema).default([]),
     evidences: z.array(evidenceSchema).default([]),
     journalEntries: z.array(journalEntrySchema).default([]),
@@ -257,7 +269,7 @@ async function restoreWorkspace(db: RestoreDb, backup: WorkspaceBackup) {
     });
 
     const accountByCode = await restoreAccounts(tx, company.id, backup.accounts);
-    const importBatchIds = await restoreImportBatches(tx, company.id, backup.importBatches);
+    const importBatchIds = await restoreImportBatches(tx, company.id, backup.importBatches, backup.originalImportFiles);
     const transactionIdMap = await restoreTransactions(tx, company.id, backup.transactions, accountByCode, importBatchIds);
     await restoreCsvTemplates(tx, company.id, backup.csvTemplates);
     await restoreEvidences(tx, company.id, backup.evidences, transactionIdMap);
@@ -350,20 +362,27 @@ async function restoreCsvTemplates(tx: Prisma.TransactionClient, companyId: stri
   }
 }
 
-async function restoreImportBatches(tx: Prisma.TransactionClient, companyId: string, importBatches: WorkspaceBackup["importBatches"]) {
+async function restoreImportBatches(
+  tx: Prisma.TransactionClient,
+  companyId: string,
+  importBatches: WorkspaceBackup["importBatches"],
+  originalImportFiles: WorkspaceBackup["originalImportFiles"]
+) {
   const importBatchIds = new Set<string>();
+  const originalFileByBatchId = new Map(uniqueByImportBatchId(originalImportFiles).map((file) => [file.importBatchId, file]));
 
   for (const batch of uniqueById(importBatches)) {
+    const originalFile = originalFileByBatchId.get(batch.id);
     await tx.importBatch.create({
       data: {
         id: batch.id,
         companyId,
         sourceType: batch.sourceType,
-        originalFileName: batch.originalFileName,
-        originalFileHash: batch.originalFileHash ?? null,
-        originalFileMimeType: batch.originalFileMimeType ?? null,
-        originalFileSize: batch.originalFileSize ?? null,
-        originalFileText: null,
+        originalFileName: originalFile?.originalFileName ?? batch.originalFileName,
+        originalFileHash: originalFile?.originalFileHash ?? batch.originalFileHash ?? null,
+        originalFileMimeType: originalFile?.originalFileMimeType ?? batch.originalFileMimeType ?? null,
+        originalFileSize: originalFile?.originalFileSize ?? batch.originalFileSize ?? originalFile?.originalFileText.length ?? null,
+        originalFileText: originalFile?.originalFileText ?? null,
         rowCount: batch.rowCount,
         mapping: Prisma.JsonNull,
         importedAt: dateOrNow(batch.importedAt)
@@ -593,6 +612,7 @@ function buildRestoreCounts(backup: WorkspaceBackup) {
     accounts: uniqueByCode([...DEFAULT_ACCOUNTS, ...backup.accounts]).length,
     csvTemplates: uniqueById(backup.csvTemplates).length,
     importBatches: uniqueById(backup.importBatches).length,
+    originalImportFiles: uniqueByImportBatchId(backup.originalImportFiles).length,
     transactions: uniqueById(backup.transactions).length,
     evidences: uniqueById(backup.evidences).length,
     journalEntries: uniqueById(backup.journalEntries).length,
@@ -611,6 +631,14 @@ function uniqueById<T extends { id?: string | null }>(items: T[]) {
     seen.add(item.id);
     return true;
   });
+}
+
+function uniqueByImportBatchId<T extends { importBatchId: string }>(items: T[]) {
+  const byBatchId = new Map<string, T>();
+  for (const item of items) {
+    byBatchId.set(item.importBatchId, item);
+  }
+  return [...byBatchId.values()];
 }
 
 function dateOrNow(value?: string | null) {
