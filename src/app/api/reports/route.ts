@@ -6,7 +6,7 @@ import { getPrisma } from "@/lib/db";
 import { sampleTaxReports } from "@/lib/sample-data";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
-import { closedPeriodResponse, findClosedPeriodForDates, periodRangeFromMonth } from "@/lib/server/closing-periods";
+import { closedPeriodResponse, findClosedPeriodOverlappingRange, periodRangeFromMonth } from "@/lib/server/closing-periods";
 import { parseStrictDate } from "@/lib/server/date-validation";
 import { validateJsonPayloadSize } from "@/lib/server/json-payload-validation";
 import { serializeTaxReport } from "@/lib/server/serializers";
@@ -117,29 +117,32 @@ export async function POST(request: Request) {
   }
 
   const company = await ensureDefaultCompany(db);
-  const closedPeriod = await findClosedPeriodForDates(db, company.id, [periodStart, periodEnd]);
+  const closedPeriod = await findClosedPeriodOverlappingRange(db, company.id, periodStart, periodEnd);
   if (closedPeriod) return closedPeriodResponse(closedPeriod.period);
 
-  const taxReport = await db.taxReport.create({
-    data: {
+  const taxReport = await db.$transaction(async (tx) => {
+    const created = await tx.taxReport.create({
+      data: {
+        companyId: company.id,
+        reportType: payload.reportType,
+        periodStart,
+        periodEnd,
+        calculatedPayload: payload.calculatedPayload as Prisma.InputJsonValue
+      }
+    });
+    await recordAuditEvent(tx, {
       companyId: company.id,
-      reportType: payload.reportType,
-      periodStart,
-      periodEnd,
-      calculatedPayload: payload.calculatedPayload as Prisma.InputJsonValue
-    }
-  });
-  await recordAuditEvent(db, {
-    companyId: company.id,
-    action: "REPORT_CREATE",
-    entityType: "TAX_REPORT",
-    entityId: taxReport.id,
-    summary: `${payload.reportType} 리포트 스냅샷을 저장했습니다.`,
-    metadata: {
-      reportType: payload.reportType,
-      periodStart: normalizedPeriodStart,
-      periodEnd: normalizedPeriodEnd
-    }
+      action: "REPORT_CREATE",
+      entityType: "TAX_REPORT",
+      entityId: created.id,
+      summary: `${payload.reportType} 리포트 스냅샷을 저장했습니다.`,
+      metadata: {
+        reportType: payload.reportType,
+        periodStart: normalizedPeriodStart,
+        periodEnd: normalizedPeriodEnd
+      }
+    });
+    return created;
   });
 
   return NextResponse.json({ ok: true, taxReport: serializeTaxReport(taxReport), mode: "database" });
@@ -167,21 +170,23 @@ export async function DELETE(request: Request) {
   if (!taxReport) {
     return NextResponse.json({ ok: false, message: "리포트를 찾을 수 없습니다." }, { status: 404 });
   }
-  const closedPeriod = await findClosedPeriodForDates(db, company.id, [taxReport.periodStart, taxReport.periodEnd]);
+  const closedPeriod = await findClosedPeriodOverlappingRange(db, company.id, taxReport.periodStart, taxReport.periodEnd);
   if (closedPeriod) return closedPeriodResponse(closedPeriod.period);
 
-  await db.taxReport.delete({ where: { id: taxReport.id } });
-  await recordAuditEvent(db, {
-    companyId: company.id,
-    action: "REPORT_DELETE",
-    entityType: "TAX_REPORT",
-    entityId: taxReport.id,
-    summary: `${taxReport.reportType} 리포트 스냅샷을 삭제했습니다.`,
-    metadata: {
-      reportType: taxReport.reportType,
-      periodStart: taxReport.periodStart.toISOString().slice(0, 10),
-      periodEnd: taxReport.periodEnd.toISOString().slice(0, 10)
-    }
+  await db.$transaction(async (tx) => {
+    await tx.taxReport.delete({ where: { id: taxReport.id } });
+    await recordAuditEvent(tx, {
+      companyId: company.id,
+      action: "REPORT_DELETE",
+      entityType: "TAX_REPORT",
+      entityId: taxReport.id,
+      summary: `${taxReport.reportType} 리포트 스냅샷을 삭제했습니다.`,
+      metadata: {
+        reportType: taxReport.reportType,
+        periodStart: taxReport.periodStart.toISOString().slice(0, 10),
+        periodEnd: taxReport.periodEnd.toISOString().slice(0, 10)
+      }
+    });
   });
 
   return NextResponse.json({ ok: true, id: taxReport.id, mode: "database" });

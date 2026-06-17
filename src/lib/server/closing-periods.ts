@@ -9,6 +9,7 @@ type ClosingPeriodReader = {
         periodStart: { lte: Date };
         periodEnd: { gte: Date };
       };
+      orderBy?: { period: "asc" | "desc" };
     }) => Promise<{ period: string } | null>;
     findMany: (args: {
       where: {
@@ -76,6 +77,29 @@ export async function findClosedPeriodForDates(db: ClosingPeriodReader, companyI
   });
 
   return candidates.find((period) => dates.some((date) => period.periodStart <= date && period.periodEnd >= date)) ?? null;
+}
+
+export async function findClosedPeriodOverlappingRange(
+  db: ClosingPeriodReader,
+  companyId: string,
+  startValue: string | Date | null | undefined,
+  endValue: string | Date | null | undefined
+) {
+  if (!startValue || !endValue) return null;
+  const startDate = typeof startValue === "string" ? new Date(startValue) : startValue;
+  const endDate = typeof endValue === "string" ? new Date(endValue) : endValue;
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return null;
+
+  const firstDate = startDate <= endDate ? startDate : endDate;
+  const lastDate = startDate <= endDate ? endDate : startDate;
+  return db.closingPeriod.findFirst({
+    where: {
+      companyId,
+      periodStart: { lte: lastDate },
+      periodEnd: { gte: firstDate }
+    },
+    orderBy: { period: "desc" }
+  });
 }
 
 export function closedPeriodResponse(period: string) {

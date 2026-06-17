@@ -311,6 +311,28 @@ try {
   assert.ok(savedReport, "saved report should be listed");
   assertSnapshotReviewItemsContainMismatch(savedReport?.calculatedPayload, "saved report payload");
 
+  const yearReportPayload = await requestJson<{ ok?: boolean; mode?: string; taxReport?: { id?: string } }>("/api/reports", {
+    method: "POST",
+    body: {
+      companyId,
+      reportType: "CORPORATE_TAX_PREP",
+      periodStart: "2026-01-01",
+      periodEnd: "2026-12-31",
+      calculatedPayload: {
+        marker,
+        period: {
+          start: "2026-01-01",
+          end: "2026-12-31"
+        },
+        scope: "year-range-lock-verification"
+      }
+    }
+  });
+  assert.equal(yearReportPayload.ok, true, "cross-month tax report snapshot should be saved before closing");
+  assert.equal(yearReportPayload.mode, "database", "cross-month tax report snapshot should use database mode");
+  assert.ok(yearReportPayload.taxReport?.id, "cross-month tax report snapshot should return an id");
+  cleanup.taxReportIds.push(yearReportPayload.taxReport.id);
+
   const closingPeriod = transactionDates[0]?.slice(0, 7);
   assert.equal(closingPeriod, "2026-06", "workflow fixture should run in the June 2026 period");
   const mismatchedClosePayload = await requestJson<{ ok?: boolean; code?: string; issues?: string[] }>("/api/closing-periods", {
@@ -427,6 +449,35 @@ try {
   });
   assert.equal(lockedReportDeletePayload.ok, false, "locked period report delete should fail");
   assert.equal(lockedReportDeletePayload.code, "PERIOD_CLOSED", "locked period report delete should return PERIOD_CLOSED");
+
+  const lockedRangeReportDeletePayload = await requestJson<{ ok?: boolean; code?: string; message?: string }>("/api/reports", {
+    method: "DELETE",
+    expectedStatus: 409,
+    body: { id: yearReportPayload.taxReport.id }
+  });
+  assert.equal(lockedRangeReportDeletePayload.ok, false, "report delete spanning a locked period should fail");
+  assert.equal(lockedRangeReportDeletePayload.code, "PERIOD_CLOSED", "report delete spanning a locked period should return PERIOD_CLOSED");
+
+  const lockedRangeReportCreatePayload = await requestJson<{ ok?: boolean; code?: string; message?: string }>("/api/reports", {
+    method: "POST",
+    expectedStatus: 409,
+    body: {
+      companyId,
+      reportType: "CORPORATE_TAX_PREP",
+      periodStart: "2026-01-01",
+      periodEnd: "2026-12-31",
+      calculatedPayload: {
+        marker,
+        period: {
+          start: "2026-01-01",
+          end: "2026-12-31"
+        },
+        scope: "locked-year-range-create-verification"
+      }
+    }
+  });
+  assert.equal(lockedRangeReportCreatePayload.ok, false, "report create spanning a locked period should fail");
+  assert.equal(lockedRangeReportCreatePayload.code, "PERIOD_CLOSED", "report create spanning a locked period should return PERIOD_CLOSED");
 
   const lockedEvidenceDeletePayload = await requestJson<{ ok?: boolean; code?: string; message?: string }>("/api/evidences", {
     method: "DELETE",
