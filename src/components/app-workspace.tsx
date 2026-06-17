@@ -3886,9 +3886,13 @@ function SettingsPanel({
 
   async function downloadWorkspaceBackupJson() {
     setExportingBackup(true);
+    setBackupMessage(null);
     try {
       const originalImportFiles = await fetchOriginalImportFiles(importBatches);
       downloadJson(buildWorkspaceBackupFileName("json"), buildCurrentBackupPayload(originalImportFiles));
+      setBackupMessage(buildBackupExportMessage("JSON", importBatches, originalImportFiles, evidences));
+    } catch {
+      setBackupMessage({ tone: "red", text: "백업 JSON 생성에 실패했습니다." });
     } finally {
       setExportingBackup(false);
     }
@@ -3896,9 +3900,13 @@ function SettingsPanel({
 
   async function downloadWorkspaceBackupZip() {
     setExportingBackup(true);
+    setBackupMessage(null);
     try {
       const originalImportFiles = await fetchOriginalImportFiles(importBatches);
       downloadWorkspaceBackupArchive(buildWorkspaceBackupFileName("zip"), buildCurrentBackupPayload(originalImportFiles), evidences);
+      setBackupMessage(buildBackupExportMessage("ZIP", importBatches, originalImportFiles, evidences));
+    } catch {
+      setBackupMessage({ tone: "red", text: "백업 ZIP 생성에 실패했습니다." });
     } finally {
       setExportingBackup(false);
     }
@@ -5936,6 +5944,9 @@ function downloadWorkspaceBackupArchive(
 ) {
   const importSourceFiles = buildImportSourceZipEntries(payload.originalImportFiles);
   const evidenceFiles = buildEvidenceFileZipEntries(evidences);
+  const sourceBatchesWithFile = payload.importBatches.filter((batch) => batch.hasOriginalFile).length;
+  const externalEvidenceFiles = evidences.filter((evidence) => !evidence.fileDataUrl && evidence.fileUrl).length;
+  const evidenceRecordsWithoutFile = evidences.filter((evidence) => !evidence.fileDataUrl && !evidence.fileUrl).length;
   const files: ZipFile[] = [
     {
       path: "manifest.json",
@@ -5955,7 +5966,17 @@ function downloadWorkspaceBackupArchive(
           readinessIssues: payload.backupReadinessRows.filter((row) => row.톤 === "red" || row.톤 === "amber").length,
           files: ["workspace-backup.json", "csv/data-retention-policy.csv", "csv/backup-readiness.csv"],
           originalCsvFiles: importSourceFiles.map((file) => file.path),
+          originalCsvFileSummary: {
+            expected: sourceBatchesWithFile,
+            included: importSourceFiles.length,
+            missing: Math.max(sourceBatchesWithFile - importSourceFiles.length, 0)
+          },
           evidenceFiles: evidenceFiles.map((file) => file.path),
+          evidenceFileSummary: {
+            dbIncluded: evidenceFiles.length,
+            externalLinks: externalEvidenceFiles,
+            recordsWithoutFile: evidenceRecordsWithoutFile
+          },
           notes: payload.notes
         },
         null,
@@ -5969,6 +5990,28 @@ function downloadWorkspaceBackupArchive(
     ...evidenceFiles
   ];
   downloadBlob(fileName, createZipBlob(files));
+}
+
+function buildBackupExportMessage(
+  label: "JSON" | "ZIP",
+  importBatches: AppImportBatch[],
+  originalImportFiles: OriginalImportFile[],
+  evidences: AppEvidence[]
+): PanelMessage {
+  const sourceBatchesWithFile = importBatches.filter((batch) => batch.hasOriginalFile).length;
+  const missingOriginalFiles = Math.max(sourceBatchesWithFile - originalImportFiles.length, 0);
+  const externalEvidenceFiles = evidences.filter((evidence) => !evidence.fileDataUrl && evidence.fileUrl).length;
+  const evidenceRecordsWithoutFile = evidences.filter((evidence) => !evidence.fileDataUrl && !evidence.fileUrl).length;
+  const hasCaution = missingOriginalFiles > 0 || externalEvidenceFiles > 0 || evidenceRecordsWithoutFile > 0;
+
+  return {
+    tone: hasCaution ? "amber" : "green",
+    text: `${label} 백업을 생성했습니다. 원본 CSV ${formatNumber(originalImportFiles.length)}/${formatNumber(sourceBatchesWithFile)}개 포함, DB 증빙 ${formatNumber(evidences.filter((evidence) => evidence.fileDataUrl).length)}개 포함${
+      hasCaution
+        ? `, 확인 필요: 원본 CSV 누락 ${formatNumber(missingOriginalFiles)}개, 외부 증빙 ${formatNumber(externalEvidenceFiles)}개, 파일 없는 증빙 ${formatNumber(evidenceRecordsWithoutFile)}개`
+        : ""
+    }`
+  };
 }
 
 async function fetchOriginalImportFiles(importBatches: AppImportBatch[]) {
