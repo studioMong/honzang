@@ -119,38 +119,49 @@ export async function POST(request: Request) {
   }
 
   const company = await ensureDefaultCompany(db);
-  const closingPeriod = await db.closingPeriod.upsert({
+  const existing = await db.closingPeriod.findUnique({
     where: {
       companyId_period: {
         companyId: company.id,
         period: parsed.data.period
       }
-    },
-    update: {
-      summaryPayload: asJsonValue(parsed.data.summaryPayload),
-      closedAt: new Date(),
-      periodStart: range.start,
-      periodEnd: range.end
-    },
-    create: {
-      companyId: company.id,
-      period: parsed.data.period,
-      periodStart: range.start,
-      periodEnd: range.end,
-      summaryPayload: asJsonValue(parsed.data.summaryPayload)
     }
   });
-  await recordAuditEvent(db, {
-    companyId: company.id,
-    action: "PERIOD_CLOSE",
-    entityType: "CLOSING_PERIOD",
-    entityId: closingPeriod.id,
-    summary: `${parsed.data.period} 기간을 마감 잠금했습니다.`,
-    metadata: {
-      period: parsed.data.period,
-      periodStart: range.start.toISOString().slice(0, 10),
-      periodEnd: range.end.toISOString().slice(0, 10)
-    }
+  if (existing) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "PERIOD_ALREADY_CLOSED",
+        message: `${parsed.data.period} 기간은 이미 마감 잠금 상태입니다. 스냅샷을 바꾸려면 먼저 마감 해제 후 다시 잠금 처리하세요.`,
+        closingPeriod: serializeClosingPeriod(existing)
+      },
+      { status: 409 }
+    );
+  }
+
+  const closingPeriod = await db.$transaction(async (tx) => {
+    const created = await tx.closingPeriod.create({
+      data: {
+        companyId: company.id,
+        period: parsed.data.period,
+        periodStart: range.start,
+        periodEnd: range.end,
+        summaryPayload: asJsonValue(parsed.data.summaryPayload)
+      }
+    });
+    await recordAuditEvent(tx, {
+      companyId: company.id,
+      action: "PERIOD_CLOSE",
+      entityType: "CLOSING_PERIOD",
+      entityId: created.id,
+      summary: `${parsed.data.period} 기간을 마감 잠금했습니다.`,
+      metadata: {
+        period: parsed.data.period,
+        periodStart: range.start.toISOString().slice(0, 10),
+        periodEnd: range.end.toISOString().slice(0, 10)
+      }
+    });
+    return created;
   });
 
   return NextResponse.json({ ok: true, mode: "database", closingPeriod: serializeClosingPeriod(closingPeriod) });
@@ -180,16 +191,18 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ ok: false, message: "마감 기간을 찾을 수 없습니다." }, { status: 404 });
   }
 
-  await db.closingPeriod.delete({ where: { id: existing.id } });
-  await recordAuditEvent(db, {
-    companyId: company.id,
-    action: "PERIOD_REOPEN",
-    entityType: "CLOSING_PERIOD",
-    entityId: existing.id,
-    summary: `${parsed.data.period} 기간 마감 잠금을 해제했습니다.`,
-    metadata: {
-      period: parsed.data.period
-    }
+  await db.$transaction(async (tx) => {
+    await tx.closingPeriod.delete({ where: { id: existing.id } });
+    await recordAuditEvent(tx, {
+      companyId: company.id,
+      action: "PERIOD_REOPEN",
+      entityType: "CLOSING_PERIOD",
+      entityId: existing.id,
+      summary: `${parsed.data.period} 기간 마감 잠금을 해제했습니다.`,
+      metadata: {
+        period: parsed.data.period
+      }
+    });
   });
 
   return NextResponse.json({ ok: true, mode: "database", period: parsed.data.period });

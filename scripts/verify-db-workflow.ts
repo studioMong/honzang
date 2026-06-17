@@ -338,32 +338,46 @@ try {
   assert.equal(mismatchedClosePayload.code, "CLOSING_PERIOD_PAYLOAD_MISMATCH", "mismatched closing payload should return a period mismatch code");
   assert.ok(mismatchedClosePayload.issues?.length, "mismatched closing payload should report period mismatch issues");
 
+  const closeSummaryPayload = {
+    marker,
+    taxReportId: reportPayload.taxReport.id,
+    transactionCount: importedTransactions.length,
+    journalEntryCount: approvedEntries.length,
+    report: {
+      reviewItems: reviewSnapshotRows,
+      filingReadinessRows: [
+        { 점검: "법인 기본정보", 톤: "green" },
+        { 점검: "자료 수집", 톤: "green" },
+        { 점검: "증빙", 톤: "green" },
+        { 점검: "자동분개/원장", 톤: "green" }
+      ]
+    }
+  };
   const closePayload = await requestJson<{ ok?: boolean; mode?: string; closingPeriod?: { period?: string } }>("/api/closing-periods", {
     method: "POST",
     body: {
       companyId,
       period: closingPeriod,
-      summaryPayload: {
-        marker,
-        taxReportId: reportPayload.taxReport.id,
-        transactionCount: importedTransactions.length,
-        journalEntryCount: approvedEntries.length,
-        report: {
-          reviewItems: reviewSnapshotRows,
-          filingReadinessRows: [
-            { 점검: "법인 기본정보", 톤: "green" },
-            { 점검: "자료 수집", 톤: "green" },
-            { 점검: "증빙", 톤: "green" },
-            { 점검: "자동분개/원장", 톤: "green" }
-          ]
-        }
-      }
+      summaryPayload: closeSummaryPayload
     }
   });
   cleanup.closingPeriods.push(closingPeriod);
   assert.equal(closePayload.ok, true, "closing period lock should be created");
   assert.equal(closePayload.mode, "database", "closing period lock should use database mode");
   assert.equal(closePayload.closingPeriod?.period, closingPeriod, "closing period lock should return the requested period");
+
+  const duplicateClosePayload = await requestJson<{ ok?: boolean; code?: string; message?: string }>("/api/closing-periods", {
+    method: "POST",
+    expectedStatus: 409,
+    body: {
+      companyId,
+      period: closingPeriod,
+      summaryPayload: closeSummaryPayload
+    }
+  });
+  assert.equal(duplicateClosePayload.ok, false, "duplicate closing period lock should fail");
+  assert.equal(duplicateClosePayload.code, "PERIOD_ALREADY_CLOSED", "duplicate closing period lock should return PERIOD_ALREADY_CLOSED");
+
   const closingPeriods = await requestJson<{ closingPeriods?: Array<{ period: string; summaryPayload?: unknown }> }>("/api/closing-periods");
   const savedClosingPeriod = closingPeriods.closingPeriods?.find((period) => period.period === closingPeriod);
   assert.ok(savedClosingPeriod, "closing period snapshot should be listed");
