@@ -2,6 +2,7 @@ import type { AppAccount, AppClassificationRule, AppTransaction, JournalDraft, P
 import { DEFAULT_ACCOUNTS } from "@/lib/defaults";
 
 const keywordAccountRules: Array<{ keywords: string[]; code: string; reason?: string }> = [
+  { keywords: ["대표", "대표자", "차입", "가수", "개인"], code: "281", reason: "대표자 거래는 가지급금/차입금 여부를 확인해야 합니다." },
   { keywords: ["매출", "입금", "프로젝트", "용역", "정산", "구독 결제"], code: "401" },
   { keywords: ["네이버", "구글", "메타", "광고", "애즈", "ads"], code: "505" },
   { keywords: ["openai", "github", "aws", "vercel", "railway", "slack", "notion", "figma", "saas"], code: "506", reason: "해외 SaaS 또는 소프트웨어 비용은 증빙과 부가세 처리 검토가 필요합니다." },
@@ -11,8 +12,7 @@ const keywordAccountRules: Array<{ keywords: string[]; code: string; reason?: st
   { keywords: ["급여", "상여", "4대보험"], code: "501" },
   { keywords: ["식대", "카페", "커피", "음식", "식당"], code: "503" },
   { keywords: ["접대", "경조사", "축의", "조의"], code: "504", reason: "접대비/경조사비는 한도와 증빙 요건 검토가 필요합니다." },
-  { keywords: ["세금", "국세", "지방세", "고용보험", "산재보험"], code: "509" },
-  { keywords: ["대표", "대표자", "차입", "가수", "개인"], code: "281", reason: "대표자 거래는 가지급금/차입금 여부를 확인해야 합니다." }
+  { keywords: ["세금", "국세", "지방세", "고용보험", "산재보험"], code: "509" }
 ];
 
 export function parseMoney(value: unknown): number {

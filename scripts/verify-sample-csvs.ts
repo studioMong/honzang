@@ -123,6 +123,10 @@ for (const caseItem of sampleCases) {
   if (caseItem.expectedFirstAccountCode) {
     assert.equal(transactions[0]?.suggestedAccount?.code, caseItem.expectedFirstAccountCode, `${caseItem.sourceType} first account`);
   }
+  if (caseItem.sourceType === "BANK") {
+    const ownerTransaction = transactions.find((transaction) => transaction.description.includes("대표자"));
+    assert.equal(ownerTransaction?.suggestedAccount?.code, "281", "owner deposit should be classified as owner loan");
+  }
 
   console.log(`Verified ${caseItem.sourceType} ${caseItem.filePath} (${transactions.length} rows)`);
 }

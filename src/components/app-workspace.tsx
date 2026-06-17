@@ -260,7 +260,12 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
           />
         )}
         {activeView === "transactions" && (
-          <TransactionsPanel transactions={transactions} accounts={accounts} onUpdate={updateTransaction} />
+          <TransactionsPanel
+            transactions={transactions}
+            accounts={accounts}
+            onCreated={(transaction) => setTransactions((current) => mergeTransactions(current, [transaction]))}
+            onUpdate={updateTransaction}
+          />
         )}
         {activeView === "evidences" && (
           <EvidencesPanel
@@ -632,20 +637,156 @@ function CsvImportPanel({
 function TransactionsPanel({
   transactions,
   accounts,
+  onCreated,
   onUpdate
 }: {
   transactions: AppTransaction[];
   accounts: AppAccount[];
+  onCreated: (transaction: AppTransaction) => void;
   onUpdate: (id: string, patch: Partial<AppTransaction> & { confirmedAccountId?: string }) => void;
 }) {
+  const [form, setForm] = useState({
+    transactionDate: new Date().toISOString().slice(0, 10),
+    description: "",
+    counterparty: "",
+    depositAmount: "",
+    withdrawalAmount: "",
+    confirmedAccountId: "",
+    evidenceStatus: "UNCHECKED" as EvidenceStatus,
+    memo: ""
+  });
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ tone: "green" | "red"; text: string } | null>(null);
+
+  function updateForm(key: keyof typeof form, value: string) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function createManualTransaction() {
+    if (!form.description.trim()) return;
+    const depositAmount = Number(form.depositAmount || 0);
+    const withdrawalAmount = Number(form.withdrawalAmount || 0);
+    if (!Number.isFinite(depositAmount) || !Number.isFinite(withdrawalAmount)) {
+      setMessage({ tone: "red", text: "금액은 숫자로 입력해야 합니다." });
+      return;
+    }
+    if (depositAmount <= 0 && withdrawalAmount <= 0) {
+      setMessage({ tone: "red", text: "입금 또는 출금 금액을 입력해야 합니다." });
+      return;
+    }
+    if (depositAmount > 0 && withdrawalAmount > 0) {
+      setMessage({ tone: "red", text: "입금과 출금 중 하나만 입력해야 합니다." });
+      return;
+    }
+    setSaving(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transactionDate: form.transactionDate,
+          description: form.description.trim(),
+          counterparty: form.counterparty.trim() || null,
+          depositAmount,
+          withdrawalAmount,
+          confirmedAccountId: form.confirmedAccountId || null,
+          evidenceStatus: form.evidenceStatus,
+          memo: form.memo.trim() || null
+        })
+      });
+      const payload = await response.json();
+      if (payload.transaction) {
+        onCreated(payload.transaction);
+        setMessage({ tone: "green", text: "수기 거래를 추가했습니다." });
+        setForm((current) => ({
+          ...current,
+          description: "",
+          counterparty: "",
+          depositAmount: "",
+          withdrawalAmount: "",
+          memo: ""
+        }));
+      } else {
+        setMessage({ tone: "red", text: payload.message ?? "수기 거래 추가에 실패했습니다." });
+      }
+    } catch {
+      setMessage({ tone: "red", text: "수기 거래 추가 중 오류가 발생했습니다." });
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
-    <section className="panel">
-      <div className="panel-header">
-        <h2 className="panel-title">거래내역</h2>
-        <span className="status blue">{formatNumber(transactions.length)}건</span>
-      </div>
-      <div className="table-wrap">
-        <table>
+    <div className="content">
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="panel-title">수기 거래</h2>
+            <p className="panel-subtitle">CSV에 없는 대표자 입출금, 현금 거래, 조정분 입력</p>
+          </div>
+          <button className="primary-button" onClick={() => void createManualTransaction()} disabled={saving || !form.description.trim()}>
+            {saving ? <Loader2 size={17} className="spin" /> : <CheckCircle2 size={17} />}
+            추가
+          </button>
+        </div>
+        <div className="panel-body form-grid">
+          {message && <div className={`import-message status ${message.tone} field-wide`}>{message.text}</div>}
+          <div className="field">
+            <label>거래일</label>
+            <input type="date" value={form.transactionDate} onChange={(event) => updateForm("transactionDate", event.target.value)} />
+          </div>
+          <div className="field">
+            <label>내용</label>
+            <input value={form.description} onChange={(event) => updateForm("description", event.target.value)} placeholder="예: 대표자 입금" />
+          </div>
+          <div className="field">
+            <label>거래처</label>
+            <input value={form.counterparty} onChange={(event) => updateForm("counterparty", event.target.value)} />
+          </div>
+          <div className="field">
+            <label>계정과목</label>
+            <select value={form.confirmedAccountId} onChange={(event) => updateForm("confirmedAccountId", event.target.value)}>
+              <option value="">자동 추론</option>
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.code} {account.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label>입금</label>
+            <input type="number" min="0" step="1" inputMode="numeric" value={form.depositAmount} onChange={(event) => updateForm("depositAmount", event.target.value)} />
+          </div>
+          <div className="field">
+            <label>출금</label>
+            <input type="number" min="0" step="1" inputMode="numeric" value={form.withdrawalAmount} onChange={(event) => updateForm("withdrawalAmount", event.target.value)} />
+          </div>
+          <div className="field">
+            <label>증빙</label>
+            <select value={form.evidenceStatus} onChange={(event) => updateForm("evidenceStatus", event.target.value as EvidenceStatus)}>
+              <option value="UNCHECKED">미확인</option>
+              <option value="MISSING">누락</option>
+              <option value="ATTACHED">첨부</option>
+              <option value="MATCHED">매칭</option>
+              <option value="NOT_REQUIRED">불필요</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>메모</label>
+            <input value={form.memo} onChange={(event) => updateForm("memo", event.target.value)} />
+          </div>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <h2 className="panel-title">거래내역</h2>
+          <span className="status blue">{formatNumber(transactions.length)}건</span>
+        </div>
+        <div className="table-wrap">
+          <table>
           <thead>
             <tr>
               <th>일자</th>
@@ -696,9 +837,10 @@ function TransactionsPanel({
               </tr>
             ))}
           </tbody>
-        </table>
-      </div>
-    </section>
+          </table>
+        </div>
+      </section>
+    </div>
   );
 }
 
