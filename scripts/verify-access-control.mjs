@@ -91,13 +91,34 @@ async function verifyPageRedirect() {
 }
 
 async function verifyUnauthorizedApi() {
-  const response = await fetch(`${baseUrl}/api/transactions`, { cache: "no-store" });
-  const body = await response.json();
-  assert.equal(response.status, 401, "sensitive APIs should require access cookie");
-  assert.equal(body.code, "AUTH_REQUIRED", "unauthorized API response should identify auth requirement");
+  const protectedApiCases = [
+    { path: "/api/companies", method: "GET" },
+    { path: "/api/transactions", method: "GET" },
+    { path: "/api/evidences", method: "GET" },
+    { path: "/api/journals", method: "GET" },
+    { path: "/api/reviews", method: "GET" },
+    { path: "/api/reports", method: "GET" },
+    { path: "/api/reports/summary", method: "GET" },
+    { path: "/api/vendors", method: "GET" },
+    { path: "/api/audit-events", method: "GET" },
+    { path: "/api/closing-periods", method: "GET" },
+    { path: "/api/operations/readiness", method: "GET" },
+    { path: "/api/classification-rules", method: "DELETE", body: { id: "verify-rule" } },
+    { path: "/api/csv-templates", method: "DELETE", body: { id: "verify-template" } },
+    { path: "/api/backups/restore", method: "POST", body: { backup: {}, dryRun: true } }
+  ];
 
-  const operationsResponse = await fetch(`${baseUrl}/api/operations/readiness`, { cache: "no-store" });
-  assert.equal(operationsResponse.status, 401, "operations readiness API should require access cookie");
+  for (const item of protectedApiCases) {
+    const response = await fetch(`${baseUrl}${item.path}`, {
+      method: item.method,
+      headers: item.body ? { "Content-Type": "application/json" } : undefined,
+      body: item.body ? JSON.stringify(item.body) : undefined,
+      cache: "no-store"
+    });
+    const body = await response.json();
+    assert.equal(response.status, 401, `${item.method} ${item.path} should require access cookie`);
+    assert.equal(body.code, "AUTH_REQUIRED", `${item.method} ${item.path} should identify auth requirement`);
+  }
 }
 
 async function verifyWrongCode() {
