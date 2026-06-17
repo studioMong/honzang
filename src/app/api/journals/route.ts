@@ -6,6 +6,7 @@ import { sampleJournalEntries } from "@/lib/sample-data";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { closedPeriodResponse, findClosedPeriodForDate } from "@/lib/server/closing-periods";
+import { parseStrictDate } from "@/lib/server/date-validation";
 import { serializeJournalEntry } from "@/lib/server/serializers";
 
 const journalLineSchema = z.object({
@@ -68,6 +69,18 @@ export async function POST(request: Request) {
   }
 
   const payload = parsed.data;
+  const entryDate = parseStrictDate(payload.entryDate);
+  if (!entryDate) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_JOURNAL_DATE",
+        message: "분개일은 유효한 날짜여야 합니다."
+      },
+      { status: 400 }
+    );
+  }
+
   const debit = payload.lines.reduce((sum, line) => sum + line.debitAmount, 0);
   const credit = payload.lines.reduce((sum, line) => sum + line.creditAmount, 0);
 
@@ -82,7 +95,7 @@ export async function POST(request: Request) {
       journalEntry: {
         id: `journal-preview-${payload.transactionId ?? "manual"}-${Date.now()}`,
         transactionId: payload.transactionId,
-        entryDate: payload.entryDate,
+        entryDate,
         memo: payload.memo,
         status: payload.status,
         lines: payload.lines
@@ -92,7 +105,7 @@ export async function POST(request: Request) {
   }
 
   const company = await ensureDefaultCompany(db);
-  const closedEntryPeriod = await findClosedPeriodForDate(db, company.id, payload.entryDate);
+  const closedEntryPeriod = await findClosedPeriodForDate(db, company.id, entryDate);
   if (closedEntryPeriod) return closedPeriodResponse(closedEntryPeriod.period);
 
   const accounts = await db.account.findMany({ where: { companyId: company.id } });
@@ -132,7 +145,7 @@ export async function POST(request: Request) {
       data: {
         companyId: company.id,
         transactionId: transaction?.id ?? null,
-        entryDate: new Date(payload.entryDate),
+        entryDate: new Date(entryDate),
         memo: payload.memo,
         status: payload.status,
         lines: {
