@@ -62,6 +62,10 @@ type PanelMessage = {
   text: string;
   details?: string[];
 };
+type TransactionUpdateResult = {
+  ok: boolean;
+  message?: string;
+};
 type MappingSourceState = {
   type: "database" | "local" | "inferred" | "edited";
   label: string;
@@ -444,29 +448,39 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
     window.location.assign("/access");
   }
 
-  async function updateTransaction(id: string, patch: Partial<AppTransaction> & { confirmedAccountId?: string }) {
-    const confirmedAccount = patch.confirmedAccountId ? accounts.find((account) => account.id === patch.confirmedAccountId) ?? null : undefined;
-    setTransactions((current) =>
-      current.map((transaction) =>
+  async function updateTransaction(id: string, patch: Partial<AppTransaction> & { confirmedAccountId?: string }): Promise<TransactionUpdateResult> {
+    const previousTransactions = transactions;
+    const hasConfirmedAccountId = Object.prototype.hasOwnProperty.call(patch, "confirmedAccountId");
+    const confirmedAccount = hasConfirmedAccountId && patch.confirmedAccountId ? accounts.find((account) => account.id === patch.confirmedAccountId) ?? null : null;
+    setTransactions(
+      previousTransactions.map((transaction) =>
         transaction.id === id
           ? {
               ...transaction,
               ...patch,
-              confirmedAccount: confirmedAccount === undefined ? transaction.confirmedAccount : confirmedAccount
+              confirmedAccount: hasConfirmedAccountId ? confirmedAccount : transaction.confirmedAccount
             }
           : transaction
       )
     );
 
     try {
-      await fetch("/api/transactions", {
+      const response = await fetch("/api/transactions", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, ...patch })
       });
+      const payload = await response.json();
+      if (!response.ok) {
+        setTransactions(previousTransactions);
+        return { ok: false, message: payload.message ?? "거래 수정에 실패했습니다." };
+      }
       if (mode === "database") void refresh();
+      return { ok: true };
     } catch {
+      setTransactions(previousTransactions);
       setMode("sample");
+      return { ok: false, message: "거래 수정 중 오류가 발생했습니다." };
     }
   }
 
@@ -1340,7 +1354,7 @@ function TransactionsPanel({
   transactions: AppTransaction[];
   accounts: AppAccount[];
   onCreated: (transaction: AppTransaction) => void;
-  onUpdate: (id: string, patch: Partial<AppTransaction> & { confirmedAccountId?: string }) => void;
+  onUpdate: (id: string, patch: Partial<AppTransaction> & { confirmedAccountId?: string }) => Promise<TransactionUpdateResult>;
 }) {
   const [form, setForm] = useState({
     transactionDate: new Date().toISOString().slice(0, 10),
@@ -1357,6 +1371,14 @@ function TransactionsPanel({
 
   function updateForm(key: keyof typeof form, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function updateExistingTransaction(id: string, patch: Partial<AppTransaction> & { confirmedAccountId?: string }) {
+    setMessage(null);
+    const result = await onUpdate(id, patch);
+    if (!result.ok) {
+      setMessage({ tone: "red", text: result.message ?? "거래 수정에 실패했습니다." });
+    }
   }
 
   async function createManualTransaction() {
@@ -1512,7 +1534,7 @@ function TransactionsPanel({
                   <td>
                     <select
                       value={transaction.confirmedAccount?.id ?? transaction.suggestedAccount?.id ?? ""}
-                      onChange={(event) => onUpdate(transaction.id, { confirmedAccountId: event.target.value })}
+                      onChange={(event) => void updateExistingTransaction(transaction.id, { confirmedAccountId: event.target.value })}
                     >
                       <option value="">미분류</option>
                       {accounts.map((account) => (
@@ -1525,7 +1547,7 @@ function TransactionsPanel({
                   <td>
                     <select
                       value={transaction.evidenceStatus}
-                      onChange={(event) => onUpdate(transaction.id, { evidenceStatus: event.target.value as EvidenceStatus })}
+                      onChange={(event) => void updateExistingTransaction(transaction.id, { evidenceStatus: event.target.value as EvidenceStatus })}
                     >
                       <option value="UNCHECKED">미확인</option>
                       <option value="MISSING">누락</option>
