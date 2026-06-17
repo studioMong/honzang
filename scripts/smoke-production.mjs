@@ -46,6 +46,8 @@ try {
     body.checks.some((check) => check.key === "accessCode") &&
     Number.isInteger(body.summary?.blockers)
   );
+  await expectInvalidClosingPeriod();
+  await expectMissingClosingReadiness();
   await expectBlockedClosingPeriod();
   await expectInvalidCsvImportMapping();
   await expectInvalidCsvImportRows();
@@ -141,6 +143,48 @@ async function expectBlockedClosingPeriod() {
   const body = JSON.parse(text);
   if (body.code !== "FILING_READINESS_BLOCKED" || !Array.isArray(body.blockers) || body.blockers[0]?.check !== "증빙") {
     throw new Error(`/api/closing-periods returned unexpected blocker payload: ${text}`);
+  }
+}
+
+async function expectInvalidClosingPeriod() {
+  const response = await fetch(`${baseUrl}/api/closing-periods`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      period: "2026-13",
+      summaryPayload: {
+        filingReadinessRows: [{ 점검: "증빙", 톤: "green" }]
+      }
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/closing-periods should reject invalid period months, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_CLOSING_PERIOD") {
+    throw new Error(`/api/closing-periods returned unexpected invalid period payload: ${text}`);
+  }
+}
+
+async function expectMissingClosingReadiness() {
+  const response = await fetch(`${baseUrl}/api/closing-periods`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      period: "2026-06",
+      summaryPayload: {
+        transactionCount: 1
+      }
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/closing-periods should require filing readiness rows, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "FILING_READINESS_REQUIRED") {
+    throw new Error(`/api/closing-periods returned unexpected readiness-required payload: ${text}`);
   }
 }
 

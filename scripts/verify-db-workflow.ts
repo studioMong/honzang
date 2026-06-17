@@ -151,7 +151,15 @@ try {
         marker,
         taxReportId: reportPayload.taxReport.id,
         transactionCount: importedTransactions.length,
-        journalEntryCount: approvedEntries.length
+        journalEntryCount: approvedEntries.length,
+        report: {
+          filingReadinessRows: [
+            { 점검: "법인 기본정보", 톤: "green" },
+            { 점검: "자료 수집", 톤: "green" },
+            { 점검: "증빙", 톤: "green" },
+            { 점검: "자동분개/원장", 톤: "green" }
+          ]
+        }
       }
     }
   });

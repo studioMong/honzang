@@ -39,7 +39,26 @@ export async function POST(request: Request) {
 
   const range = periodRangeFromMonth(parsed.data.period);
   if (!range) {
-    return NextResponse.json({ ok: false, message: "마감 기간 형식이 올바르지 않습니다." }, { status: 400 });
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_CLOSING_PERIOD",
+        message: "마감 기간 형식이 올바르지 않습니다."
+      },
+      { status: 400 }
+    );
+  }
+
+  const readinessRows = getFilingReadinessRows(parsed.data.summaryPayload);
+  if (readinessRows.length === 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "FILING_READINESS_REQUIRED",
+        message: "마감 잠금 전 최종 신고 점검 결과가 필요합니다."
+      },
+      { status: 400 }
+    );
   }
 
   const readinessBlockers = getClosingReadinessBlockers(parsed.data.summaryPayload);
