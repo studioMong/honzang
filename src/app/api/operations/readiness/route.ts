@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
-import { isAccessControlEnabled } from "@/lib/server/access-control";
+import { isAccessControlEnabled, isAccessTokenSaltConfigured } from "@/lib/server/access-control";
 import packageInfo from "../../../../../package.json";
 
 type ReadinessTone = "green" | "amber" | "red" | "blue";
@@ -96,13 +96,18 @@ function accessCodeCheck(): ReadinessCheck {
 }
 
 function accessSaltCheck(): ReadinessCheck {
-  const configured = Boolean(process.env.HONZANG_ACCESS_TOKEN_SALT?.trim());
+  const configured = isAccessTokenSaltConfigured();
+  const production = process.env.NODE_ENV === "production";
   return {
     key: "accessSalt",
     label: "접근 쿠키 salt",
-    status: configured ? "설정됨" : "기본값",
-    tone: configured ? "green" : "amber",
-    detail: configured ? "배포 환경 전용 salt로 접근 쿠키 토큰을 생성합니다." : "기본 salt를 사용 중입니다.",
+    status: configured ? "설정됨" : production ? "필수 누락" : "기본값",
+    tone: configured ? "green" : production ? "red" : "amber",
+    detail: configured
+      ? "배포 환경 전용 salt로 접근 쿠키 토큰을 생성합니다."
+      : production
+        ? "프로덕션에서는 기본 salt로 접근 쿠키를 생성하지 않습니다."
+        : "개발 환경에서만 기본 salt를 사용 중입니다.",
     action: configured ? "장기 운영 전 salt 보관 위치 확인" : "Railway Variables에 긴 랜덤 HONZANG_ACCESS_TOKEN_SALT 추가"
   };
 }

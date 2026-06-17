@@ -148,6 +148,10 @@ async function verifyLogin() {
   assert.equal(response.status, 200, "correct access code should be accepted");
   const setCookie = response.headers.get("set-cookie") ?? "";
   assert.match(setCookie, /honzang_access=/, "login should set access cookie");
+  assert.match(setCookie, /HttpOnly/i, "access cookie should be HTTP-only");
+  assert.match(setCookie, /Secure/i, "production access cookie should be secure");
+  assert.match(setCookie, /SameSite=Lax/i, "access cookie should use SameSite=Lax");
+  assert.match(setCookie, /Max-Age=604800/i, "access cookie should expire after seven days");
   const cookie = setCookie.split(";")[0];
   assert.ok(cookie.includes("=") && !cookie.endsWith("="), "access cookie should contain a token");
   return cookie;
@@ -159,7 +163,14 @@ async function verifyAuthenticatedSession(cookie) {
 
 async function verifyAuthenticatedApi(cookie) {
   await expectJson("/api/transactions", (body) => Array.isArray(body.transactions), { Cookie: cookie });
-  await expectJson("/api/operations/readiness", (body) => Array.isArray(body.checks) && body.checks.some((check) => check.key === "accessCode"), { Cookie: cookie });
+  await expectJson(
+    "/api/operations/readiness",
+    (body) =>
+      Array.isArray(body.checks) &&
+      body.checks.some((check) => check.key === "accessCode" && check.tone === "green") &&
+      body.checks.some((check) => check.key === "accessSalt" && check.tone === "green"),
+    { Cookie: cookie }
+  );
 }
 
 async function verifyLogout(cookie) {

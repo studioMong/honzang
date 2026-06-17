@@ -43,15 +43,10 @@ Railway 서비스 Variables에서 Postgres 서비스의 `DATABASE_URL`을 참조
 DATABASE_URL=postgresql://...
 NEXT_PUBLIC_APP_URL=https://honzang-production.up.railway.app
 HONZANG_ACCESS_CODE=배포_접근_코드
-```
-
-권장:
-
-```bash
 HONZANG_ACCESS_TOKEN_SALT=쿠키_서명용_긴_랜덤값
 ```
 
-`HONZANG_ACCESS_CODE`가 설정된 배포 환경에서는 `/access`에서 코드를 입력해야 앱과 장부 API에 접근할 수 있습니다. `/api/health`, `/api/version`, PWA 리소스, 샘플 CSV는 배포 점검과 설치를 위해 공개 상태를 유지합니다. 접근 쿠키는 HTTP-only로 7일간 유지되며, 코드를 바꾸면 기존 쿠키는 무효화됩니다. 같은 접속 출처에서 접근코드를 5회 틀리면 10분간 로그인을 제한합니다.
+`HONZANG_ACCESS_CODE`가 설정된 배포 환경에서는 `/access`에서 코드를 입력해야 앱과 장부 API에 접근할 수 있습니다. 프로덕션에서는 `HONZANG_ACCESS_TOKEN_SALT`도 함께 있어야 접근 쿠키를 발급합니다. `/api/health`, `/api/version`, PWA 리소스, 샘플 CSV는 배포 점검과 설치를 위해 공개 상태를 유지합니다. 접근 쿠키는 HTTP-only로 7일간 유지되며, 코드를 바꾸거나 salt를 바꾸면 기존 쿠키는 무효화됩니다. 같은 접속 출처에서 접근코드를 5회 틀리면 10분간 로그인을 제한합니다.
 
 ## 배포
 

@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
 
   const token = await createAccessToken();
   if (!token) {
-    return NextResponse.json({ ok: false, message: "접근 코드 설정을 확인해야 합니다." }, { status: 500 });
+    return NextResponse.json({ ok: false, message: "접근 코드와 쿠키 salt 설정을 확인해야 합니다." }, { status: 500 });
   }
 
   clearAccessFailures(request);

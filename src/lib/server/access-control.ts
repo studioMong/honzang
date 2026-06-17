@@ -15,6 +15,10 @@ export function isAccessControlEnabled() {
   return getAccessCode() !== null;
 }
 
+export function isAccessTokenSaltConfigured() {
+  return Boolean(process.env[ACCESS_TOKEN_SALT_ENV]?.trim());
+}
+
 export function verifyAccessCode(code: unknown) {
   const expectedCode = getAccessCode();
   return typeof code === "string" && expectedCode !== null && constantTimeEqual(code, expectedCode);
@@ -22,7 +26,7 @@ export function verifyAccessCode(code: unknown) {
 
 export async function createAccessToken() {
   const accessCode = getAccessCode();
-  if (!accessCode) return null;
+  if (!accessCode || !canUseAccessTokenSalt()) return null;
   return sha256Hex(`${getAccessTokenSalt()}:${accessCode}`);
 }
 
@@ -41,6 +45,10 @@ function getAccessCode() {
 
 function getAccessTokenSalt() {
   return process.env[ACCESS_TOKEN_SALT_ENV]?.trim() || DEFAULT_ACCESS_TOKEN_SALT;
+}
+
+function canUseAccessTokenSalt() {
+  return isAccessTokenSaltConfigured() || process.env.NODE_ENV !== "production";
 }
 
 async function sha256Hex(value: string) {
