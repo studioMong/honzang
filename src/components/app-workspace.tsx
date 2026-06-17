@@ -5,6 +5,7 @@ import type React from "react";
 import Papa from "papaparse";
 import {
   AlertTriangle,
+  ArrowRight,
   BarChart3,
   CheckCircle2,
   Download,
@@ -305,7 +306,17 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
         </header>
 
         {activeView === "dashboard" && (
-          <Dashboard company={company} summary={summary} reviewCount={openReviewItems.length} transactions={transactions} onMove={setActiveView} />
+          <Dashboard
+            company={company}
+            summary={summary}
+            reviewItems={openReviewItems}
+            transactions={transactions}
+            evidences={evidences}
+            journalEntries={journalEntries}
+            taxReports={taxReports}
+            closingPeriods={closingPeriods}
+            onMove={setActiveView}
+          />
         )}
         {activeView === "imports" && (
           <CsvImportPanel
@@ -412,19 +423,38 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
 function Dashboard({
   company,
   summary,
-  reviewCount,
+  reviewItems,
   transactions,
+  evidences,
+  journalEntries,
+  taxReports,
+  closingPeriods,
   onMove
 }: {
   company: AppCompany;
   summary: ReturnType<typeof summarizeTransactions>;
-  reviewCount: number;
+  reviewItems: ReviewItem[];
   transactions: AppTransaction[];
+  evidences: AppEvidence[];
+  journalEntries: AppJournalEntry[];
+  taxReports: AppTaxReport[];
+  closingPeriods: AppClosingPeriod[];
   onMove: (view: ViewKey) => void;
 }) {
   const recent = transactions.slice(0, 6);
   const setupItems = buildCompanySetupItems(company);
   const readyCount = setupItems.filter((item) => item.tone !== "red").length;
+  const actionItems = buildDashboardActionItems({
+    company,
+    summary,
+    setupItems,
+    reviewItems,
+    transactions,
+    evidences,
+    journalEntries,
+    taxReports,
+    closingPeriods
+  });
   return (
     <div className="content">
       <section className="kpi-grid">
@@ -432,7 +462,26 @@ function Dashboard({
         <Kpi label="비용" value={formatKRW(summary.expense)} foot="공급가액 추정" icon={<WalletCards size={16} />} />
         <Kpi label="손익" value={formatKRW(summary.profit)} foot={summary.profit >= 0 ? "흑자" : "적자"} icon={<BarChart3 size={16} />} />
         <Kpi label="부가세 예상" value={formatKRW(summary.vatPayable)} foot="양수 납부 · 음수 환급" icon={<FileSpreadsheet size={16} />} />
-        <Kpi label="검토" value={`${reviewCount}건`} foot={`위험 ${summary.riskCount}건`} icon={<AlertTriangle size={16} />} />
+        <Kpi label="검토" value={`${reviewItems.length}건`} foot={`위험 ${summary.riskCount}건`} icon={<AlertTriangle size={16} />} />
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="panel-title">오늘 할 일</h2>
+            <p className="panel-subtitle">우선순위가 높은 처리 항목</p>
+          </div>
+          <button className="ghost-button" onClick={() => onMove(actionItems[0]?.target ?? "reports")}>
+            첫 항목 열기
+          </button>
+        </div>
+        <div className="panel-body">
+          <div className="action-list">
+            {actionItems.map((item) => (
+              <DashboardActionItem key={item.title} item={item} onMove={onMove} />
+            ))}
+          </div>
+        </div>
       </section>
 
       <section className="panel">
@@ -3108,6 +3157,15 @@ type CompanySetupItem = {
   status: string;
 };
 
+type DashboardAction = {
+  title: string;
+  detail: string;
+  status: string;
+  tone: "green" | "amber" | "red" | "blue";
+  target: ViewKey;
+  actionLabel: string;
+};
+
 function buildCompanySetupItems(company: AppCompany): CompanySetupItem[] {
   const missingBasics = [
     hasText(company.name) ? null : "법인명",
@@ -3154,6 +3212,152 @@ function buildCompanySetupItems(company: AppCompany): CompanySetupItem[] {
       status: billingActivePrice(company) > 0 ? "설정됨" : "단가 필요"
     }
   ];
+}
+
+function buildDashboardActionItems({
+  company,
+  summary,
+  setupItems,
+  reviewItems,
+  transactions,
+  evidences,
+  journalEntries,
+  taxReports,
+  closingPeriods
+}: {
+  company: AppCompany;
+  summary: ReturnType<typeof summarizeTransactions>;
+  setupItems: CompanySetupItem[];
+  reviewItems: ReviewItem[];
+  transactions: AppTransaction[];
+  evidences: AppEvidence[];
+  journalEntries: AppJournalEntry[];
+  taxReports: AppTaxReport[];
+  closingPeriods: AppClosingPeriod[];
+}) {
+  const items: DashboardAction[] = [];
+  const missingSetupItems = setupItems.filter((item) => item.tone === "red");
+  const latestPeriod = getLatestTransactionPeriod(transactions);
+
+  if (missingSetupItems.length > 0) {
+    items.push({
+      title: "법인 기본정보 입력",
+      detail: missingSetupItems.map((item) => item.detail).join(" · "),
+      status: `${formatNumber(missingSetupItems.length)}개`,
+      tone: "red",
+      target: "settings",
+      actionLabel: "설정"
+    });
+  } else if (billingActivePrice(company) <= 0) {
+    items.push({
+      title: "매출 과금 단가 입력",
+      detail: `${billingModelLabel(company.billingModel)} 기준 단가가 필요합니다.`,
+      status: "단가 필요",
+      tone: "amber",
+      target: "settings",
+      actionLabel: "설정"
+    });
+  }
+
+  if (transactions.length === 0) {
+    items.push({
+      title: "거래 CSV 업로드",
+      detail: "통장, 카드, 홈택스, PG 정산 자료를 먼저 불러옵니다.",
+      status: "시작",
+      tone: "blue",
+      target: "imports",
+      actionLabel: "업로드"
+    });
+    return items;
+  }
+
+  const unclassifiedCount = transactions.filter((transaction) => !getTransactionAccount(transaction)).length;
+  if (unclassifiedCount > 0) {
+    items.push({
+      title: "계정과목 확정",
+      detail: "자동 추천이 없거나 아직 확정되지 않은 거래가 있습니다.",
+      status: `${formatNumber(unclassifiedCount)}건`,
+      tone: "red",
+      target: "transactions",
+      actionLabel: "분류"
+    });
+  }
+
+  const unmatchedEvidenceCount = transactions.filter((transaction) => transaction.evidenceStatus === "UNCHECKED" || transaction.evidenceStatus === "MISSING").length;
+  if (summary.missingEvidenceAmount > 0 || unmatchedEvidenceCount > 0) {
+    items.push({
+      title: "증빙 매칭",
+      detail: `누락 추정액 ${formatKRW(summary.missingEvidenceAmount)} · 증빙 ${formatNumber(evidences.length)}개 보관 중`,
+      status: `${formatNumber(unmatchedEvidenceCount)}건`,
+      tone: summary.missingEvidenceAmount > 0 ? "red" : "amber",
+      target: "evidences",
+      actionLabel: "증빙"
+    });
+  }
+
+  const approvedTransactionIds = new Set(journalEntries.filter((entry) => entry.status === "APPROVED" && entry.transactionId).map((entry) => entry.transactionId));
+  const journalPendingCount = transactions.filter((transaction) => getTransactionAccount(transaction) && !approvedTransactionIds.has(transaction.id)).length;
+  if (journalPendingCount > 0) {
+    items.push({
+      title: "자동분개 승인",
+      detail: "확정된 계정과목을 복식부기 분개로 저장합니다.",
+      status: `${formatNumber(journalPendingCount)}건`,
+      tone: "amber",
+      target: "journals",
+      actionLabel: "분개"
+    });
+  }
+
+  if (reviewItems.length > 0) {
+    items.push({
+      title: "검토함 처리",
+      detail: "대표자 거래, 원천세 후보, 고액 비용 등 신고 전 확인 항목입니다.",
+      status: `${formatNumber(reviewItems.length)}건`,
+      tone: summary.riskCount > 0 ? "red" : "amber",
+      target: "reviews",
+      actionLabel: "검토"
+    });
+  }
+
+  if (latestPeriod && !taxReports.some((report) => report.periodStart.startsWith(latestPeriod) || report.periodEnd.startsWith(latestPeriod))) {
+    items.push({
+      title: `${formatPeriodLabel(latestPeriod)} 리포트 저장`,
+      detail: "월 손익, 부가세, 법인세 준비표를 스냅샷으로 남깁니다.",
+      status: "미저장",
+      tone: "amber",
+      target: "reports",
+      actionLabel: "리포트"
+    });
+  }
+
+  if (latestPeriod && !closingPeriods.some((period) => period.period === latestPeriod)) {
+    items.push({
+      title: `${formatPeriodLabel(latestPeriod)} 마감 잠금`,
+      detail: "수정이 끝난 월을 잠가 신고 기준 데이터를 고정합니다.",
+      status: "열림",
+      tone: "blue",
+      target: "reports",
+      actionLabel: "마감"
+    });
+  }
+
+  if (items.length === 0) {
+    items.push({
+      title: "신고 패키지 확인",
+      detail: "최근 월 장부가 잠겨 있습니다. 홈택스 입력 전 파일을 확인합니다.",
+      status: "준비됨",
+      tone: "green",
+      target: "reports",
+      actionLabel: "리포트"
+    });
+  }
+
+  return items.slice(0, 5);
+}
+
+function getLatestTransactionPeriod(transactions: AppTransaction[]) {
+  const latestDate = transactions.map((transaction) => transaction.transactionDate).filter(Boolean).sort().at(-1);
+  return latestDate ? latestDate.slice(0, 7) : null;
 }
 
 function numericInputValue(value: string) {
@@ -3279,6 +3483,24 @@ function SetupStatusItem({ item }: { item: CompanySetupItem }) {
         <span>{item.detail}</span>
       </div>
       <span className={`status ${item.tone}`}>{item.status}</span>
+    </div>
+  );
+}
+
+function DashboardActionItem({ item, onMove }: { item: DashboardAction; onMove: (view: ViewKey) => void }) {
+  return (
+    <div className="action-item" data-tone={item.tone}>
+      <div className="action-copy">
+        <div className="review-row">
+          <strong>{item.title}</strong>
+          <span className={`status ${item.tone}`}>{item.status}</span>
+        </div>
+        <span>{item.detail}</span>
+      </div>
+      <button className="secondary-button" onClick={() => onMove(item.target)}>
+        {item.actionLabel}
+        <ArrowRight size={15} />
+      </button>
     </div>
   );
 }

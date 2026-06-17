@@ -532,6 +532,60 @@ th.amount {
   gap: 10px;
 }
 
+.action-list {
+  display: grid;
+  gap: 10px;
+}
+
+.action-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 74px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.action-item[data-tone="green"] {
+  border-color: #b9ddcf;
+  background: var(--green-soft);
+}
+
+.action-item[data-tone="blue"] {
+  border-color: #b9cbe6;
+  background: var(--blue-soft);
+}
+
+.action-item[data-tone="amber"] {
+  border-color: #ead29b;
+  background: var(--amber-soft);
+}
+
+.action-item[data-tone="red"] {
+  border-color: #e4b7b7;
+  background: var(--red-soft);
+}
+
+.action-copy {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.action-copy strong,
+.action-copy span {
+  overflow-wrap: anywhere;
+}
+
+.action-copy > span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .setup-grid {
   display: grid;
   grid-template-columns: 180px minmax(0, 1fr);
@@ -741,6 +795,7 @@ th.amount {
   .kpi-grid,
   .form-grid,
   .mapping-grid,
+  .action-item,
   .setup-list {
     grid-template-columns: 1fr;
   }
