@@ -73,7 +73,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       journalEntry: {
-        id: `journal-preview-${Date.now()}`,
+        id: `journal-preview-${payload.transactionId ?? "manual"}-${Date.now()}`,
         transactionId: payload.transactionId,
         entryDate: payload.entryDate,
         memo: payload.memo,

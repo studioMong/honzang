@@ -1126,27 +1126,50 @@ function JournalDraftsPanel({
 }) {
   const drafts = transactions.map(generateJournalDraft);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [bulkSaving, setBulkSaving] = useState(false);
   const approvedTransactionIds = new Set(journalEntries.map((entry) => entry.transactionId).filter(Boolean));
+  const pendingDrafts = drafts.filter((draft) => !approvedTransactionIds.has(draft.transactionId));
+  const readyDrafts = pendingDrafts.filter((draft) => isBalancedJournalDraft(draft) && draft.warnings.length === 0);
+  const reviewDrafts = pendingDrafts.filter((draft) => !isBalancedJournalDraft(draft) || draft.warnings.length > 0);
+
+  async function saveDraft(draft: ReturnType<typeof generateJournalDraft>) {
+    const response = await fetch("/api/journals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        companyId,
+        transactionId: draft.transactionId,
+        entryDate: draft.entryDate,
+        memo: draft.memo,
+        status: "APPROVED",
+        lines: draft.lines
+      })
+    });
+    const payload = await response.json();
+    return (payload.journalEntry ?? null) as AppJournalEntry | null;
+  }
 
   async function approveDraft(draft: ReturnType<typeof generateJournalDraft>) {
     setSavingId(draft.transactionId);
     try {
-      const response = await fetch("/api/journals", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          companyId,
-          transactionId: draft.transactionId,
-          entryDate: draft.entryDate,
-          memo: draft.memo,
-          status: "APPROVED",
-          lines: draft.lines
-        })
-      });
-      const payload = await response.json();
-      if (payload.journalEntry) onApproved(payload.journalEntry);
+      const entry = await saveDraft(draft);
+      if (entry) onApproved(entry);
     } finally {
       setSavingId(null);
+    }
+  }
+
+  async function approveReadyDrafts() {
+    setBulkSaving(true);
+    try {
+      for (const draft of readyDrafts) {
+        setSavingId(draft.transactionId);
+        const entry = await saveDraft(draft);
+        if (entry) onApproved(entry);
+      }
+    } finally {
+      setSavingId(null);
+      setBulkSaving(false);
     }
   }
 
@@ -1155,7 +1178,15 @@ function JournalDraftsPanel({
       <section className="panel">
         <div className="panel-header">
           <h2 className="panel-title">자동분개 초안</h2>
-          <span className="status blue">{formatNumber(drafts.length)}건</span>
+          <div className="toolbar">
+            <span className="status blue">{formatNumber(drafts.length)}건</span>
+            <span className="status green">{formatNumber(drafts.length - pendingDrafts.length)}건 승인</span>
+            {reviewDrafts.length > 0 && <span className="status amber">{formatNumber(reviewDrafts.length)}건 검토</span>}
+            <button className="secondary-button" disabled={bulkSaving || readyDrafts.length === 0} onClick={() => void approveReadyDrafts()}>
+              {bulkSaving ? <Loader2 size={16} className="spin" /> : <CheckCircle2 size={16} />}
+              정상 초안 {formatNumber(readyDrafts.length)}건 승인
+            </button>
+          </div>
         </div>
         <div className="panel-body review-list">
           {drafts.map((draft) => {
@@ -1218,6 +1249,12 @@ function JournalDraftsPanel({
       </section>
     </div>
   );
+}
+
+function isBalancedJournalDraft(draft: ReturnType<typeof generateJournalDraft>) {
+  const debit = draft.lines.reduce((sum, line) => sum + line.debitAmount, 0);
+  const credit = draft.lines.reduce((sum, line) => sum + line.creditAmount, 0);
+  return draft.lines.length > 0 && Math.round(debit) === Math.round(credit);
 }
 
 function ReviewsPanel({
@@ -1313,10 +1350,11 @@ function ReportsPanel({
   const selectedPeriod = period === "ALL" || periodOptions.some((option) => option.value === period) ? period : periodOptions[0]?.value ?? "ALL";
   const filteredTransactions = useMemo(() => filterTransactionsByPeriod(transactions, selectedPeriod), [selectedPeriod, transactions]);
   const filteredJournalEntries = useMemo(() => filterJournalEntriesByPeriod(journalEntries, selectedPeriod), [journalEntries, selectedPeriod]);
+  const approvedJournalEntries = useMemo(() => filteredJournalEntries.filter((entry) => entry.status === "APPROVED"), [filteredJournalEntries]);
   const reportSummary = useMemo(() => summarizeTransactions(filteredTransactions), [filteredTransactions]);
   const expenseByAccount = groupExpensesByAccount(filteredTransactions);
   const reviews = buildReviewItems(filteredTransactions);
-  const ledgerRows = buildLedgerRows(filteredJournalEntries);
+  const ledgerRows = buildLedgerRows(approvedJournalEntries);
   const withholdingRows = buildWithholdingRows(filteredTransactions);
   const financialStatementRows = buildFinancialStatementRows(ledgerRows);
   const financialStatementTotals = buildFinancialStatementTotals(financialStatementRows);
@@ -1351,7 +1389,7 @@ function ReportsPanel({
             financialStatementRows,
             ledgerRows,
             transactionCount: filteredTransactions.length,
-            journalEntryCount: filteredJournalEntries.length
+            journalEntryCount: approvedJournalEntries.length
           })
         })
       });
@@ -1898,7 +1936,7 @@ function ReportsPanel({
         <div className="panel-header">
           <h2 className="panel-title">계정별 원장</h2>
           <div className="toolbar">
-            <span className="status blue">{formatNumber(filteredJournalEntries.length)}개 분개</span>
+            <span className="status blue">{formatNumber(approvedJournalEntries.length)}개 승인 분개</span>
             <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("ledger", selectedPeriod), buildLedgerCsv(ledgerRows))}>
               <Download size={16} />
               원장
