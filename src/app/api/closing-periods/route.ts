@@ -7,6 +7,7 @@ import { asJsonValue, periodRangeFromMonth } from "@/lib/server/closing-periods"
 import { validateJsonPayloadSize } from "@/lib/server/json-payload-validation";
 import { parseJsonRequest } from "@/lib/server/request-json";
 import { serializeClosingPeriod } from "@/lib/server/serializers";
+import { sampleClosingPeriods } from "@/lib/sample-data";
 
 const closePeriodSchema = z.object({
   period: z.string().regex(/^\d{4}-\d{2}$/),
@@ -20,7 +21,7 @@ const reopenPeriodSchema = z.object({
 export async function GET() {
   const db = getPrisma();
   if (!db) {
-    return NextResponse.json({ closingPeriods: [], mode: "sample" });
+    return NextResponse.json({ closingPeriods: sampleClosingPeriods, mode: "sample" });
   }
 
   const company = await ensureDefaultCompany(db);

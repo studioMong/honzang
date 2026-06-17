@@ -51,7 +51,7 @@ import { sanitizeCsvCellValue } from "@/lib/export-safety";
 import { applyClassificationRules, buildReviewItems, generateJournalDraft, inferMapping, normalizeCsvRow, parseMoney, summarizeTransactions } from "@/lib/accounting";
 import { MAX_BACKUP_RESTORE_REQUEST_BYTES, MAX_EVIDENCE_FILE_SIZE, MAX_ORIGINAL_FILE_TEXT_SIZE } from "@/lib/file-limits";
 import { formatDate, formatDateTime, formatKRW, formatNumber } from "@/lib/format";
-import { sampleCompany, sampleEvidences, sampleJournalEntries, sampleTaxReports, sampleTransactions } from "@/lib/sample-data";
+import { sampleClosingPeriods, sampleCompany, sampleEvidences, sampleJournalEntries, sampleTaxReports, sampleTransactions } from "@/lib/sample-data";
 import { createXlsxBlob, type XlsxSheet } from "@/lib/xlsx";
 import { createZipBlob, type ZipFile } from "@/lib/zip";
 
@@ -283,7 +283,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
   const [taxReports, setTaxReports] = useState<AppTaxReport[]>(sampleTaxReports);
   const [vendors, setVendors] = useState<AppVendor[]>([]);
   const [auditEvents, setAuditEvents] = useState<AppAuditEvent[]>([]);
-  const [closingPeriods, setClosingPeriods] = useState<AppClosingPeriod[]>([]);
+  const [closingPeriods, setClosingPeriods] = useState<AppClosingPeriod[]>(sampleClosingPeriods);
   const [reviewItems, setReviewItems] = useState<ReviewItem[]>(buildReviewItems(sampleTransactions));
   const [reviewStatusOverrides, setReviewStatusOverrides] = useState<Record<string, ReviewItem["status"]>>({});
   const [loading, setLoading] = useState(false);
@@ -384,7 +384,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       setTaxReports(sampleTaxReports);
       setVendors([]);
       setAuditEvents([]);
-      setClosingPeriods([]);
+      setClosingPeriods(sampleClosingPeriods);
       setReviewItems(buildReviewItems(sampleTransactions));
       setMode("sample");
       setWorkspaceMessage({
@@ -2289,6 +2289,7 @@ function ReportsPanel({
   const [deletingReportId, setDeletingReportId] = useState<string | null>(null);
   const [closingPeriodAction, setClosingPeriodAction] = useState<"close" | "reopen" | null>(null);
   const [selectedTaxReportId, setSelectedTaxReportId] = useState<string | null>(null);
+  const [selectedClosingSnapshotPeriod, setSelectedClosingSnapshotPeriod] = useState<string | null>(null);
   const [reportMessage, setReportMessage] = useState<PanelMessage | null>(null);
   const selectedPeriod = period === "ALL" || periodOptions.some((option) => option.value === period) ? period : periodOptions[0]?.value ?? "ALL";
   const selectedClosingPeriod = closingPeriods.find((item) => item.period === selectedPeriod) ?? null;
@@ -2363,8 +2364,13 @@ function ReportsPanel({
   });
   const vatPrepRows = buildVatCsv(reportSummary, filteredTransactions);
   const visibleTaxReports = taxReports.slice(0, 6);
+  const visibleClosingPeriods = closingPeriods.slice(0, 6);
   const selectedTaxReport = taxReports.find((taxReport) => taxReport.id === selectedTaxReportId) ?? null;
   const selectedPayload = selectedTaxReport ? parseDetailedTaxReportPayload(selectedTaxReport.calculatedPayload) : null;
+  const selectedClosingSnapshot = closingPeriods.find((item) => item.period === selectedClosingSnapshotPeriod) ?? null;
+  const selectedClosingPayload = selectedClosingSnapshot
+    ? parseDetailedTaxReportPayload(getClosingSnapshotReportPayload(selectedClosingSnapshot.summaryPayload))
+    : null;
 
   function buildCurrentFilingPackagePayload() {
     return buildFilingPackagePayload({
@@ -2535,6 +2541,7 @@ function ReportsPanel({
       const payload = await response.json();
       if (payload.closingPeriod) {
         onClosingPeriodsChanged(sortClosingPeriods([payload.closingPeriod, ...closingPeriods.filter((item) => item.period !== selectedPeriod)]));
+        setSelectedClosingSnapshotPeriod(payload.closingPeriod.period);
       } else if (!response.ok) {
         window.alert(payload.message ?? "마감 잠금에 실패했습니다.");
       }
@@ -2557,6 +2564,7 @@ function ReportsPanel({
       const payload = await response.json();
       if (payload.ok) {
         onClosingPeriodsChanged(closingPeriods.filter((item) => item.period !== selectedPeriod));
+        if (selectedClosingSnapshotPeriod === selectedPeriod) setSelectedClosingSnapshotPeriod(null);
       } else if (!response.ok) {
         window.alert(payload.message ?? "마감 해제에 실패했습니다.");
       }
@@ -2945,6 +2953,184 @@ function ReportsPanel({
                 })}
               </tbody>
             </table>
+          </div>
+        </section>
+      )}
+
+      {visibleClosingPeriods.length > 0 && (
+        <section className="panel">
+          <div className="panel-header">
+            <div>
+              <h2 className="panel-title">마감 스냅샷</h2>
+              <p className="panel-subtitle">월 마감 시점에 확정 보관된 신고 준비자료</p>
+            </div>
+            <span className="status green">{formatNumber(closingPeriods.length)}개 마감</span>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>기간</th>
+                  <th>마감일</th>
+                  <th className="amount">거래</th>
+                  <th className="amount">입력값</th>
+                  <th className="amount">차단</th>
+                  <th className="amount">확인</th>
+                  <th>작업</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleClosingPeriods.map((closingPeriod) => {
+                  const payload = parseDetailedTaxReportPayload(getClosingSnapshotReportPayload(closingPeriod.summaryPayload));
+                  const blockerCount = payload.filingReadinessRows.filter((row) => row.톤 === "red").length;
+                  const warningCount = payload.filingReadinessRows.filter((row) => row.톤 === "amber").length;
+                  return (
+                    <tr key={closingPeriod.period}>
+                      <td>{formatPeriodLabel(closingPeriod.period)}</td>
+                      <td>{formatDate(closingPeriod.closedAt)}</td>
+                      <td className="amount">{formatNumber(payload.transactionCount)}건</td>
+                      <td className="amount">{formatNumber(payload.filingInputSummaryRows.length)}개</td>
+                      <td className="amount">{formatNumber(blockerCount)}개</td>
+                      <td className="amount">{formatNumber(warningCount)}개</td>
+                      <td>
+                        <button className="ghost-button" onClick={() => setSelectedClosingSnapshotPeriod(closingPeriod.period)}>열기</button>
+                        <button className="ghost-button" onClick={() => downloadJson(`honzang-closing-${closingPeriod.period}.json`, closingPeriod)}>JSON</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {selectedClosingSnapshot && selectedClosingPayload && (
+        <section className="panel">
+          <div className="panel-header">
+            <div>
+              <h2 className="panel-title">마감 스냅샷 상세</h2>
+              <p className="panel-subtitle">{formatPeriodLabel(selectedClosingSnapshot.period)} 확정 보관본</p>
+            </div>
+            <div className="toolbar">
+              <span className="status green">마감 잠금</span>
+              <button className="secondary-button" onClick={() => downloadJson(`honzang-closing-${selectedClosingSnapshot.period}.json`, selectedClosingSnapshot)}>
+                <Download size={16} />
+                JSON
+              </button>
+              <button className="ghost-button" onClick={() => setSelectedClosingSnapshotPeriod(null)}>닫기</button>
+            </div>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>항목</th>
+                  <th className="amount">값</th>
+                  <th>확인</th>
+                </tr>
+              </thead>
+              <tbody>
+                {buildClosingSnapshotDetailRows(selectedClosingSnapshot, selectedClosingPayload).map((row) => (
+                  <tr key={row.항목}>
+                    <td>{row.항목}</td>
+                    <td className="amount">{row.값}</td>
+                    <td>{row.확인}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="table-wrap snapshot-detail">
+            <table>
+              <thead>
+                <tr>
+                  <th>신고</th>
+                  <th>입력 항목</th>
+                  <th className="amount">값</th>
+                  <th>근거</th>
+                  <th>상태</th>
+                  <th>최종 확인</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedClosingPayload.filingInputSummaryRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="empty-cell">마감 스냅샷에 저장된 신고서 입력값 요약이 없습니다.</td>
+                  </tr>
+                ) : (
+                  selectedClosingPayload.filingInputSummaryRows.map((row) => (
+                    <tr key={`${row.신고}-${row["입력 항목"]}`}>
+                      <td>{row.신고}</td>
+                      <td>{row["입력 항목"]}</td>
+                      <td className="amount">{row.값}</td>
+                      <td>{row.근거}</td>
+                      <td>{row.상태}</td>
+                      <td>{row["최종 확인"]}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="split snapshot-detail">
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>점검</th>
+                    <th>상태</th>
+                    <th>다음 작업</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedClosingPayload.filingReadinessRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="empty-cell">마감 스냅샷에 저장된 최종 신고 점검이 없습니다.</td>
+                    </tr>
+                  ) : (
+                    selectedClosingPayload.filingReadinessRows.map((row) => (
+                      <tr key={row.점검}>
+                        <td>{row.점검}</td>
+                        <td>
+                          <span className={`status ${row.톤}`}>{row.상태}</span>
+                        </td>
+                        <td>{row["다음 작업"]}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>자료</th>
+                    <th>상태</th>
+                    <th>원본</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedClosingPayload.dataSourceRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="empty-cell">마감 스냅샷에 저장된 자료 수집 현황이 없습니다.</td>
+                    </tr>
+                  ) : (
+                    selectedClosingPayload.dataSourceRows.map((row) => (
+                      <tr key={row.자료}>
+                        <td>{row.자료}</td>
+                        <td>{row.상태}</td>
+                        <td>{row.원본}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </section>
       )}
@@ -5661,6 +5847,29 @@ function buildTaxReportDetailRows(taxReport: AppTaxReport, payload: ReturnType<t
     { 항목: "통장 잔액 대조", 값: formatReportAmount(summarizeBankBalanceRows(payload.bankBalanceRows).difference), 확인: summarizeBankBalanceRows(payload.bankBalanceRows).detail },
     { 항목: "재무제표 초안", 값: `${formatNumber(payload.financialStatementRows.length)}행`, 확인: "저장 당시 승인 분개 기준" },
     { 항목: "계정별 원장", 값: `${formatNumber(payload.ledgerRows.length)}행`, 확인: "저장 당시 원장 행 수" }
+  ];
+}
+
+function getClosingSnapshotReportPayload(summaryPayload: unknown) {
+  const record = isRecord(summaryPayload) ? summaryPayload : {};
+  return isRecord(record.report) ? record.report : record;
+}
+
+function buildClosingSnapshotDetailRows(closingPeriod: AppClosingPeriod, payload: ReturnType<typeof parseDetailedTaxReportPayload>) {
+  const blockerCount = payload.filingReadinessRows.filter((row) => row.톤 === "red").length;
+  const warningCount = payload.filingReadinessRows.filter((row) => row.톤 === "amber").length;
+  return [
+    { 항목: "마감 기간", 값: `${formatDate(closingPeriod.periodStart)} - ${formatDate(closingPeriod.periodEnd)}`, 확인: formatPeriodLabel(closingPeriod.period) },
+    { 항목: "마감 일시", 값: formatDate(closingPeriod.closedAt), 확인: "마감 잠금 생성 시각" },
+    { 항목: "거래", 값: `${formatNumber(payload.transactionCount)}건`, 확인: "마감 당시 기간 필터 기준" },
+    { 항목: "승인 분개", 값: `${formatNumber(payload.journalEntryCount)}개`, 확인: "마감 당시 승인 분개 기준" },
+    { 항목: "매출 공급가액", 값: formatKRW(payload.summary.revenue), 확인: "부채성 입금 제외" },
+    { 항목: "손익", 값: formatKRW(payload.summary.profit), 확인: payload.summary.profit >= 0 ? "이익" : "손실" },
+    { 항목: "예상 부가세", 값: formatKRW(payload.summary.vatPayable), 확인: "확정 전 신고 준비 금액" },
+    { 항목: "신고서 입력값", 값: `${formatNumber(payload.filingInputSummaryRows.length)}개`, 확인: "홈택스 입력 전 대조표" },
+    { 항목: "최종 신고 점검", 값: `${formatNumber(blockerCount)}개 차단 / ${formatNumber(warningCount)}개 확인`, 확인: blockerCount > 0 ? "마감 당시 차단 항목 존재" : "마감 당시 차단 항목 없음" },
+    { 항목: "자료 수집", 값: `${formatNumber(payload.dataSourceRows.length)}개 자료`, 확인: "통장/카드/홈택스/PG 업로드 상태" },
+    { 항목: "통장 잔액 대조", 값: formatReportAmount(summarizeBankBalanceRows(payload.bankBalanceRows).difference), 확인: summarizeBankBalanceRows(payload.bankBalanceRows).detail }
   ];
 }
 
