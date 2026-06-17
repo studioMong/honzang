@@ -355,12 +355,31 @@ async function verifyInvalidDateBackup() {
       createdAt: "2026-02-31T00:00:00.000Z"
     }
   ];
+  invalidBackup.taxReports = [
+    {
+      id: "report-invalid-period-1",
+      reportType: "CORPORATE_TAX_PREP",
+      periodStart: "2026-12-31",
+      periodEnd: "2026-01-01",
+      calculatedPayload: {}
+    }
+  ];
+  invalidBackup.closingPeriods = [
+    {
+      ...backup.closingPeriods[0],
+      periodStart: "2026-06-02",
+      periodEnd: "2026-06-29"
+    }
+  ];
 
   const body = await postJson("/api/backups/restore", { backup: invalidBackup, dryRun: true }, 400);
   assert.equal(body.ok, false, "restore should reject invalid backup dates");
   assert.equal(body.code, "INVALID_BACKUP_DATES", "restore should return date validation code");
   assert.ok(Array.isArray(body.issues), "restore should return date validation issues");
-  assert.ok(body.issues.length >= 2, "restore should report invalid date and timestamp issues");
+  assert.ok(body.issues.length >= 5, "restore should report invalid date, timestamp, report period, and closing period issues");
+  assert.ok(body.issues.some((issue) => issue.includes("report-invalid-period-1")), "restore should report reversed report periods");
+  assert.ok(body.issues.some((issue) => issue.includes("periodStart는 2026-06-01")), "restore should report mismatched closing period start");
+  assert.ok(body.issues.some((issue) => issue.includes("periodEnd는 2026-06-30")), "restore should report mismatched closing period end");
 }
 
 async function verifyInvalidTransactionAmountBackup() {

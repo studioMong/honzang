@@ -924,14 +924,31 @@ function validateBackupDates(backup: WorkspaceBackup) {
   for (const report of uniqueById(backup.taxReports)) {
     requiredDateField(report.periodStart, `리포트 ${report.id} periodStart`, issues);
     requiredDateField(report.periodEnd, `리포트 ${report.id} periodEnd`, issues);
+    const periodStart = dateFromStrictDate(report.periodStart);
+    const periodEnd = dateFromStrictDate(report.periodEnd);
+    if (periodStart && periodEnd && periodStart > periodEnd) {
+      issues.push(`리포트 ${report.id}: periodStart는 periodEnd보다 늦을 수 없습니다.`);
+    }
     optionalTimestamp(report.createdAt, `리포트 ${report.id} createdAt`, issues);
   }
   for (const closingPeriod of uniqueByPeriod(backup.closingPeriods)) {
-    if (!periodRangeFromMonth(closingPeriod.period)) {
+    const range = periodRangeFromMonth(closingPeriod.period);
+    if (!range) {
       issues.push(`마감 ${closingPeriod.period}: period는 유효한 YYYY-MM 월이어야 합니다.`);
     }
     optionalDate(closingPeriod.periodStart, `마감 ${closingPeriod.period} periodStart`, issues);
     optionalDate(closingPeriod.periodEnd, `마감 ${closingPeriod.period} periodEnd`, issues);
+    const periodStart = dateFromStrictDate(closingPeriod.periodStart ?? range?.start.toISOString().slice(0, 10) ?? "");
+    const periodEnd = dateFromStrictDate(closingPeriod.periodEnd ?? range?.end.toISOString().slice(0, 10) ?? "");
+    if (periodStart && periodEnd && periodStart > periodEnd) {
+      issues.push(`마감 ${closingPeriod.period}: periodStart는 periodEnd보다 늦을 수 없습니다.`);
+    }
+    if (range && periodStart && periodStart.getTime() !== range.start.getTime()) {
+      issues.push(`마감 ${closingPeriod.period}: periodStart는 ${range.start.toISOString().slice(0, 10)}이어야 합니다.`);
+    }
+    if (range && periodEnd && periodEnd.getTime() !== range.end.getTime()) {
+      issues.push(`마감 ${closingPeriod.period}: periodEnd는 ${range.end.toISOString().slice(0, 10)}이어야 합니다.`);
+    }
     optionalTimestamp(closingPeriod.closedAt, `마감 ${closingPeriod.period} closedAt`, issues);
     optionalTimestamp(closingPeriod.createdAt, `마감 ${closingPeriod.period} createdAt`, issues);
   }
