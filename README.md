@@ -76,6 +76,18 @@ npm run verify:railway
 RAILWAY_EXPECTED_COMMIT=$(git rev-parse HEAD) npm run verify:railway
 ```
 
+공개 URL이 실패할 때 원인을 분류하려면 아래 진단을 실행합니다. 정상 배포 게이트는 아니며, 도메인 오연결, 오래된 커밋, DB 미연결, PWA manifest 미노출을 구분해 Railway Dashboard에서 확인할 작업을 출력합니다.
+
+```bash
+npm run audit:railway
+```
+
+현재 공개 URL이 아직 준비되지 않은 상태에서도 진단 출력만 확인하려면 아래처럼 soft mode로 실행합니다.
+
+```bash
+RAILWAY_AUDIT_SOFT=1 npm run audit:railway
+```
+
 ## MVP 범위
 
 - 회사 기본 설정

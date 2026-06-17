@@ -11,6 +11,7 @@ const dockerignore = readText(".dockerignore");
 assert.equal(packageJson.scripts?.build, "prisma generate && next build && node scripts/prepare-standalone.mjs", "package build script should create the standalone server");
 assert.equal(packageJson.scripts?.start, "HOSTNAME=0.0.0.0 node .next/standalone/server.js", "package start script should run the standalone server");
 assert.equal(packageJson.scripts?.["db:deploy"], "prisma migrate deploy", "package should expose a deploy migration command");
+assert.equal(packageJson.scripts?.["audit:railway"], "node scripts/audit-railway-deployment.mjs", "package should expose a Railway deployment audit command");
 
 assert.equal(railwayConfig.build?.builder, "DOCKERFILE", "Railway builder should be Dockerfile");
 assert.equal(railwayConfig.build?.dockerfilePath, "Dockerfile", "Railway should use the root Dockerfile");
@@ -30,6 +31,7 @@ assert.match(dockerignore, /^node_modules$/m, ".dockerignore should exclude loca
 assert.match(dockerignore, /^\.env\.\*$/m, ".dockerignore should exclude env files");
 
 assert.equal(existsSync("index.html"), false, "root index.html must not exist because Railway can mis-detect a static site");
+assert.ok(existsSync("scripts/audit-railway-deployment.mjs"), "Railway audit script should exist");
 assert.ok(existsSync("prisma/schema.prisma"), "Prisma schema should exist");
 assert.ok(readdirSync("prisma/migrations").some((entry) => existsSync(path.join("prisma/migrations", entry, "migration.sql"))), "Prisma migrations should be present");
 

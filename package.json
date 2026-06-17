@@ -15,6 +15,7 @@
     "verify:pwa": "node scripts/verify-pwa.mjs",
     "verify:backup-restore": "node scripts/verify-backup-restore.mjs",
     "verify:railway": "node scripts/verify-railway.mjs",
+    "audit:railway": "node scripts/audit-railway-deployment.mjs",
     "verify:samples": "tsx scripts/verify-sample-csvs.ts",
     "verify:db-workflow": "tsx scripts/verify-db-workflow.ts",
     "db:generate": "prisma generate",
