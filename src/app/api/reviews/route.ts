@@ -5,6 +5,7 @@ import { getPrisma } from "@/lib/db";
 import { sampleTransactions } from "@/lib/sample-data";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
+import { closedPeriodResponse, findClosedPeriodForDate } from "@/lib/server/closing-periods";
 import { buildEvidenceAmountReviewItems } from "@/lib/server/evidence-amount-reviews";
 import { serializeEvidence, serializeReviewItem, serializeTransaction } from "@/lib/server/serializers";
 import type { ReviewItem } from "@/types";
@@ -144,11 +145,20 @@ export async function PATCH(request: Request) {
     where: {
       id: parsed.data.id,
       companyId: company.id
+    },
+    include: {
+      transaction: {
+        select: {
+          transactionDate: true
+        }
+      }
     }
   });
   if (!existing) {
     return NextResponse.json({ ok: false, message: "검토 항목을 찾을 수 없습니다." }, { status: 404 });
   }
+  const closedPeriod = await findClosedPeriodForDate(db, company.id, existing.transaction?.transactionDate);
+  if (closedPeriod) return closedPeriodResponse(closedPeriod.period);
 
   const reviewItem = await db.reviewItem.update({
     where: { id: parsed.data.id },

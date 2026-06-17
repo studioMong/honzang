@@ -175,6 +175,8 @@ try {
   const workflowReviews = reviewPayload.reviewItems?.filter((item) => item.transaction?.description.includes(marker)) ?? [];
   const mismatchReview = workflowReviews.find((item) => item.reason.includes(evidenceAmountMismatchReason));
   assert.ok(mismatchReview, "mismatched evidence amount should create a review item");
+  const mismatchReviewId = mismatchReview.id;
+  assert.ok(mismatchReviewId, "mismatched evidence amount review should include an id");
   assert.equal(mismatchReview?.severity, "DANGER", "large evidence amount mismatch should create a danger review");
   assert.match(mismatchReview?.recommendation ?? "", /차이/, "mismatch review should explain the amount difference");
   const reviewSnapshotRows = buildReviewSnapshotRows(workflowReviews);
@@ -381,6 +383,17 @@ try {
   });
   assert.equal(lockedTransactionPayload.ok, false, "locked period transaction create should fail");
   assert.equal(lockedTransactionPayload.code, "PERIOD_CLOSED", "locked period transaction create should return PERIOD_CLOSED");
+
+  const lockedReviewPatchPayload = await requestJson<{ ok?: boolean; code?: string; message?: string }>("/api/reviews", {
+    method: "PATCH",
+    expectedStatus: 409,
+    body: {
+      id: mismatchReviewId,
+      status: "RESOLVED"
+    }
+  });
+  assert.equal(lockedReviewPatchPayload.ok, false, "locked period review status update should fail");
+  assert.equal(lockedReviewPatchPayload.code, "PERIOD_CLOSED", "locked period review status update should return PERIOD_CLOSED");
 
   const lockedLinkedJournalPayload = await requestJson<{ ok?: boolean; code?: string; message?: string }>("/api/journals", {
     method: "PATCH",
