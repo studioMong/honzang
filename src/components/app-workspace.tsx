@@ -2187,6 +2187,7 @@ function ReportsPanel({
   const [deletingReportId, setDeletingReportId] = useState<string | null>(null);
   const [closingPeriodAction, setClosingPeriodAction] = useState<"close" | "reopen" | null>(null);
   const [selectedTaxReportId, setSelectedTaxReportId] = useState<string | null>(null);
+  const [reportMessage, setReportMessage] = useState<PanelMessage | null>(null);
   const selectedPeriod = period === "ALL" || periodOptions.some((option) => option.value === period) ? period : periodOptions[0]?.value ?? "ALL";
   const selectedClosingPeriod = closingPeriods.find((item) => item.period === selectedPeriod) ?? null;
   const canClosePeriod = selectedPeriod !== "ALL";
@@ -2299,6 +2300,7 @@ function ReportsPanel({
   async function saveSnapshot() {
     if (isPeriodClosed) return;
     setSavingReport(true);
+    setReportMessage(null);
     try {
       const response = await fetch("/api/reports", {
         method: "POST",
@@ -2331,7 +2333,14 @@ function ReportsPanel({
         })
       });
       const payload = await response.json();
-      if (payload.taxReport) onSaved(payload.taxReport);
+      if (!response.ok || !payload.taxReport) {
+        setReportMessage({ tone: "red", text: payload.message ?? "리포트 스냅샷 저장에 실패했습니다." });
+        return;
+      }
+      onSaved(payload.taxReport);
+      setReportMessage({ tone: "green", text: "리포트 스냅샷을 저장했습니다." });
+    } catch {
+      setReportMessage({ tone: "red", text: "리포트 스냅샷 저장 중 오류가 발생했습니다." });
     } finally {
       setSavingReport(false);
     }
@@ -2347,6 +2356,7 @@ function ReportsPanel({
     if (!window.confirm(`${label}를 삭제할까요? 저장된 스냅샷은 복구할 수 없습니다.`)) return;
 
     setDeletingReportId(taxReportId);
+    setReportMessage(null);
     try {
       const response = await fetch("/api/reports", {
         method: "DELETE",
@@ -2354,10 +2364,15 @@ function ReportsPanel({
         body: JSON.stringify({ id: taxReportId })
       });
       const payload = await response.json();
-      if (payload.ok) {
-        onDeleted(taxReportId);
-        if (selectedTaxReportId === taxReportId) setSelectedTaxReportId(null);
+      if (!response.ok || !payload.ok) {
+        setReportMessage({ tone: "red", text: payload.message ?? "리포트 삭제에 실패했습니다." });
+        return;
       }
+      onDeleted(taxReportId);
+      if (selectedTaxReportId === taxReportId) setSelectedTaxReportId(null);
+      setReportMessage({ tone: "green", text: "리포트를 삭제했습니다." });
+    } catch {
+      setReportMessage({ tone: "red", text: "리포트 삭제 중 오류가 발생했습니다." });
     } finally {
       setDeletingReportId(null);
     }
@@ -2505,6 +2520,8 @@ function ReportsPanel({
           </div>
         </div>
       </section>
+
+      {reportMessage && <div className={`import-message status ${reportMessage.tone}`}>{reportMessage.text}</div>}
 
       <section className="panel">
         <div className="panel-header">
