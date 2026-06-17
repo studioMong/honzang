@@ -15,6 +15,7 @@ import {
   LayoutDashboard,
   ListChecks,
   Loader2,
+  Printer,
   ReceiptText,
   RefreshCcw,
   Settings,
@@ -1790,6 +1791,10 @@ function ReportsPanel({
     downloadFilingPackageXlsx(buildReportXlsxFileName("filing-package", selectedPeriod), buildCurrentFilingPackagePayload());
   }
 
+  function printReport() {
+    window.print();
+  }
+
   async function saveSnapshot() {
     if (isPeriodClosed) return;
     setSavingReport(true);
@@ -1919,6 +1924,13 @@ function ReportsPanel({
 
   return (
     <div className="content">
+      <section className="print-report-title">
+        <h1>혼자장부 신고 준비 리포트</h1>
+        <p>
+          {company.name} · {periodLabel} · {formatDate(periodRange.start)} - {formatDate(periodRange.end)}
+        </p>
+      </section>
+
       <section className="panel report-filter-panel">
         <div className="panel-header">
           <div>
@@ -1936,6 +1948,10 @@ function ReportsPanel({
             <span className={`status ${isPeriodClosed ? "green" : canClosePeriod ? "amber" : "blue"}`}>
               {isPeriodClosed ? "마감 잠금" : canClosePeriod ? "마감 가능" : "전체 기간"}
             </span>
+            <button className="secondary-button" onClick={printReport}>
+              <Printer size={16} />
+              인쇄/PDF
+            </button>
             {canClosePeriod &&
               (isPeriodClosed ? (
                 <button className="secondary-button" onClick={() => void reopenSelectedPeriod()} disabled={closingPeriodAction !== null}>

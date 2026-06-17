@@ -746,6 +746,10 @@ th.amount {
   min-width: 520px;
 }
 
+.print-report-title {
+  display: none;
+}
+
 .muted {
   color: var(--muted);
 }
@@ -829,5 +833,101 @@ th.amount {
 
   .page-title {
     font-size: 23px;
+  }
+}
+
+@media print {
+  :root {
+    --bg: #fff;
+    --surface: #fff;
+    --surface-muted: #fff;
+    --line: #b8c0cc;
+    --line-strong: #8d97a6;
+    --shadow: none;
+  }
+
+  body {
+    background: #fff;
+    color: #111;
+  }
+
+  .app {
+    display: block;
+    min-height: auto;
+  }
+
+  .sidebar,
+  .topbar,
+  .report-filter-panel,
+  .toolbar,
+  .ghost-button,
+  .secondary-button,
+  .primary-button,
+  .icon-button {
+    display: none !important;
+  }
+
+  .main {
+    padding: 0;
+  }
+
+  .content {
+    display: block;
+  }
+
+  .print-report-title {
+    display: block;
+    margin: 0 0 16px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #111;
+  }
+
+  .print-report-title h1 {
+    margin: 0;
+    font-size: 22px;
+    line-height: 1.25;
+  }
+
+  .print-report-title p {
+    margin: 6px 0 0;
+    color: #444;
+    font-size: 12px;
+  }
+
+  .panel,
+  .kpi {
+    break-inside: avoid;
+    box-shadow: none;
+    border-color: var(--line);
+  }
+
+  .panel {
+    margin-bottom: 12px;
+  }
+
+  .panel-header {
+    padding: 12px 0 8px;
+  }
+
+  .panel-body {
+    padding: 10px 0;
+  }
+
+  .table-wrap {
+    overflow: visible;
+  }
+
+  table,
+  .journal-card table,
+  .snapshot-detail table,
+  .guide-table {
+    min-width: 0;
+    width: 100%;
+  }
+
+  th,
+  td {
+    padding: 6px 8px;
+    font-size: 10px;
   }
 }

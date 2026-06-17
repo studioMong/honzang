@@ -96,7 +96,7 @@ RAILWAY_EXPECTED_COMMIT=$(git rev-parse HEAD) npm run verify:railway
 - 월별 손익, 부가세 신고 입력 전 정리표, 위험거래 리포트
 - 신고 일정과 신고 준비 순서 안내
 - 승인 분개 기준 계정별 원장과 재무제표 초안
-- 신고 준비자료 XLSX 통합 문서와 JSON/CSV/DB 보관 증빙 ZIP 패키지 다운로드
+- 신고 준비자료 브라우저 인쇄/PDF 저장, XLSX 통합 문서, JSON/CSV/DB 보관 증빙 ZIP 패키지 다운로드
 - 월 마감 잠금/해제로 확정 기간의 거래, 증빙, 분개, 리포트 변경 차단
 - 원본 CSV, 증빙 파일, 월 마감 상태를 포함한 전체 워크스페이스 백업 JSON/ZIP 다운로드와 백업 JSON 복원
 
