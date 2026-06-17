@@ -1752,6 +1752,7 @@ function ReportsPanel({
   const financialStatementTotals = buildFinancialStatementTotals(financialStatementRows);
   const corporateTaxRows = buildCorporateTaxRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows, financialStatementRows);
   const filingPackageRows = buildFilingPackageRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows, withholdingRows, financialStatementRows);
+  const dataSourceRows = buildDataSourceRows(filteredTransactions);
   const periodLabel = formatPeriodLabel(selectedPeriod);
   const periodRange = getReportPeriodRange(selectedPeriod, filteredTransactions);
   const filingScheduleRows = buildFilingScheduleRows(company, periodRange, reportSummary, withholdingRows, ledgerRows);
@@ -1771,6 +1772,7 @@ function ReportsPanel({
       evidences: filteredEvidences,
       reviews,
       filingScheduleRows,
+      dataSourceRows,
       filingPackageRows,
       withholdingRows,
       corporateTaxRows,
@@ -1812,6 +1814,7 @@ function ReportsPanel({
             periodLabel,
             summary: reportSummary,
             filingScheduleRows,
+            dataSourceRows,
             filingPackageRows,
             withholdingRows,
             corporateTaxRows,
@@ -1874,6 +1877,7 @@ function ReportsPanel({
               periodLabel,
               summary: reportSummary,
               filingScheduleRows,
+              dataSourceRows,
               filingPackageRows,
               withholdingRows,
               corporateTaxRows,
@@ -2015,6 +2019,48 @@ function ReportsPanel({
                     <span className={`status ${row.톤}`}>{row.상태}</span>
                   </td>
                   <td>{row["다음 작업"]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="panel-title">자료 수집 현황</h2>
+            <p className="panel-subtitle">신고 전 통장, 카드, 홈택스, PG 자료 반영 여부 확인</p>
+          </div>
+          <div className="toolbar">
+            <span className="status blue">{periodLabel}</span>
+            <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("data-sources", selectedPeriod), dataSourceRows)}>
+              <Download size={16} />
+              자료
+            </button>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>자료</th>
+                <th>상태</th>
+                <th className="amount">거래</th>
+                <th>기간</th>
+                <th>다음 확인</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dataSourceRows.map((row) => (
+                <tr key={row.자료}>
+                  <td>{row.자료}</td>
+                  <td>
+                    <span className={`status ${row.톤}`}>{row.상태}</span>
+                  </td>
+                  <td className="amount">{row.거래}</td>
+                  <td>{row.기간}</td>
+                  <td>{row["다음 확인"]}</td>
                 </tr>
               ))}
             </tbody>
@@ -2179,6 +2225,37 @@ function ReportsPanel({
                         <span className={`status ${row.톤}`}>{row.상태}</span>
                       </td>
                       <td>{row["다음 작업"]}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="table-wrap snapshot-detail">
+            <table>
+              <thead>
+                <tr>
+                  <th>자료</th>
+                  <th>상태</th>
+                  <th className="amount">거래</th>
+                  <th>기간</th>
+                  <th>다음 확인</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedPayload.dataSourceRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="empty-cell">저장된 자료 수집 현황이 없습니다.</td>
+                  </tr>
+                ) : (
+                  selectedPayload.dataSourceRows.map((row) => (
+                    <tr key={row.자료}>
+                      <td>{row.자료}</td>
+                      <td>{row.상태}</td>
+                      <td className="amount">{row.거래}</td>
+                      <td>{row.기간}</td>
+                      <td>{row["다음 확인"]}</td>
                     </tr>
                   ))
                 )}
@@ -3928,6 +4005,7 @@ function buildTaxReportPayload({
   periodLabel,
   summary,
   filingScheduleRows,
+  dataSourceRows,
   filingPackageRows,
   withholdingRows,
   corporateTaxRows,
@@ -3940,6 +4018,7 @@ function buildTaxReportPayload({
   periodLabel: string;
   summary: ReturnType<typeof summarizeTransactions>;
   filingScheduleRows: ReturnType<typeof buildFilingScheduleRows>;
+  dataSourceRows: ReturnType<typeof buildDataSourceRows>;
   filingPackageRows: ReturnType<typeof buildFilingPackageRows>;
   withholdingRows: ReturnType<typeof buildWithholdingRows>;
   corporateTaxRows: ReturnType<typeof buildCorporateTaxRows>;
@@ -3953,6 +4032,7 @@ function buildTaxReportPayload({
     periodLabel,
     summary,
     filingScheduleRows,
+    dataSourceRows,
     filingPackageRows,
     withholdingRows,
     corporateTaxRows,
@@ -4010,6 +4090,7 @@ function parseDetailedTaxReportPayload(payload: unknown) {
       riskCount: typeof summary.riskCount === "number" ? summary.riskCount : 0
     },
     filingScheduleRows: parseStringNumberRecordRows(record.filingScheduleRows) as ReturnType<typeof buildFilingScheduleRows>,
+    dataSourceRows: parseStringNumberRecordRows(record.dataSourceRows) as ReturnType<typeof buildDataSourceRows>,
     filingPackageRows: parseStringNumberRecordRows(record.filingPackageRows) as ReturnType<typeof buildFilingPackageRows>,
     withholdingRows: parseStringNumberRecordRows(record.withholdingRows) as ReturnType<typeof buildWithholdingRows>,
     corporateTaxRows: parseStringNumberRecordRows(record.corporateTaxRows) as ReturnType<typeof buildCorporateTaxRows>,
@@ -4111,6 +4192,7 @@ function downloadFilingPackageZip(fileName: string, payload: ReturnType<typeof b
   const packageFiles = [
     "filing-package.json",
     "csv/filing-schedule.csv",
+    "csv/data-sources.csv",
     "csv/filing-package.csv",
     "csv/transactions.csv",
     "csv/evidences.csv",
@@ -4141,6 +4223,7 @@ function downloadFilingPackageZip(fileName: string, payload: ReturnType<typeof b
     },
     { path: "filing-package.json", content: JSON.stringify(payload, null, 2) },
     { path: "csv/filing-schedule.csv", content: toCsvFileContent(payload.filingScheduleRows) },
+    { path: "csv/data-sources.csv", content: toCsvFileContent(payload.dataSourceRows) },
     { path: "csv/filing-package.csv", content: toCsvFileContent(payload.filingPackageRows) },
     { path: "csv/transactions.csv", content: toCsvFileContent(payload.tables.transactions) },
     { path: "csv/evidences.csv", content: toCsvFileContent(payload.tables.evidences) },
@@ -4369,6 +4452,7 @@ function buildFilingWorkbookSheets(payload: ReturnType<typeof buildFilingPackage
   return [
     { name: "요약", rows: buildFilingSummaryRows(payload) },
     { name: "신고일정", rows: payload.filingScheduleRows },
+    { name: "자료수집", rows: payload.dataSourceRows },
     { name: "신고패키지", rows: payload.filingPackageRows },
     { name: "거래", rows: payload.tables.transactions },
     { name: "증빙", rows: payload.tables.evidences },
@@ -4391,6 +4475,7 @@ function buildFilingSummaryRows(payload: ReturnType<typeof buildFilingPackagePay
     { 항목: "기간", 값: payload.period.label },
     { 항목: "기간 시작", 값: payload.period.start },
     { 항목: "기간 종료", 값: payload.period.end },
+    { 항목: "확인 필요 자료", 값: payload.dataSourceRows.filter((row) => row.상태 === "확인 필요").length },
     { 항목: "매출", 값: payload.summary.revenue },
     { 항목: "비용", 값: payload.summary.expense },
     { 항목: "손익", 값: payload.summary.profit },
@@ -4655,6 +4740,7 @@ function buildFilingPackagePayload({
   evidences,
   reviews,
   filingScheduleRows,
+  dataSourceRows,
   filingPackageRows,
   withholdingRows,
   corporateTaxRows,
@@ -4670,6 +4756,7 @@ function buildFilingPackagePayload({
   evidences: AppEvidence[];
   reviews: ReturnType<typeof buildReviewItems>;
   filingScheduleRows: ReturnType<typeof buildFilingScheduleRows>;
+  dataSourceRows: ReturnType<typeof buildDataSourceRows>;
   filingPackageRows: ReturnType<typeof buildFilingPackageRows>;
   withholdingRows: ReturnType<typeof buildWithholdingRows>;
   corporateTaxRows: ReturnType<typeof buildCorporateTaxRows>;
@@ -4694,8 +4781,10 @@ function buildFilingPackagePayload({
     },
     summary,
     filingScheduleRows,
+    dataSourceRows,
     filingPackageRows,
     tables: {
+      dataSources: dataSourceRows,
       transactions: buildTransactionCsv(transactions),
       evidences: buildEvidenceCsv(evidences),
       vatReport: buildVatCsv(summary, transactions),
@@ -4818,6 +4907,62 @@ function buildCorporateTaxRows(
       확인: "자산, 부채, 자본, 손익 초안 검토"
     }
   ];
+}
+
+function buildDataSourceRows(transactions: AppTransaction[]) {
+  return sourceOptions.map((sourceType) => {
+    const sourceTransactions = transactions.filter((transaction) => transaction.sourceType === sourceType);
+    const dates = sourceTransactions.map((transaction) => transaction.transactionDate).filter(Boolean).sort();
+    const hasTransactions = sourceTransactions.length > 0;
+    const optionalSource = sourceType === "PG";
+
+    return {
+      자료: SOURCE_TYPE_LABELS[sourceType],
+      상태: hasTransactions ? "반영됨" : optionalSource ? "선택" : "확인 필요",
+      톤: hasTransactions ? "green" : optionalSource ? "blue" : "amber",
+      거래: `${formatNumber(sourceTransactions.length)}건`,
+      기간: hasTransactions ? `${formatDate(dates[0])} - ${formatDate(dates.at(-1) ?? dates[0])}` : "-",
+      "다음 확인": hasTransactions ? dataSourceReadyMessage(sourceType) : dataSourceMissingMessage(sourceType)
+    };
+  });
+}
+
+function dataSourceReadyMessage(sourceType: SourceType) {
+  switch (sourceType) {
+    case "BANK":
+      return "입출금 누락 월이 없는지 잔액 흐름 확인";
+    case "CARD":
+      return "카드전표와 증빙 매칭 확인";
+    case "HOMETAX_SALES":
+      return "매출 입금과 세금계산서 매칭 확인";
+    case "HOMETAX_PURCHASES":
+      return "매입세액 공제 가능 여부 확인";
+    case "CASH_RECEIPT":
+      return "현금영수증/카드 매입 중복 반영 확인";
+    case "PG":
+      return "정산금액과 실제 입금액 차이 확인";
+    case "MANUAL":
+      return "수기 입력 거래의 계정과 증빙 확인";
+  }
+}
+
+function dataSourceMissingMessage(sourceType: SourceType) {
+  switch (sourceType) {
+    case "BANK":
+      return "법인 통장 입출금 CSV를 업로드";
+    case "CARD":
+      return "법인카드 이용내역 CSV를 업로드";
+    case "HOMETAX_SALES":
+      return "홈택스 매출 세금계산서 CSV 반영";
+    case "HOMETAX_PURCHASES":
+      return "홈택스 매입 세금계산서 CSV 반영";
+    case "CASH_RECEIPT":
+      return "홈택스 현금영수증/카드 매입 자료 확인";
+    case "PG":
+      return "PG/마켓 정산자료가 있으면 업로드";
+    case "MANUAL":
+      return "필요한 수기 거래는 거래내역에서 직접 추가";
+  }
 }
 
 function buildFilingPackageRows(
