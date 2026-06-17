@@ -723,6 +723,7 @@ function Dashboard({
   const dashboardCashFlowTotals = buildCashFlowTotals(dashboardCashFlowRows);
   const dashboardBankBalanceRows = buildBankBalanceCheckRows(dashboardTransactions, dashboardCashFlowTotals);
   const dashboardReadinessRows = buildFilingReadinessRows({
+    setupItems,
     transactions: dashboardTransactions,
     summary: summarizeTransactions(dashboardTransactions),
     dataSourceRows: buildDataSourceRows(dashboardTransactions),
@@ -2153,6 +2154,7 @@ function ReportsPanel({
   const filteredJournalEntries = useMemo(() => filterJournalEntriesByPeriod(journalEntries, selectedPeriod), [journalEntries, selectedPeriod]);
   const approvedJournalEntries = useMemo(() => filteredJournalEntries.filter((entry) => entry.status === "APPROVED"), [filteredJournalEntries]);
   const reportSummary = useMemo(() => summarizeTransactions(filteredTransactions), [filteredTransactions]);
+  const setupItems = buildCompanySetupItems(company);
   const expenseByAccount = groupExpensesByAccount(filteredTransactions);
   const reviews = buildReviewItems(filteredTransactions);
   const ledgerRows = buildLedgerRows(approvedJournalEntries);
@@ -2168,6 +2170,7 @@ function ReportsPanel({
   const filingPackageRows = buildFilingPackageRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows, withholdingRows, financialStatementRows, cashFlowRows, bankBalanceRows);
   const dataSourceRows = buildDataSourceRows(filteredTransactions);
   const filingReadinessRows = buildFilingReadinessRows({
+    setupItems,
     transactions: filteredTransactions,
     summary: reportSummary,
     dataSourceRows,
@@ -6678,6 +6681,7 @@ function buildCorporateTaxRows(
 }
 
 function buildFilingReadinessRows({
+  setupItems,
   transactions,
   summary,
   dataSourceRows,
@@ -6690,6 +6694,7 @@ function buildFilingReadinessRows({
   isPeriodClosed,
   canClosePeriod
 }: {
+  setupItems: CompanySetupItem[];
   transactions: AppTransaction[];
   summary: ReturnType<typeof summarizeTransactions>;
   dataSourceRows: ReturnType<typeof buildDataSourceRows>;
@@ -6702,6 +6707,10 @@ function buildFilingReadinessRows({
   isPeriodClosed: boolean;
   canClosePeriod: boolean;
 }): FilingReadinessRow[] {
+  const missingSetupItems = setupItems.filter((item) => item.tone === "red");
+  const warningSetupItems = setupItems.filter((item) => item.tone === "amber");
+  const setupTone: StatusTone = missingSetupItems.length > 0 ? "red" : warningSetupItems.length > 0 ? "amber" : "green";
+  const setupIssueItems = missingSetupItems.length > 0 ? missingSetupItems : warningSetupItems;
   const totalTransactions = transactions.length;
   const bankSourceMissing = dataSourceRows.some((row) => row.자료 === SOURCE_TYPE_LABELS.BANK && row.상태 === "확인 필요");
   const supportingSourceMissingCount = dataSourceRows.filter((row) => row.자료 !== SOURCE_TYPE_LABELS.BANK && row.상태 === "확인 필요").length;
@@ -6720,6 +6729,19 @@ function buildFilingReadinessRows({
   return [
     {
       순서: 1,
+      점검: "법인 기본정보",
+      상태: setupTone === "red" ? "차단" : setupTone === "amber" ? "확인 필요" : "완료",
+      톤: setupTone,
+      근거: setupIssueItems.length > 0 ? setupIssueItems.map((item) => item.detail).join(" · ") : "법인 기본정보와 1인법인 설정 확인됨",
+      "다음 작업":
+        setupTone === "red"
+          ? "설정에서 사업자등록번호, 업종, 법인 기본값 입력"
+          : setupTone === "amber"
+            ? "설정에서 겸영, 원천세, 과금 단가 적용 여부 확인"
+            : "신고 전 사업자등록증 정보와 대조"
+    },
+    {
+      순서: 2,
       점검: "자료 수집",
       상태: sourceTone === "red" ? "차단" : sourceTone === "amber" ? "확인 필요" : "완료",
       톤: sourceTone,
@@ -6739,7 +6761,7 @@ function buildFilingReadinessRows({
             : "자료별 기간 누락만 최종 확인"
     },
     {
-      순서: 2,
+      순서: 3,
       점검: "거래 분류",
       상태: totalTransactions === 0 || unclassifiedCount > 0 ? "차단" : "완료",
       톤: totalTransactions === 0 || unclassifiedCount > 0 ? "red" : "green",
@@ -6747,7 +6769,7 @@ function buildFilingReadinessRows({
       "다음 작업": totalTransactions === 0 ? "신고 대상 기간의 거래 CSV 업로드" : unclassifiedCount > 0 ? "거래내역에서 계정과목 확정" : "분류 결과 표본 검토"
     },
     {
-      순서: 3,
+      순서: 4,
       점검: "증빙",
       상태: missingEvidenceCount > 0 ? "차단" : "완료",
       톤: missingEvidenceCount > 0 ? "red" : "green",
@@ -6755,7 +6777,7 @@ function buildFilingReadinessRows({
       "다음 작업": missingEvidenceCount > 0 ? "카드전표, 세금계산서, 현금영수증 연결" : "증빙 파일 원본 보관 상태 확인"
     },
     {
-      순서: 4,
+      순서: 5,
       점검: "부가세",
       상태: summary.vatPayable === 0 ? "완료" : "확인 필요",
       톤: summary.vatPayable === 0 ? "green" : "amber",
@@ -6763,7 +6785,7 @@ function buildFilingReadinessRows({
       "다음 작업": summary.vatPayable >= 0 ? "납부 예상액과 홈택스 입력값 대조" : "환급 예상 사유와 매입세액 공제 가능 여부 확인"
     },
     {
-      순서: 5,
+      순서: 6,
       점검: "원천세/대표자",
       상태: withholdingRows.length > 0 || summary.riskCount > 0 ? "확인 필요" : "완료",
       톤: withholdingRows.length > 0 || summary.riskCount > 0 ? "amber" : "green",
@@ -6771,7 +6793,7 @@ function buildFilingReadinessRows({
       "다음 작업": withholdingRows.length > 0 || summary.riskCount > 0 ? "급여, 외주비, 대표자 입출금 검토" : "추가 지급 건만 확인"
     },
     {
-      순서: 6,
+      순서: 7,
       점검: "자동분개/원장",
       상태: approvedJournalCount > 0 && ledgerRows.length > 0 ? "완료" : draftJournalCount > 0 ? "확인 필요" : "차단",
       톤: approvedJournalCount > 0 && ledgerRows.length > 0 ? "green" : draftJournalCount > 0 ? "amber" : "red",
@@ -6779,7 +6801,7 @@ function buildFilingReadinessRows({
       "다음 작업": approvedJournalCount > 0 && ledgerRows.length > 0 ? "원장과 재무제표 초안 검토" : "자동분개 탭에서 초안 승인"
     },
     {
-      순서: 7,
+      순서: 8,
       점검: "복식부기 검증",
       상태: integrityTone === "red" ? "차단" : integrityTone === "amber" ? "확인 필요" : "완료",
       톤: integrityTone,
@@ -6787,7 +6809,7 @@ function buildFilingReadinessRows({
       "다음 작업": integrityTone === "green" ? "차변/대변과 회계등식 최종 대조" : "복식부기 검증 표에서 차액과 미생성 항목 확인"
     },
     {
-      순서: 8,
+      순서: 9,
       점검: "현금흐름",
       상태: hasCashFlow ? "요약 생성" : "대기",
       톤: hasCashFlow ? "green" : "red",
@@ -6795,7 +6817,7 @@ function buildFilingReadinessRows({
       "다음 작업": hasCashFlow ? "통장 잔액과 현금흐름 순증감 대조" : "법인 통장 거래 CSV 업로드 후 입출금 흐름 확인"
     },
     {
-      순서: 9,
+      순서: 10,
       점검: "통장 잔액 대조",
       상태: bankBalanceStatus.status,
       톤: bankBalanceStatus.tone,
@@ -6803,7 +6825,7 @@ function buildFilingReadinessRows({
       "다음 작업": bankBalanceStatus.nextAction
     },
     {
-      순서: 10,
+      순서: 11,
       점검: "월 마감",
       상태: !canClosePeriod ? "전체 기간" : isPeriodClosed ? "완료" : "확인 필요",
       톤: !canClosePeriod ? "blue" : isPeriodClosed ? "green" : "amber",
@@ -6900,6 +6922,7 @@ function buildFilingSubmissionGuideRows({
   isPeriodClosed: boolean;
   canClosePeriod: boolean;
 }): FilingSubmissionGuideRow[] {
+  const setupReadiness = filingReadinessRows.find((row) => row.점검 === "법인 기본정보");
   const sourceReadiness = filingReadinessRows.find((row) => row.점검 === "자료 수집");
   const classificationReadiness = filingReadinessRows.find((row) => row.점검 === "거래 분류");
   const evidenceReadiness = filingReadinessRows.find((row) => row.점검 === "증빙");
@@ -6919,6 +6942,16 @@ function buildFilingSubmissionGuideRows({
   return [
     {
       순서: 1,
+      신고: "기본정보",
+      "홈택스/제출 위치": "사업자등록증, 법인 기본정보",
+      "혼자장부에서 볼 것": "설정, 최종 신고 점검",
+      상태: setupReadiness?.상태 ?? "확인 필요",
+      톤: setupReadiness?.톤 ?? "amber",
+      "입력 기준": `${company.name} · ${formatBusinessRegistrationNumber(company.businessRegistrationNumber)} · ${company.industry || "업종 미입력"} · ${vatTypeLabel(company.vatType)}`,
+      "마감 전 확인": setupReadiness?.["다음 작업"] ?? "사업자등록번호, 업종, 과세유형, 결산월 확인"
+    },
+    {
+      순서: 2,
       신고: "자료 확정",
       "홈택스/제출 위치": "은행, 카드, 홈택스, PG 자료 조회",
       "혼자장부에서 볼 것": "자료 수집 현황, 최종 신고 점검",
@@ -6928,7 +6961,7 @@ function buildFilingSubmissionGuideRows({
       "마감 전 확인": sourceReadiness?.["다음 작업"] ?? "신고 대상 기간 자료 업로드"
     },
     {
-      순서: 2,
+      순서: 3,
       신고: "부가세",
       "홈택스/제출 위치": "부가가치세 신고서",
       "혼자장부에서 볼 것": "부가세 입력 전 정리표, 증빙함",
@@ -6938,7 +6971,7 @@ function buildFilingSubmissionGuideRows({
       "마감 전 확인": vatSchedule ? `${vatSchedule["예상 기한"]} 전 ${vatSchedule["다음 작업"]}` : "매출/매입세액과 공제 보류 후보 대조"
     },
     {
-      순서: 3,
+      순서: 4,
       신고: "원천세",
       "홈택스/제출 위치": "원천세 신고/납부",
       "혼자장부에서 볼 것": "원천세 후보, 대표자/급여 설정",
@@ -6948,7 +6981,7 @@ function buildFilingSubmissionGuideRows({
       "마감 전 확인": withholdingSchedule ? `${withholdingSchedule["예상 기한"]} 전 ${withholdingSchedule["다음 작업"]}` : "급여, 외주비, 기타소득 지급 여부 확인"
     },
     {
-      순서: 4,
+      순서: 5,
       신고: "법인세",
       "홈택스/제출 위치": "법인세 신고, 재무제표 입력",
       "혼자장부에서 볼 것": "법인세 결산 체크, 재무제표 초안, 계정별 원장, 현금흐름 요약, 통장 잔액 대조",
@@ -6958,7 +6991,7 @@ function buildFilingSubmissionGuideRows({
       "마감 전 확인": bankBalanceStatus.tone === "red" ? bankBalanceStatus.nextAction : corporateSchedule ? `${corporateSchedule["예상 기한"]} 전 ${corporateSchedule["다음 작업"]}` : "승인 분개 기준 재무제표와 원장 확인"
     },
     {
-      순서: 5,
+      순서: 6,
       신고: "증빙 보관",
       "홈택스/제출 위치": "신고 근거자료 보관",
       "혼자장부에서 볼 것": "증빙함, 신고 패키지 ZIP",
@@ -6968,7 +7001,7 @@ function buildFilingSubmissionGuideRows({
       "마감 전 확인": evidenceReadiness?.["다음 작업"] ?? "세금계산서, 카드전표, 현금영수증 원본 보관"
     },
     {
-      순서: 6,
+      순서: 7,
       신고: "마감/보관",
       "홈택스/제출 위치": "제출 전 내부 확정",
       "혼자장부에서 볼 것": "스냅샷 저장, 마감 잠금, XLSX/ZIP 패키지",

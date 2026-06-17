@@ -59,7 +59,7 @@ try {
     ["자동분개 초안", "바로 승인", "검토 필요", "정상 초안"].every((text) => body.includes(text))
   );
   await expectText("/?view=reports", (body) =>
-    ["혼자장부 신고 준비 리포트", "최종 신고 점검", "홈택스 제출 전 입력 가이드", "자료 수집 현황", "신고 패키지", "재무제표 초안", "현금흐름 요약", "통장 잔액 대조", "복식부기 검증"].every((text) => body.includes(text))
+    ["혼자장부 신고 준비 리포트", "최종 신고 점검", "법인 기본정보", "홈택스 제출 전 입력 가이드", "기본정보", "자료 수집 현황", "신고 패키지", "재무제표 초안", "현금흐름 요약", "통장 잔액 대조", "복식부기 검증"].every((text) => body.includes(text))
   );
   console.log(`Production smoke passed at ${baseUrl}`);
 } catch (error) {
