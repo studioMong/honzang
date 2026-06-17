@@ -10,6 +10,7 @@ const steps = [
   ["verify:samples", "CSV sample parsing and classification"],
   ["verify:closing-snapshot-exports", "Closing snapshot export packages"],
   ["build", "Production standalone build"],
+  ["verify:operations-readiness", "Operations readiness diagnostics"],
   ["verify:pwa", "PWA resources and install hooks"],
   ["verify:access-control", "Environment access-code protection"],
   ["verify:backup-restore", "Backup restore dry-run"],
