@@ -7,11 +7,14 @@ const railwayConfig = readJson("railway.json");
 const dockerfile = readText("Dockerfile");
 const nextConfig = readText("next.config.ts");
 const dockerignore = readText(".dockerignore");
+const readme = readText("README.md");
+const proxy = readText("src/proxy.ts");
 
 assert.equal(packageJson.scripts?.build, "prisma generate && next build && node scripts/prepare-standalone.mjs", "package build script should create the standalone server");
 assert.equal(packageJson.scripts?.start, "HOSTNAME=0.0.0.0 node .next/standalone/server.js", "package start script should run the standalone server");
 assert.equal(packageJson.scripts?.["db:deploy"], "prisma migrate deploy", "package should expose a deploy migration command");
 assert.equal(packageJson.scripts?.["audit:railway"], "node scripts/audit-railway-deployment.mjs", "package should expose a Railway deployment audit command");
+assert.equal(packageJson.scripts?.["verify:access-control"], "node scripts/verify-access-control.mjs", "package should expose access-control verification");
 
 assert.equal(railwayConfig.build?.builder, "DOCKERFILE", "Railway builder should be Dockerfile");
 assert.equal(railwayConfig.build?.dockerfilePath, "Dockerfile", "Railway should use the root Dockerfile");
@@ -26,14 +29,21 @@ assert.match(dockerfile, /EXPOSE 3000/, "Dockerfile should expose the Railway ap
 assert.match(dockerfile, /CMD \["npm", "run", "start"\]/, "Dockerfile should start through npm run start");
 
 assert.match(nextConfig, /output:\s*"standalone"/, "Next config should produce standalone output");
+assert.match(proxy, /api\/auth\/login/, "proxy should leave auth login public");
+assert.match(proxy, /api\/health/, "proxy should leave healthcheck public");
+assert.match(proxy, /isRequestAuthenticated/, "proxy should protect private routes by access cookie");
 assert.match(dockerignore, /^\.next$/m, ".dockerignore should exclude local build output");
 assert.match(dockerignore, /^node_modules$/m, ".dockerignore should exclude local dependencies");
 assert.match(dockerignore, /^\.env\.\*$/m, ".dockerignore should exclude env files");
 
 assert.equal(existsSync("index.html"), false, "root index.html must not exist because Railway can mis-detect a static site");
 assert.ok(existsSync("scripts/audit-railway-deployment.mjs"), "Railway audit script should exist");
+assert.ok(existsSync("scripts/verify-access-control.mjs"), "Access-control verification script should exist");
 assert.ok(existsSync("prisma/schema.prisma"), "Prisma schema should exist");
 assert.ok(readdirSync("prisma/migrations").some((entry) => existsSync(path.join("prisma/migrations", entry, "migration.sql"))), "Prisma migrations should be present");
+
+assert.match(readme, /HONZANG_ACCESS_CODE=/, "README should document the deployment access code variable");
+assert.match(readme, /HONZANG_ACCESS_TOKEN_SALT=/, "README should document the access-token salt variable");
 
 console.log("Deployment config verification passed.");
 

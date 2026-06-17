@@ -41,6 +41,7 @@ try {
   await verifyPageRedirect();
   await verifyUnauthorizedApi();
   await verifyWrongCode();
+  await verifyRateLimit();
   const cookie = await verifyLogin();
   await verifyAuthenticatedSession(cookie);
   await verifyAuthenticatedApi(cookie);
@@ -97,12 +98,29 @@ async function verifyUnauthorizedApi() {
 }
 
 async function verifyWrongCode() {
-  const response = await postLogin("wrong-code");
+  const response = await postLogin("wrong-code", "203.0.113.10");
   assert.equal(response.status, 401, "wrong access code should be rejected");
+  const body = await response.json();
+  assert.equal(body.remainingAttempts, 4, "wrong code response should expose remaining attempts");
+}
+
+async function verifyRateLimit() {
+  const ip = "203.0.113.20";
+  for (let index = 0; index < 4; index += 1) {
+    const response = await postLogin(`wrong-code-${index}`, ip);
+    assert.equal(response.status, 401, `wrong code attempt ${index + 1} should return HTTP 401`);
+  }
+
+  const limitedResponse = await postLogin("wrong-code-limit", ip);
+  assert.equal(limitedResponse.status, 429, "fifth wrong code attempt should be rate-limited");
+  assert.ok(Number(limitedResponse.headers.get("retry-after")) > 0, "rate-limited response should expose retry-after");
+
+  const stillLimitedResponse = await postLogin(accessCode, ip);
+  assert.equal(stillLimitedResponse.status, 429, "correct code from a locked source should remain rate-limited");
 }
 
 async function verifyLogin() {
-  const response = await postLogin(accessCode);
+  const response = await postLogin(accessCode, "203.0.113.30");
   assert.equal(response.status, 200, "correct access code should be accepted");
   const setCookie = response.headers.get("set-cookie") ?? "";
   assert.match(setCookie, /honzang_access=/, "login should set access cookie");
@@ -130,10 +148,10 @@ async function verifyLogout(cookie) {
   assert.match(setCookie, /Max-Age=0/, "logout should clear access cookie");
 }
 
-async function postLogin(code) {
+async function postLogin(code, ip = "203.0.113.30") {
   return fetch(`${baseUrl}/api/auth/login`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-forwarded-for": ip },
     body: JSON.stringify({ code }),
     cache: "no-store"
   });
