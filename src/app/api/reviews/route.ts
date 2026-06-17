@@ -160,22 +160,25 @@ export async function PATCH(request: Request) {
   const closedPeriod = await findClosedPeriodForDate(db, company.id, existing.transaction?.transactionDate);
   if (closedPeriod) return closedPeriodResponse(closedPeriod.period);
 
-  const reviewItem = await db.reviewItem.update({
-    where: { id: parsed.data.id },
-    data: { status: parsed.data.status },
-    include: reviewInclude
-  });
-  await recordAuditEvent(db, {
-    companyId: company.id,
-    action: "REVIEW_STATUS_UPDATE",
-    entityType: "REVIEW_ITEM",
-    entityId: reviewItem.id,
-    summary: `검토 항목 상태를 ${parsed.data.status}로 변경했습니다: ${reviewItem.reason}`,
-    metadata: {
-      transactionId: reviewItem.transactionId ?? null,
-      status: parsed.data.status,
-      severity: reviewItem.severity
-    }
+  const reviewItem = await db.$transaction(async (tx) => {
+    const updated = await tx.reviewItem.update({
+      where: { id: parsed.data.id },
+      data: { status: parsed.data.status },
+      include: reviewInclude
+    });
+    await recordAuditEvent(tx, {
+      companyId: company.id,
+      action: "REVIEW_STATUS_UPDATE",
+      entityType: "REVIEW_ITEM",
+      entityId: updated.id,
+      summary: `검토 항목 상태를 ${parsed.data.status}로 변경했습니다: ${updated.reason}`,
+      metadata: {
+        transactionId: updated.transactionId ?? null,
+        status: parsed.data.status,
+        severity: updated.severity
+      }
+    });
+    return updated;
   });
 
   return NextResponse.json({ ok: true, reviewItem: serializeReviewItem(reviewItem), mode: "database" });

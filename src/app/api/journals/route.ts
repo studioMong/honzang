@@ -294,32 +294,35 @@ export async function PATCH(request: Request) {
     }
   }
 
-  const journalEntry = await db.journalEntry.update({
-    where: { id: parsed.data.id },
-    data: { status: parsed.data.status },
-    include: {
-      lines: {
-        include: { account: true },
-        orderBy: { createdAt: "asc" }
-      },
-      transaction: {
-        include: {
-          suggestedAccount: true,
-          confirmedAccount: true
+  const journalEntry = await db.$transaction(async (tx) => {
+    const updated = await tx.journalEntry.update({
+      where: { id: parsed.data.id },
+      data: { status: parsed.data.status },
+      include: {
+        lines: {
+          include: { account: true },
+          orderBy: { createdAt: "asc" }
+        },
+        transaction: {
+          include: {
+            suggestedAccount: true,
+            confirmedAccount: true
+          }
         }
       }
-    }
-  });
-  await recordAuditEvent(db, {
-    companyId: company.id,
-    action: "JOURNAL_STATUS_UPDATE",
-    entityType: "JOURNAL_ENTRY",
-    entityId: journalEntry.id,
-    summary: `분개 상태를 ${parsed.data.status}로 변경했습니다.`,
-    metadata: {
-      transactionId: journalEntry.transactionId ?? null,
-      status: parsed.data.status
-    }
+    });
+    await recordAuditEvent(tx, {
+      companyId: company.id,
+      action: "JOURNAL_STATUS_UPDATE",
+      entityType: "JOURNAL_ENTRY",
+      entityId: updated.id,
+      summary: `분개 상태를 ${parsed.data.status}로 변경했습니다.`,
+      metadata: {
+        transactionId: updated.transactionId ?? null,
+        status: parsed.data.status
+      }
+    });
+    return updated;
   });
 
   return NextResponse.json({ ok: true, journalEntry: serializeJournalEntry(journalEntry), mode: "database" });
