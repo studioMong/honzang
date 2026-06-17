@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "smoke:prod": "node scripts/smoke-production.mjs",
+    "verify:pwa": "node scripts/verify-pwa.mjs",
     "verify:samples": "tsx scripts/verify-sample-csvs.ts",
     "verify:db-workflow": "tsx scripts/verify-db-workflow.ts",
     "db:generate": "prisma generate",
