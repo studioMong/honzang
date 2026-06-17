@@ -167,6 +167,7 @@ try {
   await verifyInvalidTransactionAmountBackup();
   await verifyInvalidEvidenceBackup();
   await verifyInvalidEvidenceAmountBackup();
+  await verifyInvalidEvidenceTransactionBackup();
   await verifyInvalidJournalBackup();
   await verifyInvalidOriginalImportFileBackup();
   await verifyConfirmGuard();
@@ -262,6 +263,23 @@ async function verifyInvalidEvidenceAmountBackup() {
   assert.equal(body.code, "INVALID_BACKUP_EVIDENCE", "restore should return evidence validation code");
   assert.ok(Array.isArray(body.issues), "restore should return evidence validation issues");
   assert.ok(body.issues.some((issue) => issue.includes("합계")), "restore should report inconsistent evidence totals");
+}
+
+async function verifyInvalidEvidenceTransactionBackup() {
+  const invalidBackup = structuredClone(backup);
+  invalidBackup.evidences = [
+    {
+      ...backup.evidences[0],
+      id: "evidence-missing-transaction-1",
+      transactionId: "missing-transaction"
+    }
+  ];
+
+  const body = await postJson("/api/backups/restore", { backup: invalidBackup, dryRun: true }, 400);
+  assert.equal(body.ok, false, "restore should reject evidence linked to missing transaction");
+  assert.equal(body.code, "INVALID_BACKUP_EVIDENCE", "restore should return evidence validation code");
+  assert.ok(Array.isArray(body.issues), "restore should return evidence validation issues");
+  assert.ok(body.issues.some((issue) => issue.includes("연결 거래 missing-transaction")), "restore should report missing evidence transaction");
 }
 
 async function verifyInvalidDateBackup() {

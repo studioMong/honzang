@@ -294,7 +294,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const evidenceIssues = validateBackupEvidences(parsed.data.evidences);
+  const evidenceIssues = validateBackupEvidences(parsed.data);
   if (evidenceIssues.length > 0) {
     return NextResponse.json(
       {
@@ -786,11 +786,16 @@ function buildRestoreCounts(backup: WorkspaceBackup) {
   };
 }
 
-function validateBackupEvidences(evidences: WorkspaceBackup["evidences"]) {
+function validateBackupEvidences(backup: WorkspaceBackup) {
   const issues: string[] = [];
+  const transactionIds = new Set(uniqueById(backup.transactions).map((transaction) => transaction.id));
 
-  for (const [index, evidence] of uniqueById(evidences).entries()) {
+  for (const [index, evidence] of uniqueById(backup.evidences).entries()) {
     const label = evidence.id ? `증빙 ${evidence.id}` : `${index + 1}번째 증빙`;
+    if (evidence.transactionId && !transactionIds.has(evidence.transactionId)) {
+      issues.push(`${label}: 연결 거래 ${evidence.transactionId}를 백업 거래 목록에서 찾을 수 없습니다.`);
+    }
+
     if (evidence.issueDate && !parseStrictEvidenceDate(evidence.issueDate)) {
       issues.push(`${label}: 증빙 발행일은 유효한 날짜여야 합니다.`);
     }
