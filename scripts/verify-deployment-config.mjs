@@ -7,6 +7,7 @@ const railwayConfig = readJson("railway.json");
 const dockerfile = readText("Dockerfile");
 const nextConfig = readText("next.config.ts");
 const dockerignore = readText(".dockerignore");
+const envExample = readText(".env.example");
 const readme = readText("README.md");
 const railwayCutoverDoc = readText("docs/railway-cutover.md");
 const railwayAuditScript = readText("scripts/audit-railway-deployment.mjs");
@@ -59,6 +60,8 @@ assert.ok(readdirSync("prisma/migrations").some((entry) => existsSync(path.join(
 assert.match(readme, /HONZANG_ACCESS_CODE=/, "README should document the deployment access code variable");
 assert.match(readme, /HONZANG_ACCESS_TOKEN_SALT=/, "README should document the access-token salt variable");
 assert.match(readme, /프로덕션에서는 `HONZANG_ACCESS_TOKEN_SALT`도 함께 있어야/, "README should mark access-token salt as required in production");
+assert.match(envExample, /HONZANG_ACCESS_CODE=/, ".env.example should include the deployment access code variable");
+assert.match(envExample, /HONZANG_ACCESS_TOKEN_SALT=/, ".env.example should include the access-token salt variable");
 assert.match(readme, /docs\/railway-cutover\.md/, "README should link to the Railway cutover checklist");
 assert.match(railwayCutoverDoc, /honzang-production\.up\.railway\.app/, "Railway cutover checklist should name the production domain");
 assert.match(railwayCutoverDoc, /\/api\/version/, "Railway cutover checklist should include version endpoint verification");
