@@ -816,11 +816,22 @@ function validateBackupEvidences(backup: WorkspaceBackup) {
 function validateBackupTransactions(backup: WorkspaceBackup) {
   const issues: string[] = [];
   const importBatchById = new Map(uniqueById(backup.importBatches).map((batch) => [batch.id, batch]));
+  const accountCodes = new Set(uniqueByCode([...DEFAULT_ACCOUNTS, ...backup.accounts]).map((account) => account.code));
 
   for (const transaction of uniqueById(backup.transactions)) {
     const label = `거래 ${transaction.id}`;
     const amountIssue = validateTransactionAmounts(transaction);
     if (amountIssue) issues.push(`${label}: ${amountIssue}`);
+
+    const suggestedAccountCode = transaction.suggestedAccount?.code;
+    if (suggestedAccountCode && !accountCodes.has(suggestedAccountCode)) {
+      issues.push(`${label}: 추천 계정과목 ${suggestedAccountCode}를 백업 계정 목록에서 찾을 수 없습니다.`);
+    }
+
+    const confirmedAccountCode = transaction.confirmedAccount?.code;
+    if (confirmedAccountCode && !accountCodes.has(confirmedAccountCode)) {
+      issues.push(`${label}: 확정 계정과목 ${confirmedAccountCode}를 백업 계정 목록에서 찾을 수 없습니다.`);
+    }
 
     if (!transaction.importBatchId) continue;
 

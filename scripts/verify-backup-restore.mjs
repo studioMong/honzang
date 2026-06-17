@@ -166,6 +166,7 @@ try {
   await verifyInvalidDateBackup();
   await verifyInvalidTransactionAmountBackup();
   await verifyInvalidTransactionImportBatchBackup();
+  await verifyInvalidTransactionAccountBackup();
   await verifyInvalidEvidenceBackup();
   await verifyInvalidEvidenceAmountBackup();
   await verifyInvalidEvidenceTransactionBackup();
@@ -336,6 +337,26 @@ async function verifyInvalidTransactionImportBatchBackup() {
   assert.equal(body.code, "INVALID_BACKUP_TRANSACTIONS", "restore should return transaction validation code");
   assert.ok(Array.isArray(body.issues), "restore should return transaction validation issues");
   assert.ok(body.issues.some((issue) => issue.includes("연결 가져오기 missing-import-batch")), "restore should report missing import batch");
+}
+
+async function verifyInvalidTransactionAccountBackup() {
+  const invalidBackup = structuredClone(backup);
+  invalidBackup.transactions = [
+    {
+      ...backup.transactions[0],
+      confirmedAccount: {
+        code: "NO_ACCOUNT",
+        name: "없는 계정",
+        type: "EXPENSE"
+      }
+    }
+  ];
+
+  const body = await postJson("/api/backups/restore", { backup: invalidBackup, dryRun: true }, 400);
+  assert.equal(body.ok, false, "restore should reject transactions linked to missing accounts");
+  assert.equal(body.code, "INVALID_BACKUP_TRANSACTIONS", "restore should return transaction validation code");
+  assert.ok(Array.isArray(body.issues), "restore should return transaction validation issues");
+  assert.ok(body.issues.some((issue) => issue.includes("확정 계정과목 NO_ACCOUNT")), "restore should report missing confirmed account");
 }
 
 async function verifyInvalidJournalBackup() {
