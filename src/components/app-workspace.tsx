@@ -35,7 +35,7 @@ import type {
   SourceType
 } from "@/types";
 import { DEFAULT_ACCOUNTS, DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/defaults";
-import { generateJournalDraft, normalizeCsvRow, summarizeTransactions } from "@/lib/accounting";
+import { generateJournalDraft, inferMapping, normalizeCsvRow, summarizeTransactions } from "@/lib/accounting";
 import { formatDate, formatKRW, formatNumber } from "@/lib/format";
 import { sampleCompany, sampleEvidences, sampleJournalEntries, sampleTaxReports, sampleTransactions } from "@/lib/sample-data";
 
@@ -1771,22 +1771,6 @@ function groupExpensesByAccount(transactions: AppTransaction[]) {
       grouped.set(name, current);
     });
   return [...grouped.values()].sort((a, b) => b.amount - a.amount);
-}
-
-function inferMapping(headers: string[], sourceType: SourceType): CsvColumnMapping {
-  const find = (...keywords: string[]) => headers.find((header) => keywords.some((keyword) => header.toLowerCase().includes(keyword.toLowerCase())));
-  return {
-    transactionDate: find("거래일", "일자", "사용일", "승인일", "작성일", "date"),
-    description: find("적요", "내용", "거래내용", "품목", "가맹점", "description", "memo") ?? find("상호", "거래처"),
-    counterparty: find("거래처", "상호", "가맹점", "counterparty", "merchant"),
-    depositAmount: sourceType === "BANK" ? find("입금", "맡기신", "deposit") : undefined,
-    withdrawalAmount: sourceType === "BANK" ? find("출금", "찾으신", "withdrawal") : undefined,
-    amount: sourceType !== "BANK" ? find("금액", "합계", "이용금액", "승인금액", "total", "amount") : undefined,
-    supplyAmount: find("공급가액", "공급", "supply"),
-    vatAmount: find("부가세", "세액", "vat"),
-    balance: find("잔액", "balance"),
-    approvalNumber: find("승인번호", "approval")
-  };
 }
 
 function getSavedMapping(sourceType: SourceType, headers: string[], templates: CsvTemplate[]) {

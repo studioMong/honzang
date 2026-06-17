@@ -2,7 +2,7 @@ import type { AppAccount, AppTransaction, JournalDraft, ParsedCsvRow, CsvColumnM
 import { DEFAULT_ACCOUNTS } from "@/lib/defaults";
 
 const keywordAccountRules: Array<{ keywords: string[]; code: string; reason?: string }> = [
-  { keywords: ["매출", "입금", "프로젝트", "용역"], code: "401" },
+  { keywords: ["매출", "입금", "프로젝트", "용역", "정산", "구독 결제"], code: "401" },
   { keywords: ["네이버", "구글", "메타", "광고", "애즈", "ads"], code: "505" },
   { keywords: ["openai", "github", "aws", "vercel", "railway", "slack", "notion", "figma", "saas"], code: "506", reason: "해외 SaaS 또는 소프트웨어 비용은 증빙과 부가세 처리 검토가 필요합니다." },
   { keywords: ["통신", "kt", "skt", "lg유플러스", "인터넷"], code: "507" },
@@ -41,6 +41,22 @@ export function parseDate(value: unknown): string {
   return Number.isNaN(parsed.getTime()) ? new Date().toISOString().slice(0, 10) : parsed.toISOString().slice(0, 10);
 }
 
+export function inferMapping(headers: string[], sourceType: SourceType): CsvColumnMapping {
+  const find = (...keywords: string[]) => headers.find((header) => keywords.some((keyword) => header.toLowerCase().includes(keyword.toLowerCase())));
+  return {
+    transactionDate: find("거래일", "일자", "사용일", "승인일", "작성일", "정산일", "date"),
+    description: find("적요", "내용", "거래내용", "품목", "가맹점", "description", "memo") ?? find("상호", "거래처"),
+    counterparty: find("거래처", "상호", "가맹점", "counterparty", "merchant"),
+    depositAmount: sourceType === "BANK" ? find("입금", "맡기신", "deposit") : undefined,
+    withdrawalAmount: sourceType === "BANK" ? find("출금", "찾으신", "withdrawal") : undefined,
+    amount: sourceType !== "BANK" ? find("금액", "합계", "이용금액", "승인금액", "total", "amount") : undefined,
+    supplyAmount: find("공급가액", "공급", "supply"),
+    vatAmount: find("부가세", "세액", "vat"),
+    balance: find("잔액", "balance"),
+    approvalNumber: find("승인번호", "approval")
+  };
+}
+
 export function inferAccount(description: string, counterparty?: string | null): { account: AppAccount; reason?: string } {
   const haystack = `${description} ${counterparty ?? ""}`.toLowerCase();
   const rule = keywordAccountRules.find((item) => item.keywords.some((keyword) => haystack.includes(keyword.toLowerCase())));
@@ -61,8 +77,9 @@ export function normalizeCsvRow(
 ): Omit<AppTransaction, "id"> & { approvalNumber?: string | null; rawPayload: ParsedCsvRow } {
   const get = (key?: string) => (key ? row[key] : undefined);
   const amount = parseMoney(get(mapping.amount));
-  const depositAmount = parseMoney(get(mapping.depositAmount)) || (sourceType === "HOMETAX_SALES" ? amount : 0);
-  const withdrawalAmount = parseMoney(get(mapping.withdrawalAmount)) || (sourceType !== "HOMETAX_SALES" ? amount : 0);
+  const isIncomeSource = sourceType === "HOMETAX_SALES" || sourceType === "PG";
+  const depositAmount = parseMoney(get(mapping.depositAmount)) || (isIncomeSource ? amount : 0);
+  const withdrawalAmount = parseMoney(get(mapping.withdrawalAmount)) || (!isIncomeSource ? amount : 0);
   const description = String(get(mapping.description) ?? get(mapping.counterparty) ?? `CSV ${index + 1}행`).trim();
   const counterparty = String(get(mapping.counterparty) ?? "").trim() || null;
   const inferred = inferAccount(description, counterparty);
