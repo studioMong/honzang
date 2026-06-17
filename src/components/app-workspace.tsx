@@ -54,6 +54,8 @@ import { createZipBlob, type ZipFile } from "@/lib/zip";
 export type ViewKey = "dashboard" | "imports" | "transactions" | "evidences" | "journals" | "reviews" | "reports" | "settings";
 
 type StatusTone = "green" | "amber" | "red" | "blue";
+type JournalDraft = ReturnType<typeof generateJournalDraft>;
+type JournalDraftFilter = "ALL" | "READY" | "REVIEW" | "APPROVED";
 
 type FilingReadinessRow = {
   순서: number;
@@ -1708,12 +1710,22 @@ function JournalDraftsPanel({
   const drafts = transactions.map(generateJournalDraft);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [bulkSaving, setBulkSaving] = useState(false);
+  const [draftFilter, setDraftFilter] = useState<JournalDraftFilter>("ALL");
   const approvedTransactionIds = new Set(journalEntries.filter((entry) => entry.status === "APPROVED").map((entry) => entry.transactionId).filter(Boolean));
+  const approvedDrafts = drafts.filter((draft) => approvedTransactionIds.has(draft.transactionId));
   const pendingDrafts = drafts.filter((draft) => !approvedTransactionIds.has(draft.transactionId));
   const readyDrafts = pendingDrafts.filter((draft) => isBalancedJournalDraft(draft) && draft.warnings.length === 0);
   const reviewDrafts = pendingDrafts.filter((draft) => !isBalancedJournalDraft(draft) || draft.warnings.length > 0);
+  const visibleDrafts =
+    draftFilter === "READY" ? readyDrafts : draftFilter === "REVIEW" ? reviewDrafts : draftFilter === "APPROVED" ? approvedDrafts : drafts;
+  const draftFilterOptions: Array<{ key: JournalDraftFilter; label: string; count: number }> = [
+    { key: "ALL", label: "전체", count: drafts.length },
+    { key: "READY", label: "바로 승인", count: readyDrafts.length },
+    { key: "REVIEW", label: "검토 필요", count: reviewDrafts.length },
+    { key: "APPROVED", label: "승인됨", count: approvedDrafts.length }
+  ];
 
-  async function saveDraft(draft: ReturnType<typeof generateJournalDraft>) {
+  async function saveDraft(draft: JournalDraft) {
     const response = await fetch("/api/journals", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1730,7 +1742,7 @@ function JournalDraftsPanel({
     return (payload.journalEntry ?? null) as AppJournalEntry | null;
   }
 
-  async function approveDraft(draft: ReturnType<typeof generateJournalDraft>) {
+  async function approveDraft(draft: JournalDraft) {
     setSavingId(draft.transactionId);
     try {
       const entry = await saveDraft(draft);
@@ -1740,7 +1752,7 @@ function JournalDraftsPanel({
     }
   }
 
-  async function voidApprovedDraft(draft: ReturnType<typeof generateJournalDraft>) {
+  async function voidApprovedDraft(draft: JournalDraft) {
     const approvedEntry = journalEntries.find((entry) => entry.transactionId === draft.transactionId && entry.status === "APPROVED");
     if (!approvedEntry) return;
 
@@ -1788,8 +1800,42 @@ function JournalDraftsPanel({
           </div>
         </div>
         <div className="panel-body review-list">
-          {drafts.map((draft) => {
+          <div className="journal-summary-grid">
+            <button type="button" className="journal-summary-card" data-tone="green" data-active={draftFilter === "READY"} onClick={() => setDraftFilter("READY")}>
+              <span>바로 승인</span>
+              <strong>{formatNumber(readyDrafts.length)}건</strong>
+              <small>균형 완료 · 경고 없음</small>
+            </button>
+            <button type="button" className="journal-summary-card" data-tone="amber" data-active={draftFilter === "REVIEW"} onClick={() => setDraftFilter("REVIEW")}>
+              <span>검토 필요</span>
+              <strong>{formatNumber(reviewDrafts.length)}건</strong>
+              <small>계정·증빙·균형 확인</small>
+            </button>
+            <button type="button" className="journal-summary-card" data-tone="blue" data-active={draftFilter === "APPROVED"} onClick={() => setDraftFilter("APPROVED")}>
+              <span>승인 완료</span>
+              <strong>{formatNumber(approvedDrafts.length)}건</strong>
+              <small>원장 반영 대상</small>
+            </button>
+          </div>
+          <div className="toolbar journal-filter-toolbar" aria-label="자동분개 필터">
+            {draftFilterOptions.map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                className="secondary-button"
+                data-active={draftFilter === option.key}
+                onClick={() => setDraftFilter(option.key)}
+              >
+                {option.label} {formatNumber(option.count)}
+              </button>
+            ))}
+          </div>
+          {visibleDrafts.length === 0 ? (
+            <div className="empty">조건에 맞는 자동분개 초안 없음</div>
+          ) : visibleDrafts.map((draft) => {
             const isApproved = approvedTransactionIds.has(draft.transactionId);
+            const isBalanced = isBalancedJournalDraft(draft);
+            const needsReview = !isBalanced || draft.warnings.length > 0;
             return (
             <article key={draft.transactionId} className="journal-card">
               <div className="review-row">
@@ -1799,7 +1845,7 @@ function JournalDraftsPanel({
                 </div>
                 <div className="toolbar">
                   {isApproved && <span className="status green">승인됨</span>}
-                  <span className={draft.warnings.length ? "status amber" : "status green"}>{draft.warnings.length ? "검토 필요" : "균형"}</span>
+                  <span className={needsReview ? "status amber" : "status green"}>{needsReview ? "검토 필요" : "균형"}</span>
                   {isApproved ? (
                     <button className="secondary-button" disabled={bulkSaving || savingId === draft.transactionId} onClick={() => void voidApprovedDraft(draft)}>
                       {savingId === draft.transactionId ? <Loader2 size={16} className="spin" /> : <RefreshCcw size={16} />}
@@ -1808,7 +1854,7 @@ function JournalDraftsPanel({
                   ) : (
                     <button
                       className="secondary-button"
-                      disabled={bulkSaving || savingId === draft.transactionId || draft.lines.length === 0}
+                      disabled={bulkSaving || savingId === draft.transactionId || !isBalanced}
                       onClick={() => void approveDraft(draft)}
                     >
                       {savingId === draft.transactionId ? <Loader2 size={16} className="spin" /> : <CheckCircle2 size={16} />}
@@ -1857,7 +1903,7 @@ function JournalDraftsPanel({
   );
 }
 
-function isBalancedJournalDraft(draft: ReturnType<typeof generateJournalDraft>) {
+function isBalancedJournalDraft(draft: JournalDraft) {
   const debit = draft.lines.reduce((sum, line) => sum + line.debitAmount, 0);
   const credit = draft.lines.reduce((sum, line) => sum + line.creditAmount, 0);
   return draft.lines.length > 0 && Math.round(debit) === Math.round(credit);
