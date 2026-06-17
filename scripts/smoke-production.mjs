@@ -46,7 +46,15 @@ try {
   await expectSecurityHeaders("/");
   await expectSecurityHeaders("/api/version");
   await expectJson("/api/version", (body) => body.app === "honzang" && body.environment === "production");
-  await expectJson("/api/health", (body) => body.ok === true && body.app === "honzang");
+  await expectJson(
+    "/api/health",
+    (body) =>
+      body.ok === true &&
+      body.app === "honzang" &&
+      typeof body.version === "string" &&
+      ["sample", "database"].includes(body.mode) &&
+      ["not_configured", "connected"].includes(body.database)
+  );
   await expectJson("/api/reviews", (body) => Array.isArray(body.reviewItems));
   await expectJson("/api/vendors", (body) => Array.isArray(body.vendors));
   await expectJson("/api/audit-events", (body) => Array.isArray(body.auditEvents));

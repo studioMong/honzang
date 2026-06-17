@@ -84,7 +84,15 @@ async function waitForServer() {
 
 async function verifyPublicHealth() {
   await expectJson("/api/version", (body) => body.app === "honzang");
-  await expectJson("/api/health", (body) => body.ok === true && body.app === "honzang");
+  await expectJson(
+    "/api/health",
+    (body) =>
+      body.ok === true &&
+      body.app === "honzang" &&
+      typeof body.version === "string" &&
+      ["sample", "database"].includes(body.mode) &&
+      ["not_configured", "connected"].includes(body.database)
+  );
   await expectJson("/api/auth/session", (body) => body.enabled === true && body.authenticated === false);
   for (const [path, expectedHeader] of publicSampleCsvChecks) {
     await expectText(path, (body) => body.includes(expectedHeader));
