@@ -4,7 +4,7 @@ import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
-import { applyClassificationRules, applyVendorDefaults, normalizeCsvRow, summarizeTransactions } from "@/lib/accounting";
+import { applyClassificationRules, applyVendorDefaults, normalizeCsvRow, parseMoney, summarizeTransactions } from "@/lib/accounting";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { closedPeriodResponse, findClosedPeriodForDates } from "@/lib/server/closing-periods";
@@ -19,6 +19,7 @@ import {
 import type { CsvColumnMapping, ParsedCsvRow, SourceType } from "@/types";
 
 const MAX_ORIGINAL_FILE_TEXT_LENGTH = 2_000_000;
+const MAX_IMPORT_VALIDATION_ISSUES = 25;
 
 const mappingSchema = z.object({
   transactionDate: z.string().optional(),
@@ -87,6 +88,80 @@ function validateImportMapping(payload: ImportPayloadData) {
   }
 
   return issues;
+}
+
+function validateImportRows(payload: ImportPayloadData) {
+  const mapping = payload.mapping as CsvColumnMapping;
+  const issues: string[] = [];
+  let hiddenIssueCount = 0;
+  const pushIssue = (issue: string) => {
+    if (issues.length < MAX_IMPORT_VALIDATION_ISSUES) {
+      issues.push(issue);
+    } else {
+      hiddenIssueCount += 1;
+    }
+  };
+
+  payload.rows.forEach((row, index) => {
+    const rowNumber = index + 1;
+    const sourceRow = row as ParsedCsvRow;
+    const transactionDate = getMappedCsvValue(sourceRow, mapping.transactionDate);
+    const description = getMappedCsvValue(sourceRow, mapping.description);
+    const amount = parseMoney(getMappedCsvValue(sourceRow, mapping.amount));
+    const depositAmount = parseMoney(getMappedCsvValue(sourceRow, mapping.depositAmount));
+    const withdrawalAmount = parseMoney(getMappedCsvValue(sourceRow, mapping.withdrawalAmount));
+
+    if (!parseStrictImportDate(transactionDate)) {
+      pushIssue(`${rowNumber}행 거래일 값이 비어 있거나 날짜 형식이 아닙니다.`);
+    }
+    if (!String(description ?? "").trim()) {
+      pushIssue(`${rowNumber}행 내용/적요 값이 비어 있습니다.`);
+    }
+    if (amount <= 0 && depositAmount <= 0 && withdrawalAmount <= 0) {
+      pushIssue(`${rowNumber}행 금액 또는 입금/출금 값이 0보다 커야 합니다.`);
+    }
+    if (depositAmount > 0 && withdrawalAmount > 0) {
+      pushIssue(`${rowNumber}행 입금과 출금이 동시에 입력됐습니다.`);
+    }
+  });
+
+  if (hiddenIssueCount > 0) {
+    issues.push(`추가 ${hiddenIssueCount}개 행 오류가 있습니다. 앞 오류를 수정한 뒤 다시 확인하세요.`);
+  }
+
+  return issues;
+}
+
+function getMappedCsvValue(row: ParsedCsvRow, column?: string) {
+  return column?.trim() ? row[column.trim()] : undefined;
+}
+
+function parseStrictImportDate(value: unknown) {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+
+  const dotted = text.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})/);
+  if (dotted) {
+    const [, year, month, day] = dotted;
+    return validDateParts(Number(year), Number(month), Number(day));
+  }
+
+  const compact = text.match(/^(\d{4})(\d{2})(\d{2})/);
+  if (compact) {
+    const [, year, month, day] = compact;
+    return validDateParts(Number(year), Number(month), Number(day));
+  }
+
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10);
+}
+
+function validDateParts(year: number, month: number, day: number) {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 export async function GET(request: Request) {
@@ -266,6 +341,18 @@ export async function POST(request: Request) {
         code: "INVALID_CSV_MAPPING",
         message: "CSV 매핑을 확인해야 합니다.",
         issues: mappingIssues
+      },
+      { status: 400 }
+    );
+  }
+  const rowIssues = validateImportRows(payload);
+  if (rowIssues.length > 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_CSV_ROWS",
+        message: "CSV 행 데이터를 확인해야 합니다.",
+        issues: rowIssues
       },
       { status: 400 }
     );

@@ -48,6 +48,7 @@ try {
   );
   await expectBlockedClosingPeriod();
   await expectInvalidCsvImportMapping();
+  await expectInvalidCsvImportRows();
   await expectText("/", (body) =>
     ["혼자장부", "최근 월 신고 준비", "오늘 할 일", "1인법인 신고 준비"].every((text) => body.includes(text))
   );
@@ -159,6 +160,38 @@ async function expectInvalidCsvImportMapping() {
   const body = JSON.parse(text);
   if (body.code !== "INVALID_CSV_MAPPING" || !Array.isArray(body.issues) || body.issues.length < 3) {
     throw new Error(`/api/imports returned unexpected mapping validation payload: ${text}`);
+  }
+}
+
+async function expectInvalidCsvImportRows() {
+  const response = await fetch(`${baseUrl}/api/imports`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sourceType: "BANK",
+      originalFileName: "invalid-rows.csv",
+      mapping: {
+        transactionDate: "거래일",
+        description: "적요",
+        depositAmount: "입금"
+      },
+      headers: ["거래일", "적요", "입금"],
+      rows: [
+        {
+          거래일: "날짜아님",
+          적요: "",
+          입금: "0"
+        }
+      ]
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/imports should reject invalid CSV row values, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_CSV_ROWS" || !Array.isArray(body.issues) || body.issues.length < 3) {
+    throw new Error(`/api/imports returned unexpected row validation payload: ${text}`);
   }
 }
 
