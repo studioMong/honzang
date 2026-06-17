@@ -20,6 +20,27 @@ import type {
 } from "../src/types";
 
 const evidenceAmountMismatchReason = "연결 증빙 합계가 거래금액과 일치하지 않습니다.";
+const taxableSalesInputLabel = "과세 매출 공급가액";
+const filingInputSummaryRows = [
+  {
+    신고: "부가세",
+    "입력 항목": taxableSalesInputLabel,
+    값: "1,100원",
+    근거: "과세 매출 거래 공급가액 합계",
+    상태: "집계됨",
+    톤: "green",
+    "최종 확인": "홈택스 매출 세금계산서와 통장 입금 대조"
+  },
+  {
+    신고: "법인세",
+    "입력 항목": "승인 분개/원장",
+    값: "2개 / 4행",
+    근거: "승인된 자동분개와 계정별 원장 행 수",
+    상태: "원장 있음",
+    톤: "green",
+    "최종 확인": "차변/대변과 계정별 원장 대조"
+  }
+];
 
 const baseUrl = (process.env.VERIFY_DB_WORKFLOW_BASE_URL ?? "http://127.0.0.1:3000").replace(/\/$/, "");
 const marker = `verify-db-workflow-${Date.now()}`;
@@ -374,6 +395,7 @@ try {
         marker,
         summary: summarizeTransactions(importedTransactions),
         reviewItems: reviewSnapshotRows,
+        filingInputSummaryRows,
         transactionCount: importedTransactions.length,
         journalEntryCount: approvedEntries.length,
         approvedJournalEntryIds: approvedEntries.map((entry) => entry.id)
@@ -389,6 +411,7 @@ try {
   const savedReport = reports.taxReports?.find((report) => report.id === reportPayload.taxReport?.id);
   assert.ok(savedReport, "saved report should be listed");
   assertSnapshotReviewItemsContainMismatch(savedReport?.calculatedPayload, "saved report payload");
+  assertSnapshotInputSummaryRowsContainTaxableSales(savedReport?.calculatedPayload, "saved report payload");
 
   const yearReportPayload = await requestJson<{ ok?: boolean; mode?: string; taxReport?: { id?: string } }>("/api/reports", {
     method: "POST",
@@ -446,6 +469,7 @@ try {
     journalEntryCount: approvedEntries.length,
     report: {
       reviewItems: reviewSnapshotRows,
+      filingInputSummaryRows,
       filingReadinessRows: [
         { 점검: "법인 기본정보", 톤: "green" },
         { 점검: "자료 수집", 톤: "green" },
@@ -483,6 +507,7 @@ try {
   const savedClosingPeriod = closingPeriods.closingPeriods?.find((period) => period.period === closingPeriod);
   assert.ok(savedClosingPeriod, "closing period snapshot should be listed");
   assertSnapshotReviewItemsContainMismatch(savedClosingPeriod?.summaryPayload, "closing period summary payload");
+  assertSnapshotInputSummaryRowsContainTaxableSales(savedClosingPeriod?.summaryPayload, "closing period summary payload");
 
   const lockedTransactionPayload = await requestJson<{ ok?: boolean; code?: string; message?: string }>("/api/transactions", {
     method: "POST",
@@ -740,11 +765,28 @@ function assertSnapshotReviewItemsContainMismatch(payload: unknown, label: strin
   );
 }
 
+function assertSnapshotInputSummaryRowsContainTaxableSales(payload: unknown, label: string) {
+  const inputSummaryRows = extractSnapshotFilingInputSummaryRows(payload);
+  assert.ok(Array.isArray(inputSummaryRows), `${label} should include filingInputSummaryRows`);
+  assert.ok(
+    inputSummaryRows.some((item) => isRecord(item) && item["입력 항목"] === taxableSalesInputLabel && item.상태 === "집계됨"),
+    `${label} should preserve filing input summary rows`
+  );
+}
+
 function extractSnapshotReviewItems(payload: unknown): unknown[] {
   if (!isRecord(payload)) return [];
   if (Array.isArray(payload.reviewItems)) return payload.reviewItems;
   const report = payload.report;
   if (isRecord(report) && Array.isArray(report.reviewItems)) return report.reviewItems;
+  return [];
+}
+
+function extractSnapshotFilingInputSummaryRows(payload: unknown): unknown[] {
+  if (!isRecord(payload)) return [];
+  if (Array.isArray(payload.filingInputSummaryRows)) return payload.filingInputSummaryRows;
+  const report = payload.report;
+  if (isRecord(report) && Array.isArray(report.filingInputSummaryRows)) return report.filingInputSummaryRows;
   return [];
 }
 
