@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "smoke:prod": "node scripts/smoke-production.mjs",
+    "verify:mvp": "node scripts/verify-mvp.mjs",
     "verify:deployment-config": "node scripts/verify-deployment-config.mjs",
     "verify:pwa": "node scripts/verify-pwa.mjs",
     "verify:backup-restore": "node scripts/verify-backup-restore.mjs",
