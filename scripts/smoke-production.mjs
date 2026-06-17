@@ -52,6 +52,7 @@ try {
   await expectInvalidManualTransactionDate();
   await expectInvalidTransactionPatch();
   await expectInvalidJournalDate();
+  await expectInvalidJournalLines();
   await expectInvalidEvidenceDate();
   await expectInvalidEvidenceFile();
   await expectInvalidEvidenceFileUrl();
@@ -272,6 +273,40 @@ async function expectInvalidJournalDate() {
   const body = JSON.parse(text);
   if (body.code !== "INVALID_JOURNAL_DATE") {
     throw new Error(`/api/journals returned unexpected date validation payload: ${text}`);
+  }
+}
+
+async function expectInvalidJournalLines() {
+  const response = await fetch(`${baseUrl}/api/journals`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      entryDate: "2026-06-17",
+      memo: "잘못된 금액 라인 분개",
+      status: "APPROVED",
+      lines: [
+        {
+          accountCode: "103",
+          accountName: "보통예금",
+          debitAmount: 1000,
+          creditAmount: 1000
+        },
+        {
+          accountCode: "401",
+          accountName: "매출",
+          debitAmount: 0,
+          creditAmount: 0
+        }
+      ]
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/journals should reject invalid journal lines, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_JOURNAL_LINES" || !Array.isArray(body.issues) || body.issues.length < 2) {
+    throw new Error(`/api/journals returned unexpected line validation payload: ${text}`);
   }
 }
 

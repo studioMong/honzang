@@ -81,6 +81,19 @@ export async function POST(request: Request) {
     );
   }
 
+  const lineIssues = validateJournalLines(payload.lines);
+  if (lineIssues.length > 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_JOURNAL_LINES",
+        message: "분개 라인의 차변/대변 금액이 올바르지 않습니다.",
+        issues: lineIssues
+      },
+      { status: 400 }
+    );
+  }
+
   const debit = payload.lines.reduce((sum, line) => sum + line.debitAmount, 0);
   const credit = payload.lines.reduce((sum, line) => sum + line.creditAmount, 0);
 
@@ -254,4 +267,16 @@ export async function PATCH(request: Request) {
   });
 
   return NextResponse.json({ ok: true, journalEntry: serializeJournalEntry(journalEntry), mode: "database" });
+}
+
+function validateJournalLines(lines: z.infer<typeof journalSchema>["lines"]) {
+  return lines.flatMap((line, index) => {
+    const lineNumber = index + 1;
+    const debitPositive = line.debitAmount > 0;
+    const creditPositive = line.creditAmount > 0;
+    if (debitPositive === creditPositive) {
+      return [`${lineNumber}번째 라인은 차변 또는 대변 중 한쪽만 0보다 커야 합니다.`];
+    }
+    return [];
+  });
 }
