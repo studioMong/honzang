@@ -114,6 +114,16 @@ type CashFlowRow = {
   "다음 확인": string;
 };
 
+type BankBalanceCheckRow = {
+  점검: string;
+  상태: string;
+  톤: StatusTone;
+  금액: string | number;
+  건수: number;
+  근거: string;
+  "다음 확인": string;
+};
+
 type OperationReadinessCheck = {
   key: string;
   label: string;
@@ -697,6 +707,8 @@ function Dashboard({
   const dashboardFinancialStatementRows = buildFinancialStatementRows(dashboardLedgerRows);
   const dashboardFinancialStatementTotals = buildFinancialStatementTotals(dashboardFinancialStatementRows);
   const dashboardCashFlowRows = buildCashFlowRows(dashboardTransactions);
+  const dashboardCashFlowTotals = buildCashFlowTotals(dashboardCashFlowRows);
+  const dashboardBankBalanceRows = buildBankBalanceCheckRows(dashboardTransactions, dashboardCashFlowTotals);
   const dashboardReadinessRows = buildFilingReadinessRows({
     transactions: dashboardTransactions,
     summary: summarizeTransactions(dashboardTransactions),
@@ -706,6 +718,7 @@ function Dashboard({
     journalIntegrityRows: buildJournalIntegrityRows(dashboardApprovedJournalEntries, dashboardLedgerRows, dashboardFinancialStatementRows, dashboardFinancialStatementTotals),
     ledgerRows: dashboardLedgerRows,
     cashFlowRows: dashboardCashFlowRows,
+    bankBalanceRows: dashboardBankBalanceRows,
     isPeriodClosed: Boolean(latestPeriod && closingPeriods.some((period) => period.period === latestPeriod)),
     canClosePeriod: Boolean(latestPeriod)
   });
@@ -2039,8 +2052,10 @@ function ReportsPanel({
   const journalIntegrityRows = buildJournalIntegrityRows(approvedJournalEntries, ledgerRows, financialStatementRows, financialStatementTotals);
   const cashFlowRows = buildCashFlowRows(filteredTransactions);
   const cashFlowTotals = buildCashFlowTotals(cashFlowRows);
-  const corporateTaxRows = buildCorporateTaxRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows, financialStatementRows, cashFlowRows);
-  const filingPackageRows = buildFilingPackageRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows, withholdingRows, financialStatementRows, cashFlowRows);
+  const bankBalanceRows = buildBankBalanceCheckRows(filteredTransactions, cashFlowTotals);
+  const bankBalanceStatus = summarizeBankBalanceRows(bankBalanceRows);
+  const corporateTaxRows = buildCorporateTaxRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows, financialStatementRows, cashFlowRows, bankBalanceRows);
+  const filingPackageRows = buildFilingPackageRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows, withholdingRows, financialStatementRows, cashFlowRows, bankBalanceRows);
   const dataSourceRows = buildDataSourceRows(filteredTransactions);
   const filingReadinessRows = buildFilingReadinessRows({
     transactions: filteredTransactions,
@@ -2051,6 +2066,7 @@ function ReportsPanel({
     journalIntegrityRows,
     ledgerRows,
     cashFlowRows,
+    bankBalanceRows,
     isPeriodClosed,
     canClosePeriod
   });
@@ -2071,6 +2087,7 @@ function ReportsPanel({
     ledgerRows,
     financialStatementRows,
     cashFlowRows,
+    bankBalanceRows,
     isPeriodClosed,
     canClosePeriod
   });
@@ -2098,6 +2115,7 @@ function ReportsPanel({
       journalIntegrityRows,
       corporateTaxRows,
       cashFlowRows,
+      bankBalanceRows,
       financialStatementRows,
       ledgerRows
     });
@@ -2144,6 +2162,7 @@ function ReportsPanel({
             journalIntegrityRows,
             corporateTaxRows,
             cashFlowRows,
+            bankBalanceRows,
             financialStatementRows,
             ledgerRows,
             transactionCount: filteredTransactions.length,
@@ -2211,6 +2230,7 @@ function ReportsPanel({
               journalIntegrityRows,
               corporateTaxRows,
               cashFlowRows,
+              bankBalanceRows,
               financialStatementRows,
               ledgerRows,
               transactionCount: filteredTransactions.length,
@@ -2871,6 +2891,37 @@ function ReportsPanel({
             <table>
               <thead>
                 <tr>
+                  <th>잔액 점검</th>
+                  <th>상태</th>
+                  <th className="amount">금액</th>
+                  <th>다음 확인</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedPayload.bankBalanceRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="empty-cell">저장된 통장 잔액 대조가 없습니다.</td>
+                  </tr>
+                ) : (
+                  selectedPayload.bankBalanceRows.map((row) => (
+                    <tr key={`${row.점검}-${row.상태}`}>
+                      <td>{row.점검}</td>
+                      <td>
+                        <span className={`status ${row.톤}`}>{row.상태}</span>
+                      </td>
+                      <td className="amount">{formatReportAmount(row.금액)}</td>
+                      <td>{row["다음 확인"]}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="table-wrap snapshot-detail">
+            <table>
+              <thead>
+                <tr>
                   <th>원천세 후보</th>
                   <th>거래처</th>
                   <th className="amount">지급액</th>
@@ -2958,6 +3009,10 @@ function ReportsPanel({
               <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("cash-flow", selectedPeriod), cashFlowRows)}>
                 <Download size={16} />
                 현금흐름
+              </button>
+              <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("bank-balance-check", selectedPeriod), bankBalanceRows)}>
+                <Download size={16} />
+                잔액대조
               </button>
               <button className="secondary-button" onClick={downloadFilingPackageArchive}>
                 <Download size={16} />
@@ -3167,7 +3222,7 @@ function ReportsPanel({
         <div className="panel-header">
           <div>
             <h2 className="panel-title">현금흐름 요약</h2>
-            <p className="panel-subtitle">거래 CSV 기준 입출금 흐름, 통장 잔액 대조 전 확인용</p>
+            <p className="panel-subtitle">거래 CSV 기준 입출금 흐름과 보조자료 영향을 확인합니다.</p>
           </div>
           <div className="toolbar">
             <span className={`status ${cashFlowTotals.net >= 0 ? "green" : "amber"}`}>순증감 {formatKRW(cashFlowTotals.net)}</span>
@@ -3204,6 +3259,56 @@ function ReportsPanel({
                   <td>{row.항목}</td>
                   <td className="amount">{formatKRW(row.금액)}</td>
                   <td className="amount">{formatNumber(row.건수)}</td>
+                  <td>{row.근거}</td>
+                  <td>{row["다음 확인"]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="panel-title">통장 잔액 대조</h2>
+            <p className="panel-subtitle">은행 CSV 잔액 컬럼 기준으로 시작/종료 잔액과 통장 거래 순증감을 맞춥니다.</p>
+          </div>
+          <div className="toolbar">
+            <span className={`status ${bankBalanceStatus.tone}`}>{bankBalanceStatus.status}</span>
+            <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("bank-balance-check", selectedPeriod), bankBalanceRows)}>
+              <Download size={16} />
+              CSV
+            </button>
+          </div>
+        </div>
+        <div className="panel-body">
+          <div className="review-list">
+            <ChecklistItem tone={bankBalanceStatus.tone} title="대조 상태" value={bankBalanceStatus.status} />
+            <ChecklistItem tone={bankBalanceStatus.tone === "red" ? "red" : bankBalanceStatus.difference === 0 ? "green" : "amber"} title="대조 차이" value={formatReportAmount(bankBalanceStatus.difference)} />
+            <ChecklistItem tone="blue" title="통장 거래" value={`${formatNumber(bankBalanceStatus.bankTransactionCount)}건`} />
+            <ChecklistItem tone={bankBalanceStatus.balanceRowCount > 0 ? "green" : "amber"} title="잔액 행" value={`${formatNumber(bankBalanceStatus.balanceRowCount)}건`} />
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>점검</th>
+                <th>상태</th>
+                <th className="amount">금액</th>
+                <th>근거</th>
+                <th>다음 확인</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bankBalanceRows.map((row) => (
+                <tr key={`${row.점검}-${row.상태}`}>
+                  <td>{row.점검}</td>
+                  <td>
+                    <span className={`status ${row.톤}`}>{row.상태}</span>
+                  </td>
+                  <td className="amount">{formatReportAmount(row.금액)}</td>
                   <td>{row.근거}</td>
                   <td>{row["다음 확인"]}</td>
                 </tr>
@@ -4794,6 +4899,7 @@ function buildTaxReportPayload({
   journalIntegrityRows,
   corporateTaxRows,
   cashFlowRows,
+  bankBalanceRows,
   financialStatementRows,
   ledgerRows,
   transactionCount,
@@ -4811,6 +4917,7 @@ function buildTaxReportPayload({
   journalIntegrityRows: JournalIntegrityRow[];
   corporateTaxRows: ReturnType<typeof buildCorporateTaxRows>;
   cashFlowRows: CashFlowRow[];
+  bankBalanceRows: BankBalanceCheckRow[];
   financialStatementRows: ReturnType<typeof buildFinancialStatementRows>;
   ledgerRows: ReturnType<typeof buildLedgerRows>;
   transactionCount: number;
@@ -4829,6 +4936,7 @@ function buildTaxReportPayload({
     journalIntegrityRows,
     corporateTaxRows,
     cashFlowRows,
+    bankBalanceRows,
     financialStatementRows,
     ledgerRows,
     transactionCount,
@@ -4891,6 +4999,7 @@ function parseDetailedTaxReportPayload(payload: unknown) {
     journalIntegrityRows: parseStringNumberRecordRows(record.journalIntegrityRows) as JournalIntegrityRow[],
     corporateTaxRows: parseStringNumberRecordRows(record.corporateTaxRows) as ReturnType<typeof buildCorporateTaxRows>,
     cashFlowRows: parseStringNumberRecordRows(record.cashFlowRows) as CashFlowRow[],
+    bankBalanceRows: parseStringNumberRecordRows(record.bankBalanceRows) as BankBalanceCheckRow[],
     financialStatementRows: parseStringNumberRecordRows(record.financialStatementRows) as ReturnType<typeof buildFinancialStatementRows>,
     ledgerRows: parseStringNumberRecordRows(record.ledgerRows),
     transactionCount: typeof record.transactionCount === "number" ? record.transactionCount : 0,
@@ -4909,6 +5018,7 @@ function buildTaxReportDetailRows(taxReport: AppTaxReport, payload: ReturnType<t
     { 항목: "예상 부가세", 값: formatKRW(payload.summary.vatPayable), 확인: "확정 전 신고 준비 금액" },
     { 항목: "증빙 누락", 값: formatKRW(payload.summary.missingEvidenceAmount), 확인: `${formatNumber(payload.summary.reviewCount)}건 검토` },
     { 항목: "현금흐름 순증감", 값: formatKRW(buildCashFlowTotals(payload.cashFlowRows).net), 확인: "저장 당시 거래 CSV 입출금 기준" },
+    { 항목: "통장 잔액 대조", 값: formatReportAmount(summarizeBankBalanceRows(payload.bankBalanceRows).difference), 확인: summarizeBankBalanceRows(payload.bankBalanceRows).detail },
     { 항목: "재무제표 초안", 값: `${formatNumber(payload.financialStatementRows.length)}행`, 확인: "저장 당시 승인 분개 기준" },
     { 항목: "계정별 원장", 값: `${formatNumber(payload.ledgerRows.length)}행`, 확인: "저장 당시 원장 행 수" }
   ];
@@ -5002,6 +5112,7 @@ function downloadFilingPackageZip(fileName: string, payload: ReturnType<typeof b
     "csv/journal-integrity.csv",
     "csv/corporate-tax-prep.csv",
     "csv/cash-flow.csv",
+    "csv/bank-balance-check.csv",
     "csv/financial-statements.csv",
     "csv/ledger.csv"
   ];
@@ -5037,6 +5148,7 @@ function downloadFilingPackageZip(fileName: string, payload: ReturnType<typeof b
     { path: "csv/journal-integrity.csv", content: toCsvFileContent(payload.tables.journalIntegrity) },
     { path: "csv/corporate-tax-prep.csv", content: toCsvFileContent(payload.tables.corporateTaxPrep) },
     { path: "csv/cash-flow.csv", content: toCsvFileContent(payload.tables.cashFlow) },
+    { path: "csv/bank-balance-check.csv", content: toCsvFileContent(payload.tables.bankBalanceCheck) },
     { path: "csv/financial-statements.csv", content: toCsvFileContent(payload.tables.financialStatements) },
     { path: "csv/ledger.csv", content: toCsvFileContent(payload.tables.ledger) },
     ...evidenceFiles
@@ -5500,6 +5612,7 @@ function buildFilingWorkbookSheets(payload: ReturnType<typeof buildFilingPackage
     { name: "복식검증", rows: payload.tables.journalIntegrity },
     { name: "법인세", rows: payload.tables.corporateTaxPrep },
     { name: "현금흐름", rows: payload.tables.cashFlow },
+    { name: "잔액대조", rows: payload.tables.bankBalanceCheck },
     { name: "재무제표", rows: payload.tables.financialStatements },
     { name: "원장", rows: payload.tables.ledger }
   ];
@@ -5519,6 +5632,8 @@ function buildFilingSummaryRows(payload: ReturnType<typeof buildFilingPackagePay
     { 항목: "신고 확인 항목", 값: payload.filingReadinessRows.filter((row) => row.톤 === "amber").length },
     { 항목: "복식부기 차단 항목", 값: payload.tables.journalIntegrity.filter((row) => row.톤 === "red").length },
     { 항목: "현금 순증감", 값: buildCashFlowTotals(payload.tables.cashFlow).net },
+    { 항목: "통장 잔액 대조", 값: summarizeBankBalanceRows(payload.tables.bankBalanceCheck).status },
+    { 항목: "통장 잔액 차이", 값: summarizeBankBalanceRows(payload.tables.bankBalanceCheck).difference },
     { 항목: "제출 가이드 단계", 값: payload.submissionGuideRows.length },
     { 항목: "확인 필요 자료", 값: payload.dataSourceRows.filter((row) => row.상태 === "확인 필요").length },
     { 항목: "매출", 값: payload.summary.revenue },
@@ -5793,6 +5908,7 @@ function buildFilingPackagePayload({
   journalIntegrityRows,
   corporateTaxRows,
   cashFlowRows,
+  bankBalanceRows,
   financialStatementRows,
   ledgerRows
 }: {
@@ -5813,6 +5929,7 @@ function buildFilingPackagePayload({
   journalIntegrityRows: JournalIntegrityRow[];
   corporateTaxRows: ReturnType<typeof buildCorporateTaxRows>;
   cashFlowRows: CashFlowRow[];
+  bankBalanceRows: BankBalanceCheckRow[];
   financialStatementRows: ReturnType<typeof buildFinancialStatementRows>;
   ledgerRows: ReturnType<typeof buildLedgerRows>;
 }) {
@@ -5840,6 +5957,7 @@ function buildFilingPackagePayload({
     filingPackageRows,
     journalIntegrityRows,
     cashFlowRows,
+    bankBalanceRows,
     tables: {
       filingReadiness: filingReadinessRows,
       submissionGuide: submissionGuideRows,
@@ -5852,6 +5970,7 @@ function buildFilingPackagePayload({
       journalIntegrity: journalIntegrityRows,
       corporateTaxPrep: corporateTaxRows,
       cashFlow: cashFlowRows,
+      bankBalanceCheck: bankBalanceRows,
       financialStatements: financialStatementRows,
       ledger: buildLedgerCsv(ledgerRows)
     },
@@ -5929,6 +6048,145 @@ function buildCashFlowTotals(rows: CashFlowRow[]) {
   return { inflow, outflow, net: inflow - outflow, count };
 }
 
+function buildBankBalanceCheckRows(transactions: AppTransaction[], cashFlowTotals: ReturnType<typeof buildCashFlowTotals>): BankBalanceCheckRow[] {
+  const bankTransactions = transactions
+    .filter((transaction) => transaction.sourceType === "BANK")
+    .sort(compareTransactionsForBalanceCheck);
+  const bankTransactionsWithBalance = bankTransactions.filter((transaction) => typeof transaction.balance === "number" && Number.isFinite(transaction.balance));
+  const bankTransactionNet = sumCashFlowAmount(bankTransactions, "DEPOSIT") - sumCashFlowAmount(bankTransactions, "WITHDRAWAL");
+
+  if (bankTransactions.length === 0) {
+    return [
+      {
+        점검: "법인 통장 CSV",
+        상태: "자료 없음",
+        톤: "red",
+        금액: "-",
+        건수: 0,
+        근거: "기간 내 통장 거래가 없습니다.",
+        "다음 확인": "법인 통장 입출금 CSV를 업로드"
+      }
+    ];
+  }
+
+  const transactionNetRow: BankBalanceCheckRow = {
+    점검: "통장 거래 순증감",
+    상태: "집계됨",
+    톤: "green",
+    금액: bankTransactionNet,
+    건수: bankTransactions.length,
+    근거: `입금 ${formatKRW(sumCashFlowAmount(bankTransactions, "DEPOSIT"))} - 출금 ${formatKRW(sumCashFlowAmount(bankTransactions, "WITHDRAWAL"))}`,
+    "다음 확인": "은행 원장 거래 건수와 업로드 건수 대조"
+  };
+
+  if (bankTransactionsWithBalance.length === 0) {
+    return [
+      transactionNetRow,
+      {
+        점검: "잔액 컬럼",
+        상태: "잔액 없음",
+        톤: "amber",
+        금액: "-",
+        건수: 0,
+        근거: `통장 ${formatNumber(bankTransactions.length)}건 중 잔액 컬럼 반영 0건`,
+        "다음 확인": "은행 CSV에서 거래 후 잔액 컬럼을 포함해 다시 업로드"
+      }
+    ];
+  }
+
+  const first = bankTransactionsWithBalance[0];
+  const last = bankTransactionsWithBalance.at(-1) ?? first;
+  const openingBalance = Number(first.balance) - first.depositAmount + first.withdrawalAmount;
+  const closingBalance = Number(last.balance);
+  const balanceNetChange = closingBalance - openingBalance;
+  const difference = balanceNetChange - bankTransactionNet;
+  const missingBalanceCount = bankTransactions.length - bankTransactionsWithBalance.length;
+  const hasDifference = Math.abs(difference) >= 1;
+  const hasFullBalanceCoverage = missingBalanceCount === 0;
+  const differenceTone: StatusTone = hasDifference ? "red" : hasFullBalanceCoverage ? "green" : "amber";
+  const nonBankCashNet = cashFlowTotals.net - bankTransactionNet;
+
+  return [
+    transactionNetRow,
+    {
+      점검: "통장 잔액 순증감",
+      상태: hasFullBalanceCoverage ? "대조 가능" : "부분 대조",
+      톤: hasFullBalanceCoverage ? "green" : "amber",
+      금액: balanceNetChange,
+      건수: bankTransactionsWithBalance.length,
+      근거: `시작 ${formatKRW(openingBalance)} · 종료 ${formatKRW(closingBalance)} · ${formatDate(first.transactionDate)}-${formatDate(last.transactionDate)}`,
+      "다음 확인": hasFullBalanceCoverage ? "통장 거래 순증감과 잔액 순증감 일치 여부 확인" : "잔액 없는 통장 거래가 있는지 확인"
+    },
+    ...(missingBalanceCount > 0
+      ? [
+          {
+            점검: "잔액 컬럼",
+            상태: "부분 반영",
+            톤: "amber" as StatusTone,
+            금액: "-",
+            건수: bankTransactionsWithBalance.length,
+            근거: `잔액 있음 ${formatNumber(bankTransactionsWithBalance.length)}건 · 잔액 없음 ${formatNumber(missingBalanceCount)}건`,
+            "다음 확인": "잔액 컬럼이 빠진 행을 은행 원본 CSV 기준으로 보완"
+          }
+        ]
+      : []),
+    {
+      점검: "잔액 대조 차이",
+      상태: hasDifference ? "차액" : hasFullBalanceCoverage ? "일치" : "부분 일치",
+      톤: differenceTone,
+      금액: difference,
+      건수: bankTransactions.length,
+      근거: `잔액 순증감 ${formatKRW(balanceNetChange)} - 통장 거래 순증감 ${formatKRW(bankTransactionNet)}`,
+      "다음 확인": hasDifference ? "중복 업로드, 누락 거래, 날짜 범위, 잔액 정렬 확인" : "월말 잔액과 통장 원장 표본 확인"
+    },
+    {
+      점검: "보조자료 영향",
+      상태: nonBankCashNet === 0 ? "없음" : "분리 확인",
+      톤: nonBankCashNet === 0 ? "green" : "blue",
+      금액: nonBankCashNet,
+      건수: cashFlowTotals.count - bankTransactions.length,
+      근거: `전체 현금 순증감 ${formatKRW(cashFlowTotals.net)} - 통장 거래 순증감 ${formatKRW(bankTransactionNet)}`,
+      "다음 확인": nonBankCashNet === 0 ? "통장 기준으로 현금흐름 확인 가능" : "카드, 홈택스, PG 정산 자료는 결제/정산 시점 차이를 별도 확인"
+    }
+  ];
+}
+
+function summarizeBankBalanceRows(rows: BankBalanceCheckRow[]) {
+  const hasRed = rows.some((row) => row.톤 === "red");
+  const hasAmber = rows.some((row) => row.톤 === "amber");
+  const missingBank = rows.some((row) => row.점검 === "법인 통장 CSV");
+  const missingBalance = rows.some((row) => row.점검 === "잔액 컬럼" && row.상태 === "잔액 없음");
+  const differenceRow = rows.find((row) => row.점검 === "잔액 대조 차이");
+  const bankTransactionRow = rows.find((row) => row.점검 === "통장 거래 순증감");
+  const balanceChangeRow = rows.find((row) => row.점검 === "통장 잔액 순증감");
+  const tone: StatusTone = hasRed ? "red" : hasAmber ? "amber" : "green";
+
+  return {
+    tone,
+    status: missingBank ? "자료 없음" : missingBalance ? "잔액 없음" : hasRed ? "차액 발생" : hasAmber ? "부분 대조" : "대조 완료",
+    difference: differenceRow?.금액 ?? "-",
+    detail: differenceRow?.근거 ?? balanceChangeRow?.근거 ?? bankTransactionRow?.근거 ?? "통장 잔액 대조 없음",
+    nextAction:
+      tone === "red"
+        ? "누락 거래, 중복 업로드, 기간 범위, 잔액 정렬을 확인"
+        : tone === "amber"
+          ? "잔액 컬럼이 포함된 은행 CSV로 보완"
+          : "잔액 차이 없는지 월말 통장 원장과 표본 확인",
+    bankTransactionCount: Number(bankTransactionRow?.건수 ?? 0),
+    balanceRowCount: Number(balanceChangeRow?.건수 ?? 0)
+  };
+}
+
+function compareTransactionsForBalanceCheck(a: AppTransaction, b: AppTransaction) {
+  const dateOrder = a.transactionDate.localeCompare(b.transactionDate);
+  if (dateOrder !== 0) return dateOrder;
+  const batchOrder = (a.importBatchId ?? "").localeCompare(b.importBatchId ?? "");
+  if (batchOrder !== 0) return batchOrder;
+  const rowOrder = (a.sourceRowNumber ?? 0) - (b.sourceRowNumber ?? 0);
+  if (rowOrder !== 0) return rowOrder;
+  return a.id.localeCompare(b.id);
+}
+
 function sumCashFlowAmount(transactions: AppTransaction[], direction: "DEPOSIT" | "WITHDRAWAL") {
   return transactions.reduce((sum, transaction) => sum + (direction === "DEPOSIT" ? transaction.depositAmount : transaction.withdrawalAmount), 0);
 }
@@ -5998,7 +6256,8 @@ function buildCorporateTaxRows(
   journalEntries: AppJournalEntry[],
   ledgerRows: ReturnType<typeof buildLedgerRows>,
   financialStatementRows: ReturnType<typeof buildFinancialStatementRows>,
-  cashFlowRows: CashFlowRow[]
+  cashFlowRows: CashFlowRow[],
+  bankBalanceRows: BankBalanceCheckRow[]
 ) {
   const unclassifiedCount = transactions.filter((transaction) => !transaction.confirmedAccount && !transaction.suggestedAccount).length;
   const ownerRiskCount = transactions.filter((transaction) => {
@@ -6007,6 +6266,7 @@ function buildCorporateTaxRows(
   }).length;
   const approvedJournalCount = journalEntries.filter((entry) => entry.status === "APPROVED").length;
   const cashFlowTotals = buildCashFlowTotals(cashFlowRows);
+  const bankBalanceStatus = summarizeBankBalanceRows(bankBalanceRows);
 
   return [
     {
@@ -6068,6 +6328,12 @@ function buildCorporateTaxRows(
       값: formatKRW(cashFlowTotals.net),
       상태: cashFlowTotals.count > 0 ? "요약 생성" : "대기",
       확인: "통장 잔액과 현금 순증감 대조"
+    },
+    {
+      항목: "통장 잔액 대조",
+      값: formatReportAmount(bankBalanceStatus.difference),
+      상태: bankBalanceStatus.status,
+      확인: bankBalanceStatus.nextAction
     }
   ];
 }
@@ -6081,6 +6347,7 @@ function buildFilingReadinessRows({
   journalIntegrityRows,
   ledgerRows,
   cashFlowRows,
+  bankBalanceRows,
   isPeriodClosed,
   canClosePeriod
 }: {
@@ -6092,6 +6359,7 @@ function buildFilingReadinessRows({
   journalIntegrityRows: JournalIntegrityRow[];
   ledgerRows: ReturnType<typeof buildLedgerRows>;
   cashFlowRows: CashFlowRow[];
+  bankBalanceRows: BankBalanceCheckRow[];
   isPeriodClosed: boolean;
   canClosePeriod: boolean;
 }): FilingReadinessRow[] {
@@ -6108,6 +6376,7 @@ function buildFilingReadinessRows({
   const integrityTone: StatusTone = integrityBlockers > 0 ? "red" : integrityWarnings > 0 ? "amber" : "green";
   const cashFlowTotals = buildCashFlowTotals(cashFlowRows);
   const hasCashFlow = cashFlowTotals.count > 0;
+  const bankBalanceStatus = summarizeBankBalanceRows(bankBalanceRows);
 
   return [
     {
@@ -6188,6 +6457,14 @@ function buildFilingReadinessRows({
     },
     {
       순서: 9,
+      점검: "통장 잔액 대조",
+      상태: bankBalanceStatus.status,
+      톤: bankBalanceStatus.tone,
+      근거: bankBalanceStatus.detail,
+      "다음 작업": bankBalanceStatus.nextAction
+    },
+    {
+      순서: 10,
       점검: "월 마감",
       상태: !canClosePeriod ? "전체 기간" : isPeriodClosed ? "완료" : "확인 필요",
       톤: !canClosePeriod ? "blue" : isPeriodClosed ? "green" : "amber",
@@ -6263,6 +6540,7 @@ function buildFilingSubmissionGuideRows({
   ledgerRows,
   financialStatementRows,
   cashFlowRows,
+  bankBalanceRows,
   isPeriodClosed,
   canClosePeriod
 }: {
@@ -6275,6 +6553,7 @@ function buildFilingSubmissionGuideRows({
   ledgerRows: ReturnType<typeof buildLedgerRows>;
   financialStatementRows: ReturnType<typeof buildFinancialStatementRows>;
   cashFlowRows: CashFlowRow[];
+  bankBalanceRows: BankBalanceCheckRow[];
   isPeriodClosed: boolean;
   canClosePeriod: boolean;
 }): FilingSubmissionGuideRow[] {
@@ -6292,6 +6571,7 @@ function buildFilingSubmissionGuideRows({
   const corporateTone: StatusTone = ledgerRows.length > 0 && financialStatementRows.length > 0 ? "green" : journalReadiness?.톤 === "red" ? "red" : "amber";
   const closeTone: StatusTone = !canClosePeriod ? "blue" : isPeriodClosed ? "green" : "amber";
   const cashFlowTotals = buildCashFlowTotals(cashFlowRows);
+  const bankBalanceStatus = summarizeBankBalanceRows(bankBalanceRows);
 
   return [
     {
@@ -6328,11 +6608,11 @@ function buildFilingSubmissionGuideRows({
       순서: 4,
       신고: "법인세",
       "홈택스/제출 위치": "법인세 신고, 재무제표 입력",
-      "혼자장부에서 볼 것": "법인세 결산 체크, 재무제표 초안, 계정별 원장, 현금흐름 요약",
-      상태: corporateTone === "green" ? "준비 가능" : corporateTone === "red" ? "차단" : "원장 대기",
-      톤: corporateTone,
-      "입력 기준": `원장 ${formatNumber(ledgerRows.length)}행 · 재무제표 ${formatNumber(financialStatementRows.length)}개 계정 · 현금 순증감 ${formatKRW(cashFlowTotals.net)}`,
-      "마감 전 확인": corporateSchedule ? `${corporateSchedule["예상 기한"]} 전 ${corporateSchedule["다음 작업"]}` : "승인 분개 기준 재무제표와 원장 확인"
+      "혼자장부에서 볼 것": "법인세 결산 체크, 재무제표 초안, 계정별 원장, 현금흐름 요약, 통장 잔액 대조",
+      상태: corporateTone === "red" || bankBalanceStatus.tone === "red" ? "차단" : corporateTone === "green" ? "준비 가능" : "원장 대기",
+      톤: corporateTone === "red" || bankBalanceStatus.tone === "red" ? "red" : corporateTone,
+      "입력 기준": `원장 ${formatNumber(ledgerRows.length)}행 · 재무제표 ${formatNumber(financialStatementRows.length)}개 계정 · 현금 순증감 ${formatKRW(cashFlowTotals.net)} · 잔액 차이 ${formatReportAmount(bankBalanceStatus.difference)}`,
+      "마감 전 확인": bankBalanceStatus.tone === "red" ? bankBalanceStatus.nextAction : corporateSchedule ? `${corporateSchedule["예상 기한"]} 전 ${corporateSchedule["다음 작업"]}` : "승인 분개 기준 재무제표와 원장 확인"
     },
     {
       순서: 5,
@@ -6364,13 +6644,15 @@ function buildFilingPackageRows(
   ledgerRows: ReturnType<typeof buildLedgerRows>,
   withholdingRows: ReturnType<typeof buildWithholdingRows>,
   financialStatementRows: ReturnType<typeof buildFinancialStatementRows>,
-  cashFlowRows: CashFlowRow[]
+  cashFlowRows: CashFlowRow[],
+  bankBalanceRows: BankBalanceCheckRow[]
 ) {
   const classifiedCount = transactions.filter((transaction) => transaction.confirmedAccount || transaction.suggestedAccount).length;
   const missingEvidenceCount = transactions.filter((transaction) => transaction.withdrawalAmount > 0 && ["UNCHECKED", "MISSING"].includes(transaction.evidenceStatus)).length;
   const approvedJournalCount = journalEntries.filter((entry) => entry.status === "APPROVED").length;
   const totalTransactions = transactions.length;
   const cashFlowTotals = buildCashFlowTotals(cashFlowRows);
+  const bankBalanceStatus = summarizeBankBalanceRows(bankBalanceRows);
 
   return [
     {
@@ -6428,6 +6710,13 @@ function buildFilingPackageRows(
       톤: cashFlowTotals.count > 0 ? "green" : "amber",
       "금액/건수": formatKRW(cashFlowTotals.net),
       "다음 확인": "통장 잔액과 현금 순증감 대조"
+    },
+    {
+      구분: "통장 잔액",
+      상태: bankBalanceStatus.status,
+      톤: bankBalanceStatus.tone,
+      "금액/건수": formatReportAmount(bankBalanceStatus.difference),
+      "다음 확인": bankBalanceStatus.nextAction
     }
   ];
 }
