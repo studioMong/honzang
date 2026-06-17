@@ -12,7 +12,10 @@ export async function ensureDefaultCompany(db: PrismaClient) {
       vatType: "GENERAL",
       fiscalYearEndMonth: 12,
       representativeSalaryEnabled: true,
-      contractorPaymentEnabled: true
+      contractorPaymentEnabled: true,
+      perUseUnitPrice: 110000,
+      monthlySubscriptionPrice: 33000,
+      annualSubscriptionPrice: 330000
     }
   });
 

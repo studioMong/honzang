@@ -1,0 +1,4 @@
+ALTER TABLE "Company"
+ADD COLUMN "perUseUnitPrice" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "monthlySubscriptionPrice" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "annualSubscriptionPrice" INTEGER NOT NULL DEFAULT 0;

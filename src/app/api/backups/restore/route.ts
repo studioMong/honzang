@@ -37,7 +37,10 @@ const companySchema = z
     representativeSalaryEnabled: z.boolean().default(false),
     employeePayrollEnabled: z.boolean().default(false),
     contractorPaymentEnabled: z.boolean().default(false),
-    billingModel: billingModelSchema.default("INTERNAL_PER_USE")
+    billingModel: billingModelSchema.default("INTERNAL_PER_USE"),
+    perUseUnitPrice: z.coerce.number().int().nonnegative().default(0),
+    monthlySubscriptionPrice: z.coerce.number().int().nonnegative().default(0),
+    annualSubscriptionPrice: z.coerce.number().int().nonnegative().default(0)
   })
   .passthrough();
 
@@ -292,7 +295,10 @@ async function restoreWorkspace(db: RestoreDb, backup: WorkspaceBackup) {
         representativeSalaryEnabled: backup.company.representativeSalaryEnabled,
         employeePayrollEnabled: backup.company.employeePayrollEnabled,
         contractorPaymentEnabled: backup.company.contractorPaymentEnabled,
-        billingModel: backup.company.billingModel
+        billingModel: backup.company.billingModel,
+        perUseUnitPrice: backup.company.perUseUnitPrice,
+        monthlySubscriptionPrice: backup.company.monthlySubscriptionPrice,
+        annualSubscriptionPrice: backup.company.annualSubscriptionPrice
       }
     });
 

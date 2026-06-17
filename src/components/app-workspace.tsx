@@ -2388,6 +2388,7 @@ function SettingsPanel({
   const [backupMessage, setBackupMessage] = useState<{ tone: "green" | "red" | "amber"; text: string } | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const setupItems = buildCompanySetupItems(form);
+  const billingEstimate = buildBillingEstimate(form, transactions);
   const missingCount = setupItems.filter((item) => item.tone === "red").length;
   function buildCurrentBackupPayload(originalImportFiles: OriginalImportFile[] = []) {
     return buildWorkspaceBackupPayload({
@@ -2703,6 +2704,18 @@ function SettingsPanel({
               <option value="SAAS_ANNUAL">SaaS 연 구독</option>
             </select>
           </div>
+          <div className="field">
+            <label>회당 단가</label>
+            <input inputMode="numeric" value={form.perUseUnitPrice} onChange={(event) => updateForm("perUseUnitPrice", numericInputValue(event.target.value))} />
+          </div>
+          <div className="field">
+            <label>월 구독가</label>
+            <input inputMode="numeric" value={form.monthlySubscriptionPrice} onChange={(event) => updateForm("monthlySubscriptionPrice", numericInputValue(event.target.value))} />
+          </div>
+          <div className="field">
+            <label>연 구독가</label>
+            <input inputMode="numeric" value={form.annualSubscriptionPrice} onChange={(event) => updateForm("annualSubscriptionPrice", numericInputValue(event.target.value))} />
+          </div>
           <ToggleField
             label="대표자 급여"
             checked={form.representativeSalaryEnabled}
@@ -2718,6 +2731,25 @@ function SettingsPanel({
             checked={form.contractorPaymentEnabled}
             onChange={(checked) => updateForm("contractorPaymentEnabled", checked)}
           />
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="panel-title">과금 정책</h2>
+            <p className="panel-subtitle">매출 거래 기준 과금 단위 추정</p>
+          </div>
+          <span className={`status ${billingEstimate.unitPrice > 0 ? "green" : "amber"}`}>{billingEstimate.unitPrice > 0 ? "단가 설정" : "단가 필요"}</span>
+        </div>
+        <div className="panel-body">
+          <div className="review-list">
+            <ChecklistItem tone="green" title="모델" value={billingModelLabel(form.billingModel)} />
+            <ChecklistItem tone={billingEstimate.unitPrice > 0 ? "green" : "amber"} title="기준 단가" value={billingEstimate.unitPrice > 0 ? formatKRW(billingEstimate.unitPrice) : "미설정"} />
+            <ChecklistItem tone="green" title="매출 거래" value={`${formatNumber(billingEstimate.revenueTransactionCount)}건`} />
+            <ChecklistItem tone="green" title="매출 공급가액" value={formatKRW(billingEstimate.revenueSupplyAmount)} />
+            <ChecklistItem tone={billingEstimate.unitPrice > 0 ? "green" : "amber"} title="추정 단위" value={billingEstimate.unitPrice > 0 ? `${formatBillingUnits(billingEstimate.estimatedUnits)} ${billingEstimate.unitLabel}` : "단가 입력"} />
+          </div>
         </div>
       </section>
 
@@ -3072,11 +3104,16 @@ function buildCompanySetupItems(company: AppCompany): CompanySetupItem[] {
     },
     {
       title: "매출 과금 방식",
-      detail: billingModelLabel(company.billingModel),
-      tone: "green",
-      status: "설정됨"
+      detail: `${billingModelLabel(company.billingModel)} · ${billingActivePrice(company) > 0 ? formatKRW(billingActivePrice(company)) : "단가 입력 필요"}`,
+      tone: billingActivePrice(company) > 0 ? "green" : "amber",
+      status: billingActivePrice(company) > 0 ? "설정됨" : "단가 필요"
     }
   ];
+}
+
+function numericInputValue(value: string) {
+  const normalized = Number(value.replace(/[^\d]/g, ""));
+  return Number.isFinite(normalized) ? normalized : 0;
 }
 
 function hasText(value?: string | null) {
@@ -3106,6 +3143,47 @@ function billingModelLabel(value: AppCompany["billingModel"]) {
     SAAS_ANNUAL: "SaaS 연 구독"
   };
   return labels[value];
+}
+
+function billingActivePrice(company: AppCompany) {
+  if (company.billingModel === "SAAS_MONTHLY") return company.monthlySubscriptionPrice;
+  if (company.billingModel === "SAAS_ANNUAL") return company.annualSubscriptionPrice;
+  return company.perUseUnitPrice;
+}
+
+function buildBillingEstimate(company: AppCompany, transactions: AppTransaction[]) {
+  const unitPrice = billingActivePrice(company);
+  const revenueTransactions = transactions.filter(isBillingRevenueTransaction);
+  const revenueSupplyAmount = revenueTransactions.reduce((sum, transaction) => sum + billingSupplyAmount(transaction), 0);
+  return {
+    unitPrice,
+    unitLabel: billingUnitLabel(company.billingModel),
+    revenueTransactionCount: revenueTransactions.length,
+    revenueSupplyAmount,
+    estimatedUnits: unitPrice > 0 ? revenueSupplyAmount / unitPrice : 0
+  };
+}
+
+function isBillingRevenueTransaction(transaction: AppTransaction) {
+  const account = getTransactionAccount(transaction);
+  if (transaction.depositAmount <= 0) return false;
+  if (account) return account.type === "REVENUE";
+  return transaction.sourceType === "HOMETAX_SALES" || transaction.description.includes("구독") || transaction.description.includes("정산");
+}
+
+function billingSupplyAmount(transaction: AppTransaction) {
+  return transaction.supplyAmount ?? Math.round(transaction.depositAmount / 1.1);
+}
+
+function billingUnitLabel(model: AppCompany["billingModel"]) {
+  if (model === "SAAS_MONTHLY") return "월 구독분";
+  if (model === "SAAS_ANNUAL") return "연 구독분";
+  return "회";
+}
+
+function formatBillingUnits(value: number) {
+  if (!Number.isFinite(value)) return "0";
+  return new Intl.NumberFormat("ko-KR", { maximumFractionDigits: value >= 10 ? 1 : 2 }).format(value);
 }
 
 function auditActionLabel(action: string) {

@@ -30,6 +30,9 @@ export type AppCompany = {
   employeePayrollEnabled: boolean;
   contractorPaymentEnabled: boolean;
   billingModel: BillingModel;
+  perUseUnitPrice: number;
+  monthlySubscriptionPrice: number;
+  annualSubscriptionPrice: number;
 };
 
 export type AppAccount = {

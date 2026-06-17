@@ -82,6 +82,9 @@ model Company {
   employeePayrollEnabled          Boolean    @default(false)
   contractorPaymentEnabled        Boolean    @default(false)
   billingModel                    BillingModel @default(INTERNAL_PER_USE)
+  perUseUnitPrice                 Int        @default(0)
+  monthlySubscriptionPrice        Int        @default(0)
+  annualSubscriptionPrice         Int        @default(0)
   createdAt                       DateTime   @default(now())
   updatedAt                       DateTime   @updatedAt
 

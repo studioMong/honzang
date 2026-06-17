@@ -16,7 +16,10 @@ const companySchema = z.object({
   representativeSalaryEnabled: z.boolean(),
   employeePayrollEnabled: z.boolean(),
   contractorPaymentEnabled: z.boolean(),
-  billingModel: z.enum(["INTERNAL_PER_USE", "SAAS_MONTHLY", "SAAS_ANNUAL"])
+  billingModel: z.enum(["INTERNAL_PER_USE", "SAAS_MONTHLY", "SAAS_ANNUAL"]),
+  perUseUnitPrice: z.coerce.number().int().nonnegative().max(100_000_000),
+  monthlySubscriptionPrice: z.coerce.number().int().nonnegative().max(100_000_000),
+  annualSubscriptionPrice: z.coerce.number().int().nonnegative().max(1_000_000_000)
 });
 
 export async function GET() {
@@ -82,7 +85,10 @@ export async function PATCH(request: Request) {
       name: updated.name,
       vatType: updated.vatType,
       fiscalYearEndMonth: updated.fiscalYearEndMonth,
-      billingModel: updated.billingModel
+      billingModel: updated.billingModel,
+      perUseUnitPrice: updated.perUseUnitPrice,
+      monthlySubscriptionPrice: updated.monthlySubscriptionPrice,
+      annualSubscriptionPrice: updated.annualSubscriptionPrice
     }
   });
 

@@ -23,7 +23,10 @@ const backup = {
     representativeSalaryEnabled: true,
     employeePayrollEnabled: false,
     contractorPaymentEnabled: true,
-    billingModel: "INTERNAL_PER_USE"
+    billingModel: "INTERNAL_PER_USE",
+    perUseUnitPrice: 110000,
+    monthlySubscriptionPrice: 33000,
+    annualSubscriptionPrice: 330000
   },
   accounts: [],
   csvTemplates: [],

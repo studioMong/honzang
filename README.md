@@ -73,6 +73,7 @@ RAILWAY_EXPECTED_COMMIT=$(git rev-parse HEAD) npm run verify:railway
 
 - 회사 기본 설정
 - 1인법인 필수정보 상태 체크
+- 회당 정산/SaaS 월·연 구독 단가 설정과 매출 기준 과금 단위 추정
 - 설치형 PWA 기본 지원
 - 통장/카드/홈택스/PG CSV 업로드
 - 최근 CSV 업로드 이력 확인
