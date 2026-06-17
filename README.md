@@ -57,6 +57,18 @@ Railway는 GitHub 저장소를 연결한 뒤 다음 설정을 사용합니다.
 - `/api/health`: 앱 서버와 DB 연결 상태
 - `/api/version`: 앱 버전과 Railway 커밋 메타데이터
 
+Railway 공개 URL이 최신 Next 서버와 Postgres를 바라보는지는 아래 명령으로 확인합니다.
+
+```bash
+npm run verify:railway
+```
+
+배포 커밋까지 고정해서 확인하려면 아래처럼 실행합니다.
+
+```bash
+RAILWAY_EXPECTED_COMMIT=$(git rev-parse HEAD) npm run verify:railway
+```
+
 ## MVP 범위
 
 - 회사 기본 설정
