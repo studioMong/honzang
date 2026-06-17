@@ -10,6 +10,7 @@ const baseUrl = (process.env.VERIFY_DB_WORKFLOW_BASE_URL ?? "http://127.0.0.1:30
 const marker = `verify-db-workflow-${Date.now()}`;
 const cleanup = {
   importBatchIds: [] as string[],
+  evidenceIds: [] as string[],
   journalEntryIds: [] as string[],
   taxReportIds: [] as string[],
   closingPeriods: [] as string[]
@@ -32,6 +33,32 @@ try {
     ...(await importSample(companyId, "CARD", "public/samples/card-transactions.csv", 1))
   ];
   assert.equal(importedTransactions.length, 2, "workflow should import two sample transactions");
+
+  const evidencePayload = await requestJson<{
+    ok?: boolean;
+    mode?: string;
+    evidence?: { id?: string; transactionId?: string | null };
+  }>("/api/evidences", {
+    method: "POST",
+    body: {
+      companyId,
+      evidenceType: "검증 영수증",
+      issueDate: "2026-06-17",
+      counterparty: `${marker} 증빙`,
+      supplyAmount: 1000,
+      vatAmount: 100,
+      totalAmount: 1100,
+      fileName: `${marker}.txt`,
+      fileDataUrl: `data:text/plain;base64,${Buffer.from(marker).toString("base64")}`,
+      fileMimeType: "text/plain",
+      fileSize: Buffer.byteLength(marker),
+      transactionId: importedTransactions[0]?.id
+    }
+  });
+  assert.equal(evidencePayload.ok, true, "evidence create should succeed");
+  assert.equal(evidencePayload.mode, "database", "evidence create should use database mode");
+  assert.ok(evidencePayload.evidence?.id, "evidence create should return an id");
+  cleanup.evidenceIds.push(evidencePayload.evidence.id);
 
   const approvedEntries: AppJournalEntry[] = [];
   for (const transaction of importedTransactions) {
@@ -127,6 +154,14 @@ try {
   assert.equal(lockedReportDeletePayload.ok, false, "locked period report delete should fail");
   assert.equal(lockedReportDeletePayload.code, "PERIOD_CLOSED", "locked period report delete should return PERIOD_CLOSED");
 
+  const lockedEvidenceDeletePayload = await requestJson<{ ok?: boolean; code?: string; message?: string }>("/api/evidences", {
+    method: "DELETE",
+    expectedStatus: 409,
+    body: { id: evidencePayload.evidence.id }
+  });
+  assert.equal(lockedEvidenceDeletePayload.ok, false, "locked period evidence delete should fail");
+  assert.equal(lockedEvidenceDeletePayload.code, "PERIOD_CLOSED", "locked period evidence delete should return PERIOD_CLOSED");
+
   const reopenPayload = await requestJson<{ ok?: boolean; mode?: string; period?: string }>("/api/closing-periods", {
     method: "DELETE",
     body: {
@@ -139,9 +174,27 @@ try {
   assert.equal(reopenPayload.period, closingPeriod, "closing period reopen should return the requested period");
   cleanup.closingPeriods = cleanup.closingPeriods.filter((period) => period !== closingPeriod);
 
+  const evidenceDeletePayload = await requestJson<{
+    ok?: boolean;
+    mode?: string;
+    deletedEvidenceId?: string;
+    transactionId?: string | null;
+    evidenceStatus?: string | null;
+  }>("/api/evidences", {
+    method: "DELETE",
+    body: { id: evidencePayload.evidence.id }
+  });
+  assert.equal(evidenceDeletePayload.ok, true, "evidence delete should succeed after reopening period");
+  assert.equal(evidenceDeletePayload.mode, "database", "evidence delete should use database mode");
+  assert.equal(evidenceDeletePayload.deletedEvidenceId, evidencePayload.evidence.id, "evidence delete should return deleted id");
+  assert.equal(evidenceDeletePayload.transactionId, importedTransactions[0]?.id, "evidence delete should report linked transaction");
+  cleanup.evidenceIds = cleanup.evidenceIds.filter((id) => id !== evidencePayload.evidence?.id);
+
   const auditEvents = await requestJson<{ auditEvents?: Array<{ action: string; entityId?: string | null }> }>("/api/audit-events");
   const auditActions = new Set(auditEvents.auditEvents?.map((event) => event.action));
   assert.ok(auditActions.has("IMPORT_CREATE"), "audit log should include import creation");
+  assert.ok(auditActions.has("EVIDENCE_CREATE"), "audit log should include evidence creation");
+  assert.ok(auditActions.has("EVIDENCE_DELETE"), "audit log should include evidence deletion");
   assert.ok(auditActions.has("JOURNAL_CREATE"), "audit log should include journal creation");
   assert.ok(auditActions.has("REPORT_CREATE"), "audit log should include report creation");
   assert.ok(auditActions.has("PERIOD_CLOSE"), "audit log should include closing period lock");
@@ -235,6 +288,14 @@ async function cleanupCreatedData() {
     await requestJson("/api/reports", {
       method: "DELETE",
       body: { id: taxReportId },
+      allowFailure: true
+    });
+  }
+
+  for (const evidenceId of cleanup.evidenceIds.reverse()) {
+    await requestJson("/api/evidences", {
+      method: "DELETE",
+      body: { id: evidenceId },
       allowFailure: true
     });
   }

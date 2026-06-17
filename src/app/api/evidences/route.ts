@@ -25,6 +25,10 @@ const evidenceSchema = z.object({
   transactionId: z.string().optional().nullable()
 });
 
+const deleteEvidenceSchema = z.object({
+  id: z.string().min(1)
+});
+
 export async function GET() {
   const db = getPrisma();
 
@@ -144,4 +148,79 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json({ ok: true, evidence: serializeEvidence(evidence), mode: "database" });
+}
+
+export async function DELETE(request: Request) {
+  const parsed = deleteEvidenceSchema.safeParse(await request.json());
+  if (!parsed.success) {
+    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const db = getPrisma();
+  if (!db) {
+    return NextResponse.json({ ok: true, mode: "sample", deletedEvidenceId: parsed.data.id });
+  }
+
+  const company = await ensureDefaultCompany(db);
+  const evidence = await db.evidence.findFirst({
+    where: {
+      id: parsed.data.id,
+      companyId: company.id
+    },
+    include: {
+      transaction: true
+    }
+  });
+
+  if (!evidence) {
+    return NextResponse.json({ ok: false, message: "증빙을 찾을 수 없습니다." }, { status: 404 });
+  }
+
+  const closedIssuePeriod = await findClosedPeriodForDate(db, company.id, evidence.issueDate);
+  if (closedIssuePeriod) return closedPeriodResponse(closedIssuePeriod.period);
+  const closedTransactionPeriod = await findClosedPeriodForDate(db, company.id, evidence.transaction?.transactionDate);
+  if (closedTransactionPeriod) return closedPeriodResponse(closedTransactionPeriod.period);
+
+  const result = await db.$transaction(async (tx) => {
+    await tx.evidence.delete({ where: { id: evidence.id } });
+
+    let nextEvidenceStatus: "UNCHECKED" | "MISSING" | null = null;
+    if (evidence.transactionId && evidence.transaction) {
+      const remainingEvidenceCount = await tx.evidence.count({
+        where: {
+          companyId: company.id,
+          transactionId: evidence.transactionId
+        }
+      });
+
+      if (remainingEvidenceCount === 0) {
+        nextEvidenceStatus = Number(evidence.transaction.withdrawalAmount) > 0 ? "MISSING" : "UNCHECKED";
+        await tx.transaction.update({
+          where: { id: evidence.transactionId },
+          data: { evidenceStatus: nextEvidenceStatus }
+        });
+      }
+    }
+
+    await recordAuditEvent(tx, {
+      companyId: company.id,
+      action: "EVIDENCE_DELETE",
+      entityType: "EVIDENCE",
+      entityId: evidence.id,
+      summary: `증빙을 삭제했습니다: ${evidence.evidenceType}`,
+      metadata: {
+        transactionId: evidence.transactionId,
+        counterparty: evidence.counterparty,
+        totalAmount: evidence.totalAmount ? Number(evidence.totalAmount) : null
+      }
+    });
+
+    return {
+      deletedEvidenceId: evidence.id,
+      transactionId: evidence.transactionId,
+      evidenceStatus: nextEvidenceStatus
+    };
+  });
+
+  return NextResponse.json({ ok: true, mode: "database", ...result });
 }
