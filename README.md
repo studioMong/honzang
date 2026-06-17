@@ -110,7 +110,7 @@ RAILWAY_EXPECTED_COMMIT=$(git rev-parse HEAD) npm run verify:railway
 npm run verify:samples
 ```
 
-DB 연결 환경에서 핵심 흐름을 검증하려면 앱 서버를 실행한 뒤 아래 명령을 사용합니다. 이 검증은 테스트용 거래, 승인 분개, 리포트 스냅샷을 만들고 정리하므로 로컬 또는 스테이징 DB에서 실행합니다.
+DB 연결 환경에서 핵심 흐름을 검증하려면 앱 서버를 실행한 뒤 아래 명령을 사용합니다. 이 검증은 테스트용 거래, 승인 분개, 리포트 스냅샷, 월 마감 잠금을 만들고 정리하므로 로컬 또는 스테이징 DB에서 실행합니다.
 
 ```bash
 VERIFY_DB_WORKFLOW_BASE_URL=http://127.0.0.1:3000 npm run verify:db-workflow

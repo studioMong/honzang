@@ -11,7 +11,8 @@ const marker = `verify-db-workflow-${Date.now()}`;
 const cleanup = {
   importBatchIds: [] as string[],
   journalEntryIds: [] as string[],
-  taxReportIds: [] as string[]
+  taxReportIds: [] as string[],
+  closingPeriods: [] as string[]
 };
 
 if (baseUrl.includes("honzang-production.up.railway.app") && process.env.VERIFY_DB_WORKFLOW_ALLOW_PRODUCTION !== "1") {
@@ -83,11 +84,68 @@ try {
   const reports = await requestJson<{ taxReports?: Array<{ id: string; calculatedPayload?: unknown }> }>("/api/reports");
   assert.ok(reports.taxReports?.some((report) => report.id === reportPayload.taxReport?.id), "saved report should be listed");
 
+  const closingPeriod = transactionDates[0]?.slice(0, 7);
+  assert.equal(closingPeriod, "2026-06", "workflow fixture should run in the June 2026 period");
+  const closePayload = await requestJson<{ ok?: boolean; mode?: string; closingPeriod?: { period?: string } }>("/api/closing-periods", {
+    method: "POST",
+    body: {
+      companyId,
+      period: closingPeriod,
+      summaryPayload: {
+        marker,
+        taxReportId: reportPayload.taxReport.id,
+        transactionCount: importedTransactions.length,
+        journalEntryCount: approvedEntries.length
+      }
+    }
+  });
+  cleanup.closingPeriods.push(closingPeriod);
+  assert.equal(closePayload.ok, true, "closing period lock should be created");
+  assert.equal(closePayload.mode, "database", "closing period lock should use database mode");
+  assert.equal(closePayload.closingPeriod?.period, closingPeriod, "closing period lock should return the requested period");
+
+  const lockedTransactionPayload = await requestJson<{ ok?: boolean; code?: string; message?: string }>("/api/transactions", {
+    method: "POST",
+    expectedStatus: 409,
+    body: {
+      transactionDate: "2026-06-18",
+      description: `${marker} locked transaction should fail`,
+      counterparty: "잠금 검증",
+      depositAmount: 1000,
+      withdrawalAmount: 0,
+      evidenceStatus: "UNCHECKED"
+    }
+  });
+  assert.equal(lockedTransactionPayload.ok, false, "locked period transaction create should fail");
+  assert.equal(lockedTransactionPayload.code, "PERIOD_CLOSED", "locked period transaction create should return PERIOD_CLOSED");
+
+  const lockedReportDeletePayload = await requestJson<{ ok?: boolean; code?: string; message?: string }>("/api/reports", {
+    method: "DELETE",
+    expectedStatus: 409,
+    body: { id: reportPayload.taxReport.id }
+  });
+  assert.equal(lockedReportDeletePayload.ok, false, "locked period report delete should fail");
+  assert.equal(lockedReportDeletePayload.code, "PERIOD_CLOSED", "locked period report delete should return PERIOD_CLOSED");
+
+  const reopenPayload = await requestJson<{ ok?: boolean; mode?: string; period?: string }>("/api/closing-periods", {
+    method: "DELETE",
+    body: {
+      companyId,
+      period: closingPeriod
+    }
+  });
+  assert.equal(reopenPayload.ok, true, "closing period lock should reopen");
+  assert.equal(reopenPayload.mode, "database", "closing period reopen should use database mode");
+  assert.equal(reopenPayload.period, closingPeriod, "closing period reopen should return the requested period");
+  cleanup.closingPeriods = cleanup.closingPeriods.filter((period) => period !== closingPeriod);
+
   const auditEvents = await requestJson<{ auditEvents?: Array<{ action: string; entityId?: string | null }> }>("/api/audit-events");
   const auditActions = new Set(auditEvents.auditEvents?.map((event) => event.action));
   assert.ok(auditActions.has("IMPORT_CREATE"), "audit log should include import creation");
   assert.ok(auditActions.has("JOURNAL_CREATE"), "audit log should include journal creation");
   assert.ok(auditActions.has("REPORT_CREATE"), "audit log should include report creation");
+  assert.ok(auditActions.has("PERIOD_CLOSE"), "audit log should include closing period lock");
+  assert.ok(auditActions.has("PERIOD_REOPEN"), "audit log should include closing period reopen");
 
   console.log(`DB workflow verification passed at ${baseUrl}`);
 } finally {
@@ -165,6 +223,14 @@ function isBalanced(draft: ReturnType<typeof generateJournalDraft>) {
 }
 
 async function cleanupCreatedData() {
+  for (const period of cleanup.closingPeriods.reverse()) {
+    await requestJson("/api/closing-periods", {
+      method: "DELETE",
+      body: { period },
+      allowFailure: true
+    });
+  }
+
   for (const taxReportId of cleanup.taxReportIds.reverse()) {
     await requestJson("/api/reports", {
       method: "DELETE",
@@ -196,6 +262,7 @@ async function requestJson<T>(
     method?: "GET" | "POST" | "PATCH" | "DELETE";
     body?: unknown;
     allowFailure?: boolean;
+    expectedStatus?: number;
   } = {}
 ): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
@@ -206,6 +273,10 @@ async function requestJson<T>(
   });
   const text = await response.text();
   const body = text ? JSON.parse(text) : {};
+  if (options.expectedStatus !== undefined) {
+    assert.equal(response.status, options.expectedStatus, `${options.method ?? "GET"} ${path} should return HTTP ${options.expectedStatus}: ${text}`);
+    return body as T;
+  }
   if (!response.ok && !options.allowFailure) {
     throw new Error(`${options.method ?? "GET"} ${path} returned HTTP ${response.status}: ${text}`);
   }
