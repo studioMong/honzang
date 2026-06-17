@@ -15,6 +15,10 @@ const taxReportSchema = z.object({
   calculatedPayload: z.unknown()
 });
 
+const deleteTaxReportSchema = z.object({
+  id: z.string().min(1)
+});
+
 export async function GET() {
   const db = getPrisma();
 
@@ -75,4 +79,32 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json({ ok: true, taxReport: serializeTaxReport(taxReport), mode: "database" });
+}
+
+export async function DELETE(request: Request) {
+  const parsed = deleteTaxReportSchema.safeParse(await request.json());
+  if (!parsed.success) {
+    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const db = getPrisma();
+  if (!db) {
+    return NextResponse.json({ ok: true, id: parsed.data.id, mode: "sample" });
+  }
+
+  const company = await ensureDefaultCompany(db);
+  const taxReport = await db.taxReport.findFirst({
+    where: {
+      id: parsed.data.id,
+      companyId: company.id
+    }
+  });
+
+  if (!taxReport) {
+    return NextResponse.json({ ok: false, message: "리포트를 찾을 수 없습니다." }, { status: 404 });
+  }
+
+  await db.taxReport.delete({ where: { id: taxReport.id } });
+
+  return NextResponse.json({ ok: true, id: taxReport.id, mode: "database" });
 }

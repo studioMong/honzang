@@ -25,6 +25,11 @@ const journalSchema = z.object({
   lines: z.array(journalLineSchema).min(2).max(20)
 });
 
+const journalStatusSchema = z.object({
+  id: z.string().min(1),
+  status: z.enum(["DRAFT", "APPROVED", "VOID"])
+});
+
 export async function GET() {
   const db = getPrisma();
 
@@ -151,4 +156,54 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json({ ok: true, journalEntry: serializeJournalEntry(created), mode: "database" });
+}
+
+export async function PATCH(request: Request) {
+  const parsed = journalStatusSchema.safeParse(await request.json());
+  if (!parsed.success) {
+    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const db = getPrisma();
+  if (!db) {
+    return NextResponse.json({
+      ok: true,
+      journalEntry: {
+        id: parsed.data.id,
+        status: parsed.data.status
+      },
+      mode: "sample"
+    });
+  }
+
+  const company = await ensureDefaultCompany(db);
+  const existing = await db.journalEntry.findFirst({
+    where: {
+      id: parsed.data.id,
+      companyId: company.id
+    }
+  });
+
+  if (!existing) {
+    return NextResponse.json({ ok: false, message: "분개를 찾을 수 없습니다." }, { status: 404 });
+  }
+
+  const journalEntry = await db.journalEntry.update({
+    where: { id: parsed.data.id },
+    data: { status: parsed.data.status },
+    include: {
+      lines: {
+        include: { account: true },
+        orderBy: { createdAt: "asc" }
+      },
+      transaction: {
+        include: {
+          suggestedAccount: true,
+          confirmedAccount: true
+        }
+      }
+    }
+  });
+
+  return NextResponse.json({ ok: true, journalEntry: serializeJournalEntry(journalEntry), mode: "database" });
 }

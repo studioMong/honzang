@@ -93,6 +93,12 @@ Railway는 GitHub 저장소를 연결한 뒤 다음 설정을 사용합니다.
 npm run verify:samples
 ```
 
+DB 연결 환경에서 핵심 흐름을 검증하려면 앱 서버를 실행한 뒤 아래 명령을 사용합니다. 이 검증은 테스트용 거래, 승인 분개, 리포트 스냅샷을 만들고 정리하므로 로컬 또는 스테이징 DB에서 실행합니다.
+
+```bash
+VERIFY_DB_WORKFLOW_BASE_URL=http://127.0.0.1:3000 npm run verify:db-workflow
+```
+
 ## 웹/앱 지원
 
 혼자장부는 Next.js 웹앱으로 실행하며, `manifest.webmanifest`와 service worker를 통해 설치형 PWA 기본 동작을 지원합니다. 네트워크가 끊긴 상태에서 앱 화면 이동이 실패하면 `public/offline.html`을 표시합니다.

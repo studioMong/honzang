@@ -119,18 +119,18 @@ export async function DELETE(request: Request) {
           transactionId: { in: transactionIds }
         }
       });
-      const draftJournalEntries = await tx.journalEntry.findMany({
+      const removableJournalEntries = await tx.journalEntry.findMany({
         where: {
           companyId: company.id,
           transactionId: { in: transactionIds },
-          status: "DRAFT"
+          status: { in: ["DRAFT", "VOID"] }
         },
         select: { id: true }
       });
-      const draftJournalEntryIds = draftJournalEntries.map((entry) => entry.id);
-      if (draftJournalEntryIds.length) {
-        await tx.journalLine.deleteMany({ where: { journalEntryId: { in: draftJournalEntryIds } } });
-        await tx.journalEntry.deleteMany({ where: { id: { in: draftJournalEntryIds } } });
+      const removableJournalEntryIds = removableJournalEntries.map((entry) => entry.id);
+      if (removableJournalEntryIds.length) {
+        await tx.journalLine.deleteMany({ where: { journalEntryId: { in: removableJournalEntryIds } } });
+        await tx.journalEntry.deleteMany({ where: { id: { in: removableJournalEntryIds } } });
       }
       await tx.transaction.deleteMany({
         where: {

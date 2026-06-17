@@ -344,8 +344,8 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
             companyId={company.id || DEFAULT_COMPANY_ID}
             transactions={transactions}
             journalEntries={journalEntries}
-            onApproved={(entry) => {
-              setJournalEntries((current) => [entry, ...current.filter((item) => item.transactionId !== entry.transactionId)]);
+            onChanged={(entry) => {
+              setJournalEntries((current) => [entry, ...current.filter((item) => item.id !== entry.id && item.transactionId !== entry.transactionId)]);
             }}
           />
         )}
@@ -1117,17 +1117,17 @@ function JournalDraftsPanel({
   companyId,
   transactions,
   journalEntries,
-  onApproved
+  onChanged
 }: {
   companyId: string;
   transactions: AppTransaction[];
   journalEntries: AppJournalEntry[];
-  onApproved: (entry: AppJournalEntry) => void;
+  onChanged: (entry: AppJournalEntry) => void;
 }) {
   const drafts = transactions.map(generateJournalDraft);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [bulkSaving, setBulkSaving] = useState(false);
-  const approvedTransactionIds = new Set(journalEntries.map((entry) => entry.transactionId).filter(Boolean));
+  const approvedTransactionIds = new Set(journalEntries.filter((entry) => entry.status === "APPROVED").map((entry) => entry.transactionId).filter(Boolean));
   const pendingDrafts = drafts.filter((draft) => !approvedTransactionIds.has(draft.transactionId));
   const readyDrafts = pendingDrafts.filter((draft) => isBalancedJournalDraft(draft) && draft.warnings.length === 0);
   const reviewDrafts = pendingDrafts.filter((draft) => !isBalancedJournalDraft(draft) || draft.warnings.length > 0);
@@ -1153,7 +1153,25 @@ function JournalDraftsPanel({
     setSavingId(draft.transactionId);
     try {
       const entry = await saveDraft(draft);
-      if (entry) onApproved(entry);
+      if (entry) onChanged(entry);
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function voidApprovedDraft(draft: ReturnType<typeof generateJournalDraft>) {
+    const approvedEntry = journalEntries.find((entry) => entry.transactionId === draft.transactionId && entry.status === "APPROVED");
+    if (!approvedEntry) return;
+
+    setSavingId(draft.transactionId);
+    try {
+      const response = await fetch("/api/journals", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: approvedEntry.id, status: "VOID" })
+      });
+      const payload = await response.json();
+      onChanged(payload.journalEntry?.lines ? payload.journalEntry : { ...approvedEntry, status: "VOID" });
     } finally {
       setSavingId(null);
     }
@@ -1165,7 +1183,7 @@ function JournalDraftsPanel({
       for (const draft of readyDrafts) {
         setSavingId(draft.transactionId);
         const entry = await saveDraft(draft);
-        if (entry) onApproved(entry);
+        if (entry) onChanged(entry);
       }
     } finally {
       setSavingId(null);
@@ -1201,14 +1219,21 @@ function JournalDraftsPanel({
                 <div className="toolbar">
                   {isApproved && <span className="status green">승인됨</span>}
                   <span className={draft.warnings.length ? "status amber" : "status green"}>{draft.warnings.length ? "검토 필요" : "균형"}</span>
-                  <button
-                    className="secondary-button"
-                    disabled={isApproved || savingId === draft.transactionId || draft.lines.length === 0}
-                    onClick={() => void approveDraft(draft)}
-                  >
-                    {savingId === draft.transactionId ? <Loader2 size={16} className="spin" /> : <CheckCircle2 size={16} />}
-                    {isApproved ? "저장 완료" : "승인 저장"}
-                  </button>
+                  {isApproved ? (
+                    <button className="secondary-button" disabled={bulkSaving || savingId === draft.transactionId} onClick={() => void voidApprovedDraft(draft)}>
+                      {savingId === draft.transactionId ? <Loader2 size={16} className="spin" /> : <RefreshCcw size={16} />}
+                      승인 취소
+                    </button>
+                  ) : (
+                    <button
+                      className="secondary-button"
+                      disabled={bulkSaving || savingId === draft.transactionId || draft.lines.length === 0}
+                      onClick={() => void approveDraft(draft)}
+                    >
+                      {savingId === draft.transactionId ? <Loader2 size={16} className="spin" /> : <CheckCircle2 size={16} />}
+                      승인 저장
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="table-wrap">
