@@ -609,6 +609,34 @@ function CsvImportPanel({
   const [deletingBatchId, setDeletingBatchId] = useState<string | null>(null);
   const [importMessage, setImportMessage] = useState<{ tone: "green" | "amber" | "red"; text: string } | null>(null);
   const canImport = preview && mapping.transactionDate && mapping.description && (mapping.amount || mapping.depositAmount || mapping.withdrawalAmount);
+  const importReady = Boolean(canImport);
+  const amountMappingLabel =
+    mapping.amount ??
+    (mapping.depositAmount && mapping.withdrawalAmount
+      ? `${mapping.depositAmount} / ${mapping.withdrawalAmount}`
+      : mapping.depositAmount ?? mapping.withdrawalAmount ?? "");
+  const mappingStatusItems = [
+    {
+      title: "CSV 파일",
+      value: preview ? `${formatNumber(preview.rows.length)}행` : "미선택",
+      tone: preview ? "green" : "red"
+    },
+    {
+      title: "거래일",
+      value: mapping.transactionDate || "필요",
+      tone: mapping.transactionDate ? "green" : "red"
+    },
+    {
+      title: "내용",
+      value: mapping.description || "필요",
+      tone: mapping.description ? "green" : "red"
+    },
+    {
+      title: "금액",
+      value: amountMappingLabel || "필요",
+      tone: amountMappingLabel ? "green" : "red"
+    }
+  ] satisfies Array<{ title: string; value: string; tone: "green" | "amber" | "red" }>;
 
   async function parseFile(file: File) {
     setFileName(file.name);
@@ -756,7 +784,7 @@ function CsvImportPanel({
               <Download size={16} />
               {sampleCsvLinks[sourceType].label}
             </a>
-            <button className="primary-button" disabled={!canImport || saving} onClick={() => void submitImport()}>
+            <button className="primary-button" disabled={!importReady || saving} onClick={() => void submitImport()}>
               {saving ? <Loader2 size={17} /> : <CheckCircle2 size={17} />}
               가져오기
             </button>
@@ -801,6 +829,17 @@ function CsvImportPanel({
           </div>
 
           <div className="mapping-grid">
+            <div className="import-readiness field-wide">
+              <div className="review-row">
+                <strong>가져오기 조건</strong>
+                <span className={`status ${importReady ? "green" : "red"}`}>{importReady ? "가능" : "확인 필요"}</span>
+              </div>
+              <div className="review-list">
+                {mappingStatusItems.map((item) => (
+                  <ChecklistItem key={item.title} tone={item.tone} title={item.title} value={item.value} />
+                ))}
+              </div>
+            </div>
             {mappingFields.map((field) => (
               <div className="field" key={field.key}>
                 <label>{field.label}</label>
