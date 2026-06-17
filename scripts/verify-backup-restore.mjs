@@ -170,6 +170,7 @@ try {
   await verifyInvalidEvidenceBackup();
   await verifyInvalidEvidenceAmountBackup();
   await verifyInvalidEvidenceTransactionBackup();
+  await verifyInvalidAccountReferenceBackup();
   await verifyInvalidJournalBackup();
   await verifyInvalidOriginalImportFileBackup();
   await verifyConfirmGuard();
@@ -282,6 +283,38 @@ async function verifyInvalidEvidenceTransactionBackup() {
   assert.equal(body.code, "INVALID_BACKUP_EVIDENCE", "restore should return evidence validation code");
   assert.ok(Array.isArray(body.issues), "restore should return evidence validation issues");
   assert.ok(body.issues.some((issue) => issue.includes("연결 거래 missing-transaction")), "restore should report missing evidence transaction");
+}
+
+async function verifyInvalidAccountReferenceBackup() {
+  const invalidBackup = structuredClone(backup);
+  invalidBackup.vendors = [
+    {
+      id: "vendor-invalid-account-1",
+      name: "없는 계정 거래처",
+      defaultAccount: {
+        code: "NO_VENDOR_ACCOUNT",
+        name: "없는 거래처 기본 계정",
+        type: "EXPENSE"
+      }
+    }
+  ];
+  invalidBackup.classificationRules = [
+    {
+      id: "rule-invalid-account-1",
+      name: "없는 계정 규칙",
+      keyword: "없는계정",
+      accountCode: "NO_RULE_ACCOUNT",
+      priority: 10,
+      isActive: true
+    }
+  ];
+
+  const body = await postJson("/api/backups/restore", { backup: invalidBackup, dryRun: true }, 400);
+  assert.equal(body.ok, false, "restore should reject missing account references");
+  assert.equal(body.code, "INVALID_BACKUP_ACCOUNT_REFERENCES", "restore should return account reference validation code");
+  assert.ok(Array.isArray(body.issues), "restore should return account reference validation issues");
+  assert.ok(body.issues.some((issue) => issue.includes("기본 계정과목 NO_VENDOR_ACCOUNT")), "restore should report missing vendor account");
+  assert.ok(body.issues.some((issue) => issue.includes("계정과목 NO_RULE_ACCOUNT")), "restore should report missing classification account");
 }
 
 async function verifyInvalidDateBackup() {

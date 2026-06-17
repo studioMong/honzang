@@ -307,6 +307,19 @@ export async function POST(request: Request) {
     );
   }
 
+  const accountReferenceIssues = validateBackupAccountReferences(parsed.data);
+  if (accountReferenceIssues.length > 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_BACKUP_ACCOUNT_REFERENCES",
+        message: "백업 계정 참조 데이터가 올바르지 않습니다.",
+        issues: accountReferenceIssues
+      },
+      { status: 400 }
+    );
+  }
+
   const journalIssues = validateBackupJournalEntries(parsed.data);
   if (journalIssues.length > 0) {
     return NextResponse.json(
@@ -840,6 +853,26 @@ function validateBackupTransactions(backup: WorkspaceBackup) {
       issues.push(`${label}: 연결 가져오기 ${transaction.importBatchId}를 백업 가져오기 목록에서 찾을 수 없습니다.`);
     } else if (importBatch.sourceType !== transaction.sourceType) {
       issues.push(`${label}: 거래 출처와 연결 가져오기 출처가 일치하지 않습니다.`);
+    }
+  }
+
+  return issues;
+}
+
+function validateBackupAccountReferences(backup: WorkspaceBackup) {
+  const issues: string[] = [];
+  const accountCodes = new Set(uniqueByCode([...DEFAULT_ACCOUNTS, ...backup.accounts]).map((account) => account.code));
+
+  for (const vendor of uniqueById(backup.vendors)) {
+    const accountCode = vendor.defaultAccount?.code;
+    if (accountCode && !accountCodes.has(accountCode)) {
+      issues.push(`거래처 ${vendor.id}: 기본 계정과목 ${accountCode}를 백업 계정 목록에서 찾을 수 없습니다.`);
+    }
+  }
+
+  for (const rule of uniqueById(backup.classificationRules)) {
+    if (!accountCodes.has(rule.accountCode)) {
+      issues.push(`자동분류 ${rule.id}: 계정과목 ${rule.accountCode}를 백업 계정 목록에서 찾을 수 없습니다.`);
     }
   }
 
