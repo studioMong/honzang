@@ -372,7 +372,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const originalFileIssues = validateBackupOriginalImportFiles(parsed.data.originalImportFiles);
+  const originalFileIssues = validateBackupOriginalImportFiles(parsed.data);
   if (originalFileIssues.length > 0) {
     return NextResponse.json(
       {
@@ -1058,10 +1058,19 @@ function validateBackupJournalEntries(backup: WorkspaceBackup) {
   return issues;
 }
 
-function validateBackupOriginalImportFiles(originalImportFiles: WorkspaceBackup["originalImportFiles"]) {
-  return uniqueByImportBatchId(originalImportFiles).flatMap((file) => {
+function validateBackupOriginalImportFiles(backup: WorkspaceBackup) {
+  const importBatchIds = new Set(uniqueById(backup.importBatches).map((batch) => batch.id));
+
+  return uniqueByImportBatchId(backup.originalImportFiles).flatMap((file) => {
+    const issues: string[] = [];
+    if (!importBatchIds.has(file.importBatchId)) {
+      issues.push(`원본 CSV ${file.importBatchId}: 연결 가져오기를 백업 가져오기 목록에서 찾을 수 없습니다.`);
+    }
+
     const issue = validateOriginalFileText(file);
-    return issue ? [`원본 CSV ${file.importBatchId}: ${issue}`] : [];
+    if (issue) issues.push(`원본 CSV ${file.importBatchId}: ${issue}`);
+
+    return issues;
   });
 }
 

@@ -500,6 +500,10 @@ async function verifyInvalidOriginalImportFileBackup() {
     {
       ...backup.originalImportFiles[0],
       originalFileSize: 1
+    },
+    {
+      ...backup.originalImportFiles[0],
+      importBatchId: "missing-import-batch"
     }
   ];
 
@@ -507,7 +511,8 @@ async function verifyInvalidOriginalImportFileBackup() {
   assert.equal(body.ok, false, "restore should reject invalid original CSV backup data");
   assert.equal(body.code, "INVALID_BACKUP_ORIGINAL_FILES", "restore should return original file validation code");
   assert.ok(Array.isArray(body.issues), "restore should return original file validation issues");
-  assert.ok(body.issues.length >= 1, "restore should report inconsistent original CSV file metadata");
+  assert.ok(body.issues.length >= 2, "restore should report inconsistent original CSV file metadata and missing import batches");
+  assert.ok(body.issues.some((issue) => issue.includes("연결 가져오기")), "restore should report original CSV files linked to missing import batches");
 }
 
 async function verifyConfirmGuard() {
