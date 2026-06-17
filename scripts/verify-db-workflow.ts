@@ -4,7 +4,9 @@ import { resolve } from "node:path";
 import Papa from "papaparse";
 import { generateJournalDraft, inferMapping, summarizeTransactions } from "../src/lib/accounting";
 import { DEFAULT_COMPANY_ID } from "../src/lib/defaults";
-import type { AppAccount, AppJournalEntry, AppTransaction, CsvColumnMapping, CsvTemplate, ParsedCsvRow, SourceType } from "../src/types";
+import type { AppAccount, AppJournalEntry, AppTransaction, CsvColumnMapping, CsvTemplate, ParsedCsvRow, ReviewItem, SourceType } from "../src/types";
+
+const evidenceAmountMismatchReason = "연결 증빙 합계가 거래금액과 일치하지 않습니다.";
 
 const baseUrl = (process.env.VERIFY_DB_WORKFLOW_BASE_URL ?? "http://127.0.0.1:3000").replace(/\/$/, "");
 const marker = `verify-db-workflow-${Date.now()}`;
@@ -89,6 +91,22 @@ try {
   assert.ok(evidencePayload.evidence?.id, "evidence create should return an id");
   cleanup.evidenceIds.push(evidencePayload.evidence.id);
 
+  const transactionAfterEvidence = await requestJson<{ transactions?: AppTransaction[] }>("/api/transactions");
+  const attachedTransaction = transactionAfterEvidence.transactions?.find((transaction) => transaction.id === importedTransactions[0]?.id);
+  assert.equal(attachedTransaction?.evidenceStatus, "ATTACHED", "mismatched evidence amount should mark linked transaction as attached");
+
+  const reviewPayload = await requestJson<{ reviewItems?: ReviewItem[] }>("/api/reviews");
+  const workflowReviews = reviewPayload.reviewItems?.filter((item) => item.transaction?.description.includes(marker)) ?? [];
+  const mismatchReview = workflowReviews.find((item) => item.reason.includes(evidenceAmountMismatchReason));
+  assert.ok(mismatchReview, "mismatched evidence amount should create a review item");
+  assert.equal(mismatchReview?.severity, "DANGER", "large evidence amount mismatch should create a danger review");
+  assert.match(mismatchReview?.recommendation ?? "", /차이/, "mismatch review should explain the amount difference");
+  const reviewSnapshotRows = buildReviewSnapshotRows(workflowReviews);
+  assert.ok(
+    reviewSnapshotRows.some((row) => String(row.사유).includes(evidenceAmountMismatchReason)),
+    "review snapshot rows should preserve the evidence mismatch reason"
+  );
+
   const approvedEntries: AppJournalEntry[] = [];
   for (const transaction of importedTransactions) {
     const draft = generateJournalDraft(transaction);
@@ -126,6 +144,7 @@ try {
       calculatedPayload: {
         marker,
         summary: summarizeTransactions(importedTransactions),
+        reviewItems: reviewSnapshotRows,
         transactionCount: importedTransactions.length,
         journalEntryCount: approvedEntries.length,
         approvedJournalEntryIds: approvedEntries.map((entry) => entry.id)
@@ -138,7 +157,9 @@ try {
   cleanup.taxReportIds.push(reportPayload.taxReport.id);
 
   const reports = await requestJson<{ taxReports?: Array<{ id: string; calculatedPayload?: unknown }> }>("/api/reports");
-  assert.ok(reports.taxReports?.some((report) => report.id === reportPayload.taxReport?.id), "saved report should be listed");
+  const savedReport = reports.taxReports?.find((report) => report.id === reportPayload.taxReport?.id);
+  assert.ok(savedReport, "saved report should be listed");
+  assertSnapshotReviewItemsContainMismatch(savedReport?.calculatedPayload, "saved report payload");
 
   const closingPeriod = transactionDates[0]?.slice(0, 7);
   assert.equal(closingPeriod, "2026-06", "workflow fixture should run in the June 2026 period");
@@ -153,6 +174,7 @@ try {
         transactionCount: importedTransactions.length,
         journalEntryCount: approvedEntries.length,
         report: {
+          reviewItems: reviewSnapshotRows,
           filingReadinessRows: [
             { 점검: "법인 기본정보", 톤: "green" },
             { 점검: "자료 수집", 톤: "green" },
@@ -167,6 +189,10 @@ try {
   assert.equal(closePayload.ok, true, "closing period lock should be created");
   assert.equal(closePayload.mode, "database", "closing period lock should use database mode");
   assert.equal(closePayload.closingPeriod?.period, closingPeriod, "closing period lock should return the requested period");
+  const closingPeriods = await requestJson<{ closingPeriods?: Array<{ period: string; summaryPayload?: unknown }> }>("/api/closing-periods");
+  const savedClosingPeriod = closingPeriods.closingPeriods?.find((period) => period.period === closingPeriod);
+  assert.ok(savedClosingPeriod, "closing period snapshot should be listed");
+  assertSnapshotReviewItemsContainMismatch(savedClosingPeriod?.summaryPayload, "closing period summary payload");
 
   const lockedTransactionPayload = await requestJson<{ ok?: boolean; code?: string; message?: string }>("/api/transactions", {
     method: "POST",
@@ -225,6 +251,7 @@ try {
   assert.equal(evidenceDeletePayload.mode, "database", "evidence delete should use database mode");
   assert.equal(evidenceDeletePayload.deletedEvidenceId, evidencePayload.evidence.id, "evidence delete should return deleted id");
   assert.equal(evidenceDeletePayload.transactionId, importedTransactions[0]?.id, "evidence delete should report linked transaction");
+  assert.equal(evidenceDeletePayload.evidenceStatus, "UNCHECKED", "deleting the only linked evidence should restore unchecked status for deposit transactions");
   cleanup.evidenceIds = cleanup.evidenceIds.filter((id) => id !== evidencePayload.evidence?.id);
 
   const auditEvents = await requestJson<{ auditEvents?: Array<{ action: string; entityId?: string | null }> }>("/api/audit-events");
@@ -336,6 +363,38 @@ function isBalanced(draft: ReturnType<typeof generateJournalDraft>) {
   const debit = draft.lines.reduce((sum, line) => sum + line.debitAmount, 0);
   const credit = draft.lines.reduce((sum, line) => sum + line.creditAmount, 0);
   return draft.lines.length > 0 && Math.round(debit) === Math.round(credit);
+}
+
+function buildReviewSnapshotRows(items: ReviewItem[]) {
+  return items.map((item) => ({
+    심각도: item.severity,
+    사유: item.reason,
+    거래일: item.transaction?.transactionDate ?? "",
+    적요: item.transaction?.description ?? "",
+    거래처: item.transaction?.counterparty ?? "",
+    금액: item.transaction?.withdrawalAmount || item.transaction?.depositAmount || 0
+  }));
+}
+
+function assertSnapshotReviewItemsContainMismatch(payload: unknown, label: string) {
+  const reviewItems = extractSnapshotReviewItems(payload);
+  assert.ok(Array.isArray(reviewItems), `${label} should include reviewItems`);
+  assert.ok(
+    reviewItems.some((item) => isRecord(item) && typeof item.사유 === "string" && item.사유.includes(evidenceAmountMismatchReason)),
+    `${label} should preserve evidence mismatch review rows`
+  );
+}
+
+function extractSnapshotReviewItems(payload: unknown): unknown[] {
+  if (!isRecord(payload)) return [];
+  if (Array.isArray(payload.reviewItems)) return payload.reviewItems;
+  const report = payload.report;
+  if (isRecord(report) && Array.isArray(report.reviewItems)) return report.reviewItems;
+  return [];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 async function cleanupCreatedData() {
