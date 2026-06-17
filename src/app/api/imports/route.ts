@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createHash } from "node:crypto";
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
@@ -422,25 +422,28 @@ export async function POST(request: Request) {
   });
 
   if (existingBatch) {
-    const csvTemplate = await saveCsvTemplate(db, {
-      companyId: company.id,
-      sourceType: payload.sourceType as SourceType,
-      headers: payload.headers,
-      mapping: payload.mapping as CsvColumnMapping
+    const duplicateImport = await db.$transaction(async (tx) => {
+      const csvTemplate = await saveCsvTemplate(tx, {
+        companyId: company.id,
+        sourceType: payload.sourceType as SourceType,
+        headers: payload.headers,
+        mapping: payload.mapping as CsvColumnMapping
+      });
+      const importBatch =
+        !existingBatch.originalFileText && payload.originalFileText
+          ? await tx.importBatch.update({
+              where: { id: existingBatch.id },
+              data: {
+                originalFileText: payload.originalFileText,
+                originalFileMimeType: payload.originalFileMimeType ?? "text/csv",
+                originalFileSize: payload.originalFileSize ?? payload.originalFileText.length
+              }
+            })
+          : existingBatch;
+      return { csvTemplate, importBatch };
     });
-    const importBatch =
-      !existingBatch.originalFileText && payload.originalFileText
-        ? await db.importBatch.update({
-            where: { id: existingBatch.id },
-            data: {
-              originalFileText: payload.originalFileText,
-              originalFileMimeType: payload.originalFileMimeType ?? "text/csv",
-              originalFileSize: payload.originalFileSize ?? payload.originalFileText.length
-            }
-          })
-        : existingBatch;
     const saved = await db.transaction.findMany({
-      where: { importBatchId: importBatch.id },
+      where: { importBatchId: duplicateImport.importBatch.id },
       include: {
         suggestedAccount: true,
         confirmedAccount: true
@@ -453,9 +456,9 @@ export async function POST(request: Request) {
       ok: true,
       mode: "database",
       duplicate: true,
-      importBatchId: importBatch.id,
-      importBatch: serializeImportBatch(importBatch),
-      csvTemplate: serializeCsvTemplate(csvTemplate),
+      importBatchId: duplicateImport.importBatch.id,
+      importBatch: serializeImportBatch(duplicateImport.importBatch),
+      csvTemplate: serializeCsvTemplate(duplicateImport.csvTemplate),
       originalFileHash,
       transactions: serialized,
       summary: summarizeTransactions(serialized)
@@ -484,31 +487,31 @@ export async function POST(request: Request) {
   const appVendors = vendors.map(serializeVendor);
   const classified = normalized.map((transaction) => applyClassificationRules(applyVendorDefaults(transaction, appVendors), appRules, appAccounts));
 
-  const importBatch = await db.importBatch.create({
-    data: {
-      companyId: company.id,
-      sourceType: payload.sourceType,
-      originalFileName: payload.originalFileName,
-      originalFileHash,
-      originalFileText: payload.originalFileText ?? null,
-      originalFileMimeType: payload.originalFileMimeType ?? (payload.originalFileText ? "text/csv" : null),
-      originalFileSize: payload.originalFileSize ?? payload.originalFileText?.length ?? null,
-      rowCount: classified.length,
-      mapping: payload.mapping
-    }
-  });
-
   const accountIdByCode = new Map(accounts.map((account) => [account.code, account.id]));
-  const csvTemplate = await saveCsvTemplate(db, {
-    companyId: company.id,
-    sourceType: payload.sourceType as SourceType,
-    headers: payload.headers,
-    mapping: payload.mapping as CsvColumnMapping
-  });
 
-  await db.$transaction(
-    classified.map((transaction, index) =>
-      db.transaction.create({
+  const createdImport = await db.$transaction(async (tx) => {
+    const importBatch = await tx.importBatch.create({
+      data: {
+        companyId: company.id,
+        sourceType: payload.sourceType,
+        originalFileName: payload.originalFileName,
+        originalFileHash,
+        originalFileText: payload.originalFileText ?? null,
+        originalFileMimeType: payload.originalFileMimeType ?? (payload.originalFileText ? "text/csv" : null),
+        originalFileSize: payload.originalFileSize ?? payload.originalFileText?.length ?? null,
+        rowCount: classified.length,
+        mapping: payload.mapping
+      }
+    });
+    const csvTemplate = await saveCsvTemplate(tx, {
+      companyId: company.id,
+      sourceType: payload.sourceType as SourceType,
+      headers: payload.headers,
+      mapping: payload.mapping as CsvColumnMapping
+    });
+
+    for (const [index, transaction] of classified.entries()) {
+      await tx.transaction.create({
         data: {
           companyId: company.id,
           importBatchId: importBatch.id,
@@ -528,25 +531,28 @@ export async function POST(request: Request) {
           suggestedAccountId: transaction.suggestedAccount ? accountIdByCode.get(transaction.suggestedAccount.code) : null,
           evidenceStatus: transaction.evidenceStatus
         }
-      })
-    )
-  );
-  await recordAuditEvent(db, {
-    companyId: company.id,
-    action: "IMPORT_CREATE",
-    entityType: "IMPORT_BATCH",
-    entityId: importBatch.id,
-    summary: `${payload.originalFileName} 파일에서 거래 ${classified.length}건을 가져왔습니다.`,
-    metadata: {
-      sourceType: payload.sourceType,
-      rowCount: classified.length,
-      hasOriginalFile: Boolean(payload.originalFileText),
-      originalFileHash
+      });
     }
+
+    await recordAuditEvent(tx, {
+      companyId: company.id,
+      action: "IMPORT_CREATE",
+      entityType: "IMPORT_BATCH",
+      entityId: importBatch.id,
+      summary: `${payload.originalFileName} 파일에서 거래 ${classified.length}건을 가져왔습니다.`,
+      metadata: {
+        sourceType: payload.sourceType,
+        rowCount: classified.length,
+        hasOriginalFile: Boolean(payload.originalFileText),
+        originalFileHash
+      }
+    });
+
+    return { csvTemplate, importBatch };
   });
 
   const saved = await db.transaction.findMany({
-    where: { importBatchId: importBatch.id },
+    where: { importBatchId: createdImport.importBatch.id },
     include: {
       suggestedAccount: true,
       confirmedAccount: true
@@ -559,9 +565,9 @@ export async function POST(request: Request) {
     ok: true,
     mode: "database",
     duplicate: false,
-    importBatchId: importBatch.id,
-    importBatch: serializeImportBatch(importBatch),
-    csvTemplate: serializeCsvTemplate(csvTemplate),
+    importBatchId: createdImport.importBatch.id,
+    importBatch: serializeImportBatch(createdImport.importBatch),
+    csvTemplate: serializeCsvTemplate(createdImport.csvTemplate),
     originalFileHash,
     transactions: serialized,
     summary: summarizeTransactions(serialized)
@@ -569,7 +575,7 @@ export async function POST(request: Request) {
 }
 
 async function saveCsvTemplate(
-  db: PrismaClient,
+  db: PrismaClient | Prisma.TransactionClient,
   input: {
     companyId: string;
     sourceType: SourceType;

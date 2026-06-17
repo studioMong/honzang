@@ -484,8 +484,18 @@ async function importSample(companyId: string, sourceType: SourceType, filePath:
     .map((row) => remapRowHeaders(row, headerMap))
     .map((row, index) => uniqueRow(row, mapping.description, mapping.transactionDate, index));
   const originalFileText = Papa.unparse(rows, { columns: headers });
-
-  const payload = await requestJson<{
+  const importBody = {
+    companyId,
+    sourceType,
+    originalFileName: `${marker}-${sourceType}.csv`,
+    originalFileText,
+    originalFileMimeType: "text/csv",
+    originalFileSize: Buffer.byteLength(originalFileText, "utf8"),
+    mapping,
+    headers,
+    rows
+  };
+  type ImportSampleResponse = {
     ok?: boolean;
     mode?: string;
     duplicate?: boolean;
@@ -493,19 +503,11 @@ async function importSample(companyId: string, sourceType: SourceType, filePath:
     importBatch?: { hasOriginalFile?: boolean; originalFileName?: string };
     csvTemplate?: CsvTemplate;
     transactions?: AppTransaction[];
-  }>("/api/imports", {
+  };
+
+  const payload = await requestJson<ImportSampleResponse>("/api/imports", {
     method: "POST",
-    body: {
-      companyId,
-      sourceType,
-      originalFileName: `${marker}-${sourceType}.csv`,
-      originalFileText,
-      originalFileMimeType: "text/csv",
-      originalFileSize: Buffer.byteLength(originalFileText, "utf8"),
-      mapping,
-      headers,
-      rows
-    }
+    body: importBody
   });
 
   assert.equal(payload.ok, true, `${sourceType} import should succeed`);
@@ -517,6 +519,18 @@ async function importSample(companyId: string, sourceType: SourceType, filePath:
   assert.equal(payload.csvTemplate?.headerSignature, headers.join("|"), `${sourceType} template should track the imported header signature`);
   assert.deepEqual(payload.csvTemplate?.mapping, mapping, `${sourceType} template should preserve the submitted mapping`);
   assert.equal(payload.transactions?.length, rowCount, `${sourceType} import should return imported transactions`);
+
+  const duplicatePayload = await requestJson<ImportSampleResponse>("/api/imports", {
+    method: "POST",
+    body: importBody
+  });
+  assert.equal(duplicatePayload.ok, true, `${sourceType} duplicate import should succeed`);
+  assert.equal(duplicatePayload.mode, "database", `${sourceType} duplicate import should use database mode`);
+  assert.equal(duplicatePayload.duplicate, true, `${sourceType} duplicate import should be flagged`);
+  assert.equal(duplicatePayload.importBatchId, payload.importBatchId, `${sourceType} duplicate import should reuse the existing batch`);
+  assert.equal(duplicatePayload.importBatch?.hasOriginalFile, true, `${sourceType} duplicate import should preserve the original CSV`);
+  assert.equal(duplicatePayload.transactions?.length, rowCount, `${sourceType} duplicate import should return existing transactions`);
+
   const companyAfterImport = await requestJson<{ csvTemplates?: CsvTemplate[] }>("/api/companies");
   assert.ok(
     companyAfterImport.csvTemplates?.some((template) => isSameCsvTemplate(template, sourceType, headers, mapping)),
