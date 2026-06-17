@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import Papa from "papaparse";
-import { applyClassificationRules, applyVendorDefaults, generateJournalDraft, inferMapping, normalizeCsvRow, summarizeTransactions } from "../src/lib/accounting";
+import { applyClassificationRules, applyVendorDefaults, generateJournalDraft, inferMapping, normalizeCsvRow, parseMoney, summarizeTransactions } from "../src/lib/accounting";
 import { DEFAULT_ACCOUNTS } from "../src/lib/defaults";
 import { buildEvidenceAmountReviewItems, resolveTransactionEvidenceStatus, type EvidenceAmountReviewTransaction } from "../src/lib/server/evidence-amount-reviews";
 import type { AppClassificationRule, AppTransaction, ParsedCsvRow, SourceType } from "../src/types";
@@ -68,6 +68,10 @@ const sampleCases: SampleCase[] = [
     expectedFirstAccountCode: "401"
   }
 ];
+
+assert.equal(parseMoney("(1,234원)"), 1_234, "parenthesized money should parse as an absolute amount");
+assert.equal(parseMoney("1,234-"), 1_234, "trailing negative money should parse as an absolute amount");
+assert.equal(parseMoney("-1,234"), 1_234, "leading negative money should parse as an absolute amount");
 
 function parseSampleCsv(filePath: string) {
   const csv = readFileSync(resolve(filePath), "utf8");

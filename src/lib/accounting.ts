@@ -18,7 +18,10 @@ const keywordAccountRules: Array<{ keywords: string[]; code: string; reason?: st
 export function parseMoney(value: unknown): number {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
   if (typeof value !== "string") return 0;
-  const normalized = value.replace(/[,\s원₩]/g, "").replace(/[()]/g, "-");
+  const compact = value.trim().replace(/[,\s원₩]/g, "");
+  const parenthesized = compact.match(/^\((.+)\)$/);
+  const trailingNegative = compact.match(/^(.+)-$/);
+  const normalized = parenthesized ? `-${parenthesized[1]}` : trailingNegative ? `-${trailingNegative[1]}` : compact;
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? Math.abs(parsed) : 0;
 }
