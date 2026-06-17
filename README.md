@@ -51,6 +51,7 @@ Railway는 GitHub 저장소를 연결한 뒤 다음 설정을 사용합니다.
 
 - 회사 기본 설정
 - 1인법인 필수정보 상태 체크
+- 설치형 PWA 기본 지원
 - 통장/카드/홈택스/PG CSV 업로드
 - CSV 컬럼 매핑
 - 거래 자동 분류 초안
@@ -70,3 +71,7 @@ Railway는 GitHub 저장소를 연결한 뒤 다음 설정을 사용합니다.
 ```bash
 npm run verify:samples
 ```
+
+## 웹/앱 지원
+
+혼자장부는 Next.js 웹앱으로 실행하며, `manifest.webmanifest`와 service worker를 통해 설치형 PWA 기본 동작을 지원합니다. 네트워크가 끊긴 상태에서 앱 화면 이동이 실패하면 `public/offline.html`을 표시합니다.

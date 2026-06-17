@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#116149" />
+    <title>혼자장부 오프라인</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #eef2f6;
+        --surface: #ffffff;
+        --ink: #18212b;
+        --muted: #667085;
+        --green: #116149;
+        --line: #d9e0ea;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        display: grid;
+        min-height: 100vh;
+        margin: 0;
+        place-items: center;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+        letter-spacing: 0;
+      }
+
+      main {
+        width: min(460px, calc(100vw - 32px));
+        padding: 28px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+
+      .mark {
+        display: grid;
+        width: 44px;
+        height: 44px;
+        place-items: center;
+        border-radius: 8px;
+        background: var(--green);
+        color: #fff;
+        font-size: 20px;
+        font-weight: 800;
+      }
+
+      h1 {
+        margin: 18px 0 8px;
+        font-size: 24px;
+        letter-spacing: 0;
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      a {
+        display: inline-flex;
+        align-items: center;
+        min-height: 40px;
+        margin-top: 20px;
+        padding: 0 14px;
+        border-radius: 8px;
+        background: var(--green);
+        color: #fff;
+        font-weight: 700;
+        text-decoration: none;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark">장</div>
+      <h1>오프라인 상태입니다</h1>
+      <p>네트워크 연결이 복구되면 혼자장부가 다시 최신 장부 데이터를 불러옵니다.</p>
+      <a href="/">다시 시도</a>
+    </main>
+  </body>
+</html>

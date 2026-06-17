@@ -144,6 +144,11 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
     return () => window.clearTimeout(timer);
   }, []);
 
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production" || !("serviceWorker" in navigator)) return;
+    void navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+  }, []);
+
   async function updateTransaction(id: string, patch: Partial<AppTransaction> & { confirmedAccountId?: string }) {
     const confirmedAccount = patch.confirmedAccountId ? accounts.find((account) => account.id === patch.confirmedAccountId) ?? null : undefined;
     setTransactions((current) =>
