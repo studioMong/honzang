@@ -25,6 +25,7 @@ import type {
   AppClassificationRule,
   AppCompany,
   AppEvidence,
+  AppImportBatch,
   AppJournalEntry,
   AppTaxReport,
   AppTransaction,
@@ -37,7 +38,7 @@ import type {
 } from "@/types";
 import { DEFAULT_ACCOUNTS, DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/defaults";
 import { applyClassificationRules, generateJournalDraft, inferMapping, normalizeCsvRow, parseMoney, summarizeTransactions } from "@/lib/accounting";
-import { formatDate, formatKRW, formatNumber } from "@/lib/format";
+import { formatDate, formatDateTime, formatKRW, formatNumber } from "@/lib/format";
 import { sampleCompany, sampleEvidences, sampleJournalEntries, sampleTaxReports, sampleTransactions } from "@/lib/sample-data";
 
 export type ViewKey = "dashboard" | "imports" | "transactions" | "evidences" | "journals" | "reviews" | "reports" | "settings";
@@ -84,6 +85,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
   const [accounts, setAccounts] = useState<AppAccount[]>(DEFAULT_ACCOUNTS);
   const [csvTemplates, setCsvTemplates] = useState<CsvTemplate[]>([]);
   const [classificationRules, setClassificationRules] = useState<AppClassificationRule[]>([]);
+  const [importBatches, setImportBatches] = useState<AppImportBatch[]>([]);
   const [transactions, setTransactions] = useState<AppTransaction[]>(sampleTransactions);
   const [evidences, setEvidences] = useState<AppEvidence[]>(sampleEvidences);
   const [journalEntries, setJournalEntries] = useState<AppJournalEntry[]>(sampleJournalEntries);
@@ -101,17 +103,20 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
         fetch("/api/companies", { cache: "no-store" }),
         fetch("/api/transactions", { cache: "no-store" })
       ]);
+      const importResponse = await fetch("/api/imports", { cache: "no-store" });
       const evidenceResponse = await fetch("/api/evidences", { cache: "no-store" });
       const journalResponse = await fetch("/api/journals", { cache: "no-store" });
       const reportResponse = await fetch("/api/reports", { cache: "no-store" });
       const companyPayload = await companyResponse.json();
       const transactionPayload = await transactionResponse.json();
+      const importPayload = await importResponse.json();
       const evidencePayload = await evidenceResponse.json();
       const journalPayload = await journalResponse.json();
       const reportPayload = await reportResponse.json();
       const isDatabaseMode =
         companyPayload.mode === "database" ||
         transactionPayload.mode === "database" ||
+        importPayload.mode === "database" ||
         evidencePayload.mode === "database" ||
         journalPayload.mode === "database" ||
         reportPayload.mode === "database";
@@ -119,6 +124,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       setAccounts(companyPayload.accounts ?? DEFAULT_ACCOUNTS);
       setCsvTemplates(companyPayload.csvTemplates ?? []);
       setClassificationRules(companyPayload.classificationRules ?? []);
+      setImportBatches(importPayload.importBatches ?? []);
       setTransactions(isDatabaseMode ? transactionPayload.transactions ?? [] : transactionPayload.transactions?.length ? transactionPayload.transactions : sampleTransactions);
       setEvidences(isDatabaseMode ? evidencePayload.evidences ?? [] : evidencePayload.evidences?.length ? evidencePayload.evidences : sampleEvidences);
       setJournalEntries(journalPayload.journalEntries ?? []);
@@ -129,6 +135,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       setAccounts(DEFAULT_ACCOUNTS);
       setCsvTemplates([]);
       setClassificationRules([]);
+      setImportBatches([]);
       setTransactions(sampleTransactions);
       setEvidences(sampleEvidences);
       setJournalEntries(sampleJournalEntries);
@@ -236,11 +243,15 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
           <CsvImportPanel
             companyId={company.id || DEFAULT_COMPANY_ID}
             accounts={accounts}
+            importBatches={importBatches}
             csvTemplates={csvTemplates}
             classificationRules={classificationRules}
             onImported={(imported) => {
               setTransactions((current) => mergeTransactions(current, imported));
               setActiveView("transactions");
+            }}
+            onImportBatch={(importBatch) => {
+              setImportBatches((current) => mergeImportBatches(current, importBatch));
             }}
           />
         )}
@@ -379,15 +390,19 @@ function Dashboard({
 function CsvImportPanel({
   companyId,
   accounts,
+  importBatches,
   csvTemplates,
   classificationRules,
-  onImported
+  onImported,
+  onImportBatch
 }: {
   companyId: string;
   accounts: AppAccount[];
+  importBatches: AppImportBatch[];
   csvTemplates: CsvTemplate[];
   classificationRules: AppClassificationRule[];
   onImported: (transactions: AppTransaction[]) => void;
+  onImportBatch: (importBatch: AppImportBatch) => void;
 }) {
   const [sourceType, setSourceType] = useState<SourceType>("BANK");
   const [fileName, setFileName] = useState("");
@@ -432,6 +447,7 @@ function CsvImportPanel({
       const payload = await response.json();
       if (payload.transactions?.length) {
         saveLocalMapping(sourceType, preview.headers, mapping);
+        if (payload.importBatch) onImportBatch(payload.importBatch);
         setImportMessage({
           tone: payload.duplicate ? "amber" : "green",
           text: payload.duplicate ? "이미 가져온 파일입니다. 기존 거래를 다시 불러왔습니다." : `${formatNumber(payload.transactions.length)}건을 가져왔습니다.`
@@ -528,6 +544,43 @@ function CsvImportPanel({
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <h2 className="panel-title">최근 업로드</h2>
+          <span className="status blue">{formatNumber(importBatches.length)}개</span>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>가져온 시간</th>
+                <th>자료 유형</th>
+                <th>파일</th>
+                <th className="amount">행</th>
+                <th>해시</th>
+              </tr>
+            </thead>
+            <tbody>
+              {importBatches.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="empty-cell">아직 업로드한 CSV가 없습니다.</td>
+                </tr>
+              ) : (
+                importBatches.map((batch) => (
+                  <tr key={batch.id}>
+                    <td>{formatDateTime(batch.importedAt)}</td>
+                    <td>{SOURCE_TYPE_LABELS[batch.sourceType]}</td>
+                    <td>{batch.originalFileName}</td>
+                    <td className="amount">{formatNumber(batch.rowCount)}</td>
+                    <td>{batch.originalFileHash ? batch.originalFileHash.slice(0, 12) : "-"}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
     </div>
@@ -2074,6 +2127,12 @@ function mergeTransactions(current: AppTransaction[], incoming: AppTransaction[]
     byId.set(transaction.id, transaction);
   });
   return [...byId.values()].sort((left, right) => right.transactionDate.localeCompare(left.transactionDate));
+}
+
+function mergeImportBatches(current: AppImportBatch[], incoming: AppImportBatch) {
+  const byId = new Map(current.map((batch) => [batch.id, batch]));
+  byId.set(incoming.id, incoming);
+  return [...byId.values()].sort((left, right) => right.importedAt.localeCompare(left.importedAt)).slice(0, 50);
 }
 
 function daysBetween(left: Date, right: Date) {

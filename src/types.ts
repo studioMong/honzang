@@ -145,6 +145,15 @@ export type AppClassificationRule = {
   isActive: boolean;
 };
 
+export type AppImportBatch = {
+  id: string;
+  sourceType: SourceType;
+  originalFileName: string;
+  originalFileHash?: string | null;
+  rowCount: number;
+  importedAt: string;
+};
+
 export type ParsedCsvRow = Record<string, string | number | null | undefined>;
 
 export type ImportPreview = {

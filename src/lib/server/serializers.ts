@@ -1,5 +1,5 @@
-import type { Account, ClassificationRule, Evidence, JournalEntry, JournalLine, TaxReport, Transaction } from "@prisma/client";
-import type { AppAccount, AppClassificationRule, AppEvidence, AppJournalEntry, AppTaxReport, AppTransaction } from "@/types";
+import type { Account, ClassificationRule, Evidence, ImportBatch, JournalEntry, JournalLine, TaxReport, Transaction } from "@prisma/client";
+import type { AppAccount, AppClassificationRule, AppEvidence, AppImportBatch, AppJournalEntry, AppTaxReport, AppTransaction } from "@/types";
 
 type TransactionWithAccounts = Transaction & {
   suggestedAccount?: Account | null;
@@ -36,6 +36,17 @@ export function serializeClassificationRule(
     sourceType: rule.sourceType,
     priority: rule.priority,
     isActive: rule.isActive
+  };
+}
+
+export function serializeImportBatch(importBatch: ImportBatch): AppImportBatch {
+  return {
+    id: importBatch.id,
+    sourceType: importBatch.sourceType,
+    originalFileName: importBatch.originalFileName,
+    originalFileHash: importBatch.originalFileHash,
+    rowCount: importBatch.rowCount,
+    importedAt: importBatch.importedAt.toISOString()
   };
 }
 

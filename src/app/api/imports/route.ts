@@ -5,7 +5,7 @@ import { DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
 import { applyClassificationRules, normalizeCsvRow, summarizeTransactions } from "@/lib/accounting";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
-import { serializeAccount, serializeClassificationRule, serializeTransaction } from "@/lib/server/serializers";
+import { serializeAccount, serializeClassificationRule, serializeImportBatch, serializeTransaction } from "@/lib/server/serializers";
 import type { CsvColumnMapping, ParsedCsvRow, SourceType } from "@/types";
 
 const mappingSchema = z.object({
@@ -29,6 +29,23 @@ const importSchema = z.object({
   headers: z.array(z.string()).optional().default([]),
   rows: z.array(z.record(z.string(), z.union([z.string(), z.number(), z.null()]))).min(1).max(2000)
 });
+
+export async function GET() {
+  const db = getPrisma();
+
+  if (!db) {
+    return NextResponse.json({ importBatches: [], mode: "sample" });
+  }
+
+  const company = await ensureDefaultCompany(db);
+  const importBatches = await db.importBatch.findMany({
+    where: { companyId: company.id },
+    orderBy: { importedAt: "desc" },
+    take: 50
+  });
+
+  return NextResponse.json({ importBatches: importBatches.map(serializeImportBatch), mode: "database" });
+}
 
 export async function POST(request: Request) {
   const parsed = importSchema.safeParse(await request.json());
@@ -87,6 +104,7 @@ export async function POST(request: Request) {
       mode: "database",
       duplicate: true,
       importBatchId: existingBatch.id,
+      importBatch: serializeImportBatch(existingBatch),
       originalFileHash,
       transactions: serialized,
       summary: summarizeTransactions(serialized)
@@ -192,6 +210,7 @@ export async function POST(request: Request) {
     mode: "database",
     duplicate: false,
     importBatchId: importBatch.id,
+    importBatch: serializeImportBatch(importBatch),
     originalFileHash,
     transactions: serialized,
     summary: summarizeTransactions(serialized)
