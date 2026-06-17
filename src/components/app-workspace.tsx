@@ -56,6 +56,11 @@ export type ViewKey = "dashboard" | "imports" | "transactions" | "evidences" | "
 type StatusTone = "green" | "amber" | "red" | "blue";
 type JournalDraft = ReturnType<typeof generateJournalDraft>;
 type JournalDraftFilter = "ALL" | "READY" | "REVIEW" | "APPROVED";
+type PanelMessage = {
+  tone: "green" | "amber" | "red";
+  text: string;
+  details?: string[];
+};
 type MappingSourceState = {
   type: "database" | "local" | "inferred" | "edited";
   label: string;
@@ -897,7 +902,7 @@ function CsvImportPanel({
   const [mappingSource, setMappingSource] = useState<MappingSourceState | null>(null);
   const [saving, setSaving] = useState(false);
   const [deletingBatchId, setDeletingBatchId] = useState<string | null>(null);
-  const [importMessage, setImportMessage] = useState<{ tone: "green" | "amber" | "red"; text: string } | null>(null);
+  const [importMessage, setImportMessage] = useState<PanelMessage | null>(null);
   const canImport = preview && mapping.transactionDate && mapping.description && (mapping.amount || mapping.depositAmount || mapping.withdrawalAmount);
   const importReady = Boolean(canImport);
   const amountMappingLabel =
@@ -1024,7 +1029,7 @@ function CsvImportPanel({
         });
         onImported(payload.transactions);
       } else if (!response.ok) {
-        setImportMessage({ tone: "red", text: "가져오기에 실패했습니다. CSV 매핑과 행 데이터를 확인해 주세요." });
+        setImportMessage(toImportErrorMessage(payload));
       }
     } finally {
       setSaving(false);
@@ -1111,7 +1116,7 @@ function CsvImportPanel({
         </div>
         <div className="panel-body split">
           <div>
-            {importMessage && <div className={`import-message status ${importMessage.tone}`}>{importMessage.text}</div>}
+            {importMessage && <PanelMessageView message={importMessage} />}
             <label className="file-drop">
               <input
                 type="file"
@@ -1238,6 +1243,42 @@ function CsvImportPanel({
       </section>
     </div>
   );
+}
+
+function PanelMessageView({ message }: { message: PanelMessage }) {
+  return (
+    <div className={`panel-message ${message.tone}`}>
+      <strong>{message.text}</strong>
+      {message.details?.length ? (
+        <ul>
+          {message.details.map((detail) => (
+            <li key={detail}>{detail}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+function toImportErrorMessage(payload: unknown): PanelMessage {
+  const fallback = "가져오기에 실패했습니다. CSV 매핑과 행 데이터를 확인해 주세요.";
+  if (!isRecord(payload)) return { tone: "red", text: fallback };
+
+  const message = typeof payload.message === "string" && payload.message.trim() ? payload.message : fallback;
+  const issueDetails = Array.isArray(payload.issues)
+    ? payload.issues
+        .filter((issue): issue is string => typeof issue === "string" && issue.trim().length > 0)
+    : [];
+  const details =
+    issueDetails.length > 8
+      ? [...issueDetails.slice(0, 8), `외 ${formatNumber(issueDetails.length - 8)}개 오류가 더 있습니다.`]
+      : issueDetails;
+
+  return {
+    tone: "red",
+    text: message,
+    details: details.length > 0 ? details : undefined
+  };
 }
 
 function CsvGuidePanel() {
