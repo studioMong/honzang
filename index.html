@@ -1,0 +1,691 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>혼자장부 프로젝트 정리</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17202a;
+      --muted: #586575;
+      --line: #d8dee8;
+      --soft: #f5f7fa;
+      --panel: #ffffff;
+      --accent: #116149;
+      --accent-soft: #e7f4ef;
+      --warn: #8a4b08;
+      --warn-soft: #fff4df;
+      --danger: #9b2c2c;
+      --danger-soft: #fff0f0;
+      --code: #243447;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+      line-height: 1.65;
+      color: var(--ink);
+      background: #eef2f6;
+    }
+
+    .page {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 32px 20px 56px;
+    }
+
+    header {
+      padding: 32px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 34px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 0 0 16px;
+      padding-bottom: 8px;
+      font-size: 24px;
+      border-bottom: 1px solid var(--line);
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 22px 0 10px;
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 12px;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 17px;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 20px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--soft);
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    main {
+      margin-top: 18px;
+      display: grid;
+      gap: 18px;
+    }
+
+    section {
+      padding: 28px 32px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    ul,
+    ol {
+      margin: 10px 0 16px 22px;
+      padding: 0;
+    }
+
+    li {
+      margin: 6px 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0 18px;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      background: var(--soft);
+      font-weight: 700;
+    }
+
+    code {
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: #edf1f5;
+      color: var(--code);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+    }
+
+    pre {
+      overflow: auto;
+      padding: 16px;
+      border-radius: 8px;
+      background: #18212b;
+      color: #eef5ff;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    pre code {
+      padding: 0;
+      background: transparent;
+      color: inherit;
+    }
+
+    .callout {
+      margin: 16px 0;
+      padding: 14px 16px;
+      border-left: 4px solid var(--accent);
+      background: var(--accent-soft);
+      border-radius: 6px;
+    }
+
+    .warning {
+      border-left-color: var(--warn);
+      background: var(--warn-soft);
+    }
+
+    .danger {
+      border-left-color: var(--danger);
+      background: var(--danger-soft);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .box {
+      padding: 16px;
+      background: var(--soft);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .box h3 {
+      margin-top: 0;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 760px) {
+      .page {
+        padding: 18px 12px 40px;
+      }
+
+      header,
+      section {
+        padding: 22px 18px;
+      }
+
+      h1 {
+        font-size: 28px;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      table {
+        display: block;
+        overflow-x: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <h1>혼자장부 프로젝트 정리</h1>
+      <p class="subtitle">1인법인 대표가 직접 장부를 정리하고, 신고 전 숫자를 검토한 뒤, 홈택스에 직접 신고할 수 있게 돕는 회계/장부 관리 소프트웨어 기획 문서</p>
+      <div class="meta">
+        <span class="pill">작성일: 2026-06-15</span>
+        <span class="pill">제품명: 혼자장부</span>
+        <span class="pill">대상: 1인법인, 소규모 법인</span>
+        <span class="pill">범위: 장부 정리 및 신고 준비</span>
+      </div>
+    </header>
+
+    <main>
+      <section>
+        <h2>1. 한 줄 정의</h2>
+        <div class="callout">
+          <p><strong>혼자장부</strong>는 세무기장 대행 서비스가 아니라, 대표자가 직접 장부를 정리하고 신고 전 자료를 준비할 수 있게 해주는 셀프 회계 정리 도구다.</p>
+        </div>
+        <p>초기 제품은 홈택스 자동 신고 제출까지 하지 않는다. 사용자가 통장, 카드, 홈택스 자료를 올리면 앱이 거래를 분류하고 증빙을 매칭하고 부가세, 원천세, 법인세 신고 준비용 숫자를 보여준다. 최종 확인과 신고는 사용자가 직접 한다.</p>
+      </section>
+
+      <section>
+        <h2>2. 제품 경계</h2>
+        <div class="grid">
+          <div class="box">
+            <h3>허용 가능한 포지셔닝</h3>
+            <ul>
+              <li>1인법인을 위한 셀프 장부 정리 도구</li>
+              <li>거래내역 자동 분류 및 자동 분개 초안</li>
+              <li>증빙 누락 알림</li>
+              <li>부가세, 원천세, 법인세 신고 준비용 집계</li>
+              <li>사용자가 직접 홈택스에 신고하기 위한 참고자료 제공</li>
+            </ul>
+          </div>
+          <div class="box">
+            <h3>피해야 할 포지셔닝</h3>
+            <ul>
+              <li>세무기장 대행</li>
+              <li>법인세 신고 대행</li>
+              <li>절세 자문</li>
+              <li>세무사가 필요 없는 완전 자동 신고</li>
+              <li>고객 대신 홈택스 신고 제출</li>
+            </ul>
+          </div>
+        </div>
+        <div class="warning callout">
+          <p>핵심은 사용자에게 <strong>추천, 집계, 검토 필요 항목</strong>을 제공하는 것이다. 세무 판단을 확정하거나 신고를 대리하는 구조로 가면 세무대리 이슈가 생길 수 있다.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>3. 실제 세무 실무 흐름</h2>
+        <p>1인법인 실무는 대략 <code>거래 발생 → 증빙 확보 → 장부 반영 → 세금별 집계 → 신고</code> 순서로 진행된다.</p>
+        <ol>
+          <li>법인통장 거래내역을 내려받는다.</li>
+          <li>법인카드 사용내역을 내려받는다.</li>
+          <li>홈택스에서 전자세금계산서, 계산서, 현금영수증, 신용카드 매입자료를 확인한다.</li>
+          <li>매출이 있으면 세금계산서 발행 여부, 카드/PG 정산 여부, 입금 여부를 맞춘다.</li>
+          <li>급여, 외주비, 기타소득 지급이 있으면 원천세 대상인지 확인한다.</li>
+          <li>거래마다 계정과목을 붙인다.</li>
+          <li>증빙 없는 지출, 개인적 사용 의심 지출, 대표자 입출금 같은 위험 거래를 따로 검토한다.</li>
+          <li>월별 손익, 부가세 예상액, 원천세 납부액을 확인한다.</li>
+          <li>분기, 반기, 연말에 신고용 자료를 만든다.</li>
+        </ol>
+        <p>혼자장부는 이 과정을 앱 안에서 순서대로 처리하게 만든다. 사용자는 매달 자료만 올리고, 앱은 자동 분류와 검토 항목을 보여준다.</p>
+      </section>
+
+      <section>
+        <h2>4. 세금 일정 기준</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>항목</th>
+              <th>일정</th>
+              <th>혼자장부 기능</th>
+              <th>공식 근거</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>부가가치세</td>
+              <td>일반과세자 법인은 1기 예정 4.1~4.25, 1기 확정 7.1~7.25, 2기 예정 10.1~10.25, 2기 확정 다음 해 1.1~1.25 흐름</td>
+              <td>매출세액, 매입세액, 불공제 후보, 납부/환급 예상액 집계</td>
+              <td><a href="https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=238927&mi=2402">국세청 부가가치세 신고납부기한</a></td>
+            </tr>
+            <tr>
+              <td>원천세</td>
+              <td>일반적으로 소득 지급일이 속하는 달의 다음 달 10일까지 신고·납부. 반기납부는 1~6월분 7.10, 7~12월분 다음 해 1.10</td>
+              <td>급여, 사업소득, 기타소득 지급액과 원천징수세액 검토표</td>
+              <td><a href="https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7702&mi=2414">국세청 원천세 신고납부기한</a></td>
+            </tr>
+            <tr>
+              <td>지급명세서</td>
+              <td>근로·퇴직·사업소득 등은 다음 해 3월 10일. 간이지급명세서 사업소득/기타소득은 지급일이 속하는 달의 다음 달 말일</td>
+              <td>지급명세서 대상자 목록, 제출기한 알림, 미제출 위험 알림</td>
+              <td><a href="https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=8631&mi=12309">국세청 지급명세서 제출</a></td>
+            </tr>
+            <tr>
+              <td>법인세</td>
+              <td>사업연도 종료일이 속하는 달의 말일부터 3개월 이내. 12월 결산법인은 보통 다음 해 3월 31일까지</td>
+              <td>재무제표 초안, 계정별 원장, 세무조정 검토 항목, 신고 전 체크리스트</td>
+              <td><a href="https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7975&mi=6549">국세청 법인세 신고절차</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>5. 첫 버전 MVP</h2>
+        <p>첫 버전의 목표는 자동 신고가 아니라 <strong>신고 준비 패키지 생성</strong>이다.</p>
+        <h3>필수 기능</h3>
+        <ul>
+          <li>회사 설정: 법인명, 사업자번호, 업종, 과세유형, 결산월, 대표자 급여 여부</li>
+          <li>자료 업로드: 통장 CSV, 카드 CSV, 홈택스 매출/매입자료 CSV, PG 정산 CSV</li>
+          <li>거래 자동 분류: 매출, 광고비, 지급수수료, 소모품비, 통신비, 복리후생비, 외주비, 급여, 세금과공과 등</li>
+          <li>증빙 매칭: 통장/카드 거래와 세금계산서, 현금영수증, 카드전표 연결</li>
+          <li>자동 분개 초안: 차변/대변 분개 생성</li>
+          <li>검토함: 애매한 거래만 사용자가 확인</li>
+          <li>부가세 리포트: 매출세액, 매입세액, 불공제 후보, 납부/환급 예상액</li>
+          <li>원천세 리포트: 급여, 사업소득, 기타소득 지급액과 원천징수세액</li>
+          <li>법인세 준비 리포트: 손익계산서, 재무상태표 초안, 계정별 원장, 증빙 누락 목록</li>
+          <li>마감 체크리스트: 이번 달, 이번 분기, 연말 결산 전 확인할 일</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>6. 화면 구조</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>화면</th>
+              <th>목적</th>
+              <th>주요 구성</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>대시보드</td>
+              <td>대표가 오늘 처리해야 할 일을 한 번에 확인</td>
+              <td>오늘 할 일, 미분류 거래 수, 증빙 없는 지출 수, 부가세 예상 납부액, 원천세 신고 필요 여부, 법인세 결산 준비율</td>
+            </tr>
+            <tr>
+              <td>거래내역</td>
+              <td>통장, 카드, PG 거래 전체 관리</td>
+              <td>거래일, 금액, 거래처, 출처, 계정과목, 증빙 상태, 검토 상태</td>
+            </tr>
+            <tr>
+              <td>증빙함</td>
+              <td>세금계산서, 계산서, 현금영수증, 카드전표 관리</td>
+              <td>증빙 유형, 공급가액, 부가세, 거래처, 거래 매칭 여부</td>
+            </tr>
+            <tr>
+              <td>자동분개</td>
+              <td>앱이 제안한 분개와 사용자의 승인 상태 관리</td>
+              <td>차변/대변 라인, 계정과목, 부가세 처리, 승인/수정/보류</td>
+            </tr>
+            <tr>
+              <td>신고준비</td>
+              <td>부가세, 원천세, 법인세 준비자료 생성</td>
+              <td>부가세 탭, 원천세 탭, 법인세 탭, 다운로드/출력</td>
+            </tr>
+            <tr>
+              <td>리포트</td>
+              <td>회사 상태 확인</td>
+              <td>손익, 재무상태, 현금흐름, 계정별 원장</td>
+            </tr>
+            <tr>
+              <td>설정</td>
+              <td>자동화 규칙과 회사 기준 관리</td>
+              <td>계정과목, 자동분류 규칙, 사업자 정보, 결산월, 세금 일정</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>7. 데이터 모델 초안</h2>
+        <p>원본 데이터는 절대 덮어쓰지 않는다. 통장 CSV, 카드 CSV, 홈택스 자료 원본을 보존하고, 그 위에 분류/분개/검토 상태를 붙인다.</p>
+        <pre><code>companies
+- id
+- name
+- business_registration_number
+- industry_code
+- vat_type
+- fiscal_year_end_month
+- withholding_payment_type
+- created_at
+
+accounts
+- id
+- company_id
+- code
+- name
+- type
+- tax_category
+- is_active
+
+transactions
+- id
+- company_id
+- source_type
+- source_file_id
+- transaction_date
+- description
+- counterparty
+- deposit_amount
+- withdrawal_amount
+- balance
+- suggested_account_id
+- confirmed_account_id
+- evidence_status
+- review_status
+
+evidences
+- id
+- company_id
+- evidence_type
+- issue_date
+- counterparty
+- supply_amount
+- vat_amount
+- total_amount
+- source_file_id
+- matched_transaction_id
+
+journal_entries
+- id
+- company_id
+- entry_date
+- memo
+- source_transaction_id
+- status
+
+journal_lines
+- id
+- journal_entry_id
+- account_id
+- debit_amount
+- credit_amount
+- vat_type
+- memo
+
+vendors
+- id
+- company_id
+- name
+- business_registration_number
+- default_account_id
+- withholding_type
+
+tax_reports
+- id
+- company_id
+- report_type
+- period_start
+- period_end
+- status
+- calculated_payload_json
+
+review_items
+- id
+- company_id
+- target_type
+- target_id
+- severity
+- reason
+- resolution_status
+
+rules
+- id
+- company_id
+- rule_type
+- condition_json
+- action_json
+- priority
+- is_active</code></pre>
+      </section>
+
+      <section>
+        <h2>8. 자동 분개 예시</h2>
+        <h3>법인카드로 네이버 검색광고 110,000원 결제</h3>
+        <pre><code>차변: 광고선전비 100,000
+차변: 부가세대급금 10,000
+대변: 미지급금 또는 보통예금 110,000</code></pre>
+
+        <h3>고객사 입금 1,100,000원, 전자세금계산서 있음</h3>
+        <pre><code>차변: 보통예금 1,100,000
+대변: 매출 1,000,000
+대변: 부가세예수금 100,000</code></pre>
+
+        <h3>대표가 법인통장에 돈을 넣음</h3>
+        <pre><code>차변: 보통예금
+대변: 대표자차입금</code></pre>
+
+        <h3>대표가 법인 돈을 개인적으로 가져감</h3>
+        <pre><code>차변: 가지급금 또는 대표자대여금 후보
+대변: 보통예금</code></pre>
+
+        <div class="danger callout">
+          <p>대표자에게 나간 돈, 대표자가 넣은 돈, 법인카드 개인 사용 의심 거래는 1인법인에서 특히 위험하다. 혼자장부는 이 유형을 자동으로 <strong>대표자 거래 검토 필요</strong>로 올려야 한다.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>9. 경고해야 할 항목</h2>
+        <ul>
+          <li>증빙 없는 비용</li>
+          <li>법인카드 개인 사용 의심 거래</li>
+          <li>대표자에게 나간 돈</li>
+          <li>대표자가 넣은 돈</li>
+          <li>접대비, 경조사비, 식대성 지출</li>
+          <li>해외 SaaS 결제</li>
+          <li>외주비인데 원천세 신고가 없는 건</li>
+          <li>세금계산서 매출은 있는데 입금이 안 된 건</li>
+          <li>입금은 있는데 매출 증빙이 없는 건</li>
+          <li>부가세 공제 불가 가능성이 있는 건</li>
+          <li>3월 법인세 신고 전 재무제표가 맞지 않는 건</li>
+          <li>외부조정 대상 가능성이 있는 건</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>10. 부가세 계산 흐름</h2>
+        <p>부가세는 큰 틀에서 매출세액에서 매입세액을 빼고, 경감·공제세액과 기납부세액, 가산세 등을 반영해 납부 또는 환급 세액을 계산한다. 국세청의 부가세 세액계산 흐름도는 일반과세자의 매출세액, 매입세액, 납부/환급세액 구조를 안내한다. <a href="https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=238928&mi=2403">국세청 부가가치세 세액계산 흐름도</a></p>
+        <p>혼자장부 1차 버전은 복잡한 공제/감면 자동 판단보다 다음 집계를 정확히 만드는 데 집중한다.</p>
+        <ul>
+          <li>세금계산서 매출 공급가액/부가세</li>
+          <li>카드/현금영수증/PG 매출 공급가액/부가세</li>
+          <li>세금계산서 매입 공급가액/부가세</li>
+          <li>카드/현금영수증 매입 공급가액/부가세</li>
+          <li>매입세액 불공제 후보</li>
+          <li>증빙 없는 지출</li>
+          <li>납부 또는 환급 예상액</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>11. 법인세 자동화 범위</h2>
+        <p>법인세는 단순 매출/비용 합산으로 끝나지 않는다. 국세청은 기업회계상 당기순손익을 기초로 세법상 익금과 손금을 조정하여 과세소득을 계산하는 절차를 세무조정이라고 설명한다. <a href="https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7975&mi=6549">국세청 법인세 신고절차</a></p>
+        <p>따라서 혼자장부의 초기 목표는 다음까지다.</p>
+        <ul>
+          <li>재무상태표 초안</li>
+          <li>포괄손익계산서 초안</li>
+          <li>계정별 원장</li>
+          <li>증빙 누락 목록</li>
+          <li>대표자 거래 목록</li>
+          <li>세무조정 검토 필요 항목</li>
+          <li>법인세 신고 전 체크리스트</li>
+        </ul>
+        <p>법인세 신고서 자동 작성/제출은 후순위다. 특히 외부조정 대상 가능성이 있으면 전문가 검토 필요 경고를 띄운다.</p>
+      </section>
+
+      <section>
+        <h2>12. 개발 순서</h2>
+        <h3>1단계: CSV 기반 로컬/웹 MVP</h3>
+        <ol>
+          <li>회사 설정</li>
+          <li>통장 CSV 업로드</li>
+          <li>카드 CSV 업로드</li>
+          <li>거래 목록 화면</li>
+          <li>계정과목 수동 지정</li>
+          <li>자동 분류 규칙 저장</li>
+          <li>증빙 파일 첨부</li>
+          <li>월별 손익 리포트</li>
+          <li>부가세 집계</li>
+          <li>원천세 체크리스트</li>
+          <li>법인세 결산 준비 리포트</li>
+        </ol>
+
+        <h3>2단계: 자동화 강화</h3>
+        <ol>
+          <li>은행/카드 CSV 포맷 템플릿 확장</li>
+          <li>홈택스 내려받기 자료 자동 파서</li>
+          <li>PG사 정산자료 파서</li>
+          <li>반복 거래 자동 규칙 추천</li>
+          <li>증빙 자동 매칭 고도화</li>
+          <li>부가세 신고서 입력값 형태로 출력</li>
+        </ol>
+
+        <h3>3단계: 외부 서비스화</h3>
+        <ol>
+          <li>다중 회사/다중 사용자 구조</li>
+          <li>권한 관리</li>
+          <li>파일 암호화 및 보안 감사 로그</li>
+          <li>상표 확인 및 도메인 확보</li>
+          <li>세무사 제휴 검토</li>
+          <li>유료 플랜 설계</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>13. 다음 프로젝트에서 바로 사용할 요구사항</h2>
+        <pre><code>프로젝트명: 혼자장부
+목표: 1인법인 대표가 직접 장부를 정리하고 신고 준비자료를 만들 수 있는 회계/장부 관리 웹앱
+초기 범위: CSV 업로드 기반 MVP
+제외 범위: 고객 대신 홈택스 신고 제출, 세무대리, 절세 자문, 법인세 신고서 자동 확정
+
+핵심 사용자:
+- 세무 지식이 부족한 1인법인 대표
+- 월 기장료를 줄이고 싶은 초기 법인
+- 거래량은 많지 않지만 증빙과 신고 일정을 놓치기 싫은 대표
+
+핵심 워크플로:
+1. 회사 정보 입력
+2. 통장/카드/홈택스/PG 자료 업로드
+3. 앱이 거래 자동 분류
+4. 앱이 증빙 매칭
+5. 앱이 자동 분개 초안 생성
+6. 사용자가 검토함에서 애매한 거래 확인
+7. 앱이 부가세/원천세/법인세 준비 리포트 생성
+8. 사용자가 홈택스에서 직접 신고
+
+첫 구현 우선순위:
+1. 거래 업로드와 파싱
+2. 거래 목록과 계정과목 지정
+3. 자동 분류 규칙
+4. 증빙 상태 표시
+5. 부가세 집계
+6. 월별 손익 리포트
+7. 신고 준비 체크리스트</code></pre>
+      </section>
+
+      <section>
+        <h2>14. 보안과 데이터 원칙</h2>
+        <ul>
+          <li>원본 CSV와 업로드 파일은 변경하지 않고 별도 보관한다.</li>
+          <li>분류 결과, 분개 결과, 검토 상태는 별도 테이블로 관리한다.</li>
+          <li>사업자등록번호, 계좌, 거래처, 급여 정보는 민감정보에 준해 다룬다.</li>
+          <li>외부 서비스화 전에는 파일 암호화, 접근 로그, 백업/삭제 정책이 필요하다.</li>
+          <li>홈택스 인증서/스크래핑 연동은 초기 MVP에서 제외한다.</li>
+          <li>신고 결과와 납부 결과는 사용자가 직접 입력하거나 PDF/접수증을 업로드하는 방식부터 시작한다.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>15. 공식 참고 링크</h2>
+        <ul>
+          <li><a href="https://www.law.go.kr/법령/세무사법/제2조">세무사법 제2조</a> - 세무대리 업무 범위 확인용</li>
+          <li><a href="https://www.law.go.kr/법령/세무사법/제20조">세무사법 제20조</a> - 세무대리 제한 확인용</li>
+          <li><a href="https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=238927&mi=2402">국세청 부가가치세 신고납부기한</a></li>
+          <li><a href="https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=238928&mi=2403">국세청 부가가치세 세액계산 흐름도</a></li>
+          <li><a href="https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7702&mi=2414">국세청 원천세 신고납부기한</a></li>
+          <li><a href="https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=8631&mi=12309">국세청 지급명세서 제출</a></li>
+          <li><a href="https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7975&mi=6549">국세청 법인세 신고절차</a></li>
+          <li><a href="https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7786&mi=2460">국세청 전자세금계산서 안내</a></li>
+          <li><a href="https://www.kipris.or.kr/khome/main.do">KIPRIS 상표 검색</a> - 혼자장부 상표 확인 필요</li>
+        </ul>
+        <p class="small">주의: 세법, 신고기한, 전자신고 방식은 바뀔 수 있다. 실제 출시 전에는 최신 국세청 안내와 세무사/법률 전문가 검토가 필요하다.</p>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
