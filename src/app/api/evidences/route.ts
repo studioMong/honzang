@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { DEFAULT_COMPANY_ID } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
@@ -15,6 +16,7 @@ import {
   validateEvidenceFile,
   validateEvidenceFileUrl
 } from "@/lib/server/evidence-validation";
+import { resolveTransactionEvidenceStatus } from "@/lib/server/evidence-amount-reviews";
 import { serializeEvidence } from "@/lib/server/serializers";
 
 const evidenceSchema = z.object({
@@ -175,10 +177,7 @@ export async function POST(request: Request) {
     });
 
     if (transaction) {
-      await tx.transaction.update({
-        where: { id: transaction.id },
-        data: { evidenceStatus: "MATCHED" }
-      });
+      await updateLinkedTransactionEvidenceStatus(tx, company.id, transaction);
     }
     await recordAuditEvent(tx, {
       companyId: company.id,
@@ -244,22 +243,9 @@ export async function DELETE(request: Request) {
   const result = await db.$transaction(async (tx) => {
     await tx.evidence.delete({ where: { id: evidence.id } });
 
-    let nextEvidenceStatus: "UNCHECKED" | "MISSING" | null = null;
+    let nextEvidenceStatus = null;
     if (evidence.transactionId && evidence.transaction) {
-      const remainingEvidenceCount = await tx.evidence.count({
-        where: {
-          companyId: company.id,
-          transactionId: evidence.transactionId
-        }
-      });
-
-      if (remainingEvidenceCount === 0) {
-        nextEvidenceStatus = Number(evidence.transaction.withdrawalAmount) > 0 ? "MISSING" : "UNCHECKED";
-        await tx.transaction.update({
-          where: { id: evidence.transactionId },
-          data: { evidenceStatus: nextEvidenceStatus }
-        });
-      }
+      nextEvidenceStatus = await updateLinkedTransactionEvidenceStatus(tx, company.id, evidence.transaction);
     }
 
     await recordAuditEvent(tx, {
@@ -283,4 +269,57 @@ export async function DELETE(request: Request) {
   });
 
   return NextResponse.json({ ok: true, mode: "database", ...result });
+}
+
+async function updateLinkedTransactionEvidenceStatus(
+  tx: Prisma.TransactionClient,
+  companyId: string,
+  transaction: { id: string; depositAmount: unknown; withdrawalAmount: unknown }
+) {
+  const linkedEvidences = await tx.evidence.findMany({
+    where: {
+      companyId,
+      transactionId: transaction.id
+    },
+    select: {
+      supplyAmount: true,
+      vatAmount: true,
+      totalAmount: true
+    }
+  });
+  const evidenceStatus = resolveTransactionEvidenceStatus(
+    {
+      depositAmount: decimalLikeToNumber(transaction.depositAmount),
+      withdrawalAmount: decimalLikeToNumber(transaction.withdrawalAmount)
+    },
+    linkedEvidences.map((evidence) => ({
+      supplyAmount: nullableDecimalLikeToNumber(evidence.supplyAmount),
+      vatAmount: nullableDecimalLikeToNumber(evidence.vatAmount),
+      totalAmount: nullableDecimalLikeToNumber(evidence.totalAmount)
+    }))
+  );
+
+  await tx.transaction.update({
+    where: { id: transaction.id },
+    data: { evidenceStatus }
+  });
+
+  return evidenceStatus;
+}
+
+function nullableDecimalLikeToNumber(value: unknown) {
+  return value === null || value === undefined ? null : decimalLikeToNumber(value);
+}
+
+function decimalLikeToNumber(value: unknown) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  if (typeof value === "object" && value !== null && "toString" in value) {
+    const parsed = Number(value.toString());
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
 }

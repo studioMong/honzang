@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import Papa from "papaparse";
 import { applyClassificationRules, applyVendorDefaults, generateJournalDraft, inferMapping, normalizeCsvRow, summarizeTransactions } from "../src/lib/accounting";
 import { DEFAULT_ACCOUNTS } from "../src/lib/defaults";
-import { buildEvidenceAmountReviewItems, type EvidenceAmountReviewTransaction } from "../src/lib/server/evidence-amount-reviews";
+import { buildEvidenceAmountReviewItems, resolveTransactionEvidenceStatus, type EvidenceAmountReviewTransaction } from "../src/lib/server/evidence-amount-reviews";
 import type { AppClassificationRule, AppTransaction, ParsedCsvRow, SourceType } from "../src/types";
 
 type SampleCase = {
@@ -258,6 +258,22 @@ const evidenceMatchedReviews = buildEvidenceAmountReviewItems([
   }
 ]);
 assert.equal(evidenceMatchedReviews.length, 0, "matching evidence amount should not create a review item");
+assert.equal(resolveTransactionEvidenceStatus(contractorBase, []), "MISSING", "withdrawal without evidence should be missing");
+assert.equal(
+  resolveTransactionEvidenceStatus({ depositAmount: 330_000, withdrawalAmount: 0 }, []),
+  "UNCHECKED",
+  "deposit without evidence should stay unchecked"
+);
+assert.equal(
+  resolveTransactionEvidenceStatus(contractorBase, [{ supplyAmount: 300_000, vatAmount: 30_000, totalAmount: 330_000 }]),
+  "MATCHED",
+  "matching evidence amount should mark the transaction matched"
+);
+assert.equal(
+  resolveTransactionEvidenceStatus(contractorBase, [{ supplyAmount: 272_727, vatAmount: 27_273, totalAmount: 300_000 }]),
+  "ATTACHED",
+  "mismatched evidence amount should only mark the transaction attached"
+);
 console.log("Verified evidence amount review generation.");
 
 console.log("Sample CSV verification passed.");

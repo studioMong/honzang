@@ -1,19 +1,22 @@
-import type { AppEvidence, AppTransaction, ReviewItem } from "@/types";
+import type { AppEvidence, AppTransaction, EvidenceStatus, ReviewItem } from "@/types";
 
 const EVIDENCE_AMOUNT_TOLERANCE_WON = 1;
 
 export type EvidenceAmountReviewTransaction = AppTransaction & {
-  evidences?: Array<Pick<AppEvidence, "id" | "supplyAmount" | "vatAmount" | "totalAmount">>;
+  evidences?: EvidenceAmountInput[];
+};
+
+export type EvidenceAmountInput = Pick<AppEvidence, "supplyAmount" | "vatAmount" | "totalAmount"> & {
+  id?: string | null;
 };
 
 export function buildEvidenceAmountReviewItems(transactions: EvidenceAmountReviewTransaction[]): ReviewItem[] {
   return transactions.flatMap((transaction) => {
     const grossAmount = transactionGrossAmount(transaction);
-    const evidenceAmounts = (transaction.evidences ?? []).map(evidenceComparableAmount).filter((amount): amount is number => amount !== null);
+    const evidenceTotalAmount = comparableEvidenceTotalAmount(transaction.evidences ?? []);
 
-    if (grossAmount <= 0 || evidenceAmounts.length === 0) return [];
+    if (grossAmount <= 0 || evidenceTotalAmount === null) return [];
 
-    const evidenceTotalAmount = roundWon(evidenceAmounts.reduce((sum, amount) => sum + amount, 0));
     const differenceAmount = Math.abs(evidenceTotalAmount - grossAmount);
     if (differenceAmount <= EVIDENCE_AMOUNT_TOLERANCE_WON) return [];
 
@@ -30,8 +33,30 @@ export function buildEvidenceAmountReviewItems(transactions: EvidenceAmountRevie
   });
 }
 
+export function resolveTransactionEvidenceStatus(
+  transaction: Pick<AppTransaction, "depositAmount" | "withdrawalAmount">,
+  evidences: EvidenceAmountInput[]
+): EvidenceStatus {
+  if (evidences.length === 0) return transaction.withdrawalAmount > 0 ? "MISSING" : "UNCHECKED";
+
+  const grossAmount = transactionGrossAmount(transaction);
+  const evidenceTotalAmount = comparableEvidenceTotalAmount(evidences);
+
+  if (grossAmount > 0 && evidenceTotalAmount !== null && Math.abs(evidenceTotalAmount - grossAmount) <= EVIDENCE_AMOUNT_TOLERANCE_WON) {
+    return "MATCHED";
+  }
+
+  return "ATTACHED";
+}
+
 function transactionGrossAmount(transaction: Pick<AppTransaction, "depositAmount" | "withdrawalAmount">) {
   return roundWon(transaction.depositAmount > 0 ? transaction.depositAmount : transaction.withdrawalAmount);
+}
+
+function comparableEvidenceTotalAmount(evidences: EvidenceAmountInput[]) {
+  const evidenceAmounts = evidences.map(evidenceComparableAmount).filter((amount): amount is number => amount !== null);
+  if (evidenceAmounts.length === 0) return null;
+  return roundWon(evidenceAmounts.reduce((sum, amount) => sum + amount, 0));
 }
 
 function evidenceComparableAmount(evidence: Pick<AppEvidence, "supplyAmount" | "vatAmount" | "totalAmount">) {
