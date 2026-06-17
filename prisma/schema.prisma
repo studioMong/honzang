@@ -146,6 +146,8 @@ model ImportBatch {
 
   company         Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
   transactions    Transaction[]
+
+  @@index([companyId, sourceType, originalFileHash])
 }
 
 model Transaction {

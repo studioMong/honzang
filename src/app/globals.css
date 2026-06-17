@@ -404,6 +404,11 @@ a {
   text-decoration: none;
 }
 
+.import-message {
+  width: fit-content;
+  margin-bottom: 12px;
+}
+
 .table-wrap {
   overflow-x: auto;
 }

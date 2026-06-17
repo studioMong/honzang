@@ -145,7 +145,9 @@ export type ImportPayload = {
   companyId: string;
   sourceType: SourceType;
   originalFileName: string;
+  originalFileHash?: string;
   mapping: CsvColumnMapping;
+  headers?: string[];
   rows: ParsedCsvRow[];
 };
 

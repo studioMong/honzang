@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
@@ -36,6 +37,11 @@ export async function POST(request: Request) {
   }
 
   const payload = parsed.data;
+  const originalFileHash = createImportHash({
+    sourceType: payload.sourceType,
+    headers: payload.headers,
+    rows: payload.rows
+  });
   const normalized = payload.rows.map((row, index) =>
     normalizeCsvRow(row as ParsedCsvRow, payload.mapping as CsvColumnMapping, payload.sourceType as SourceType, index)
   );
@@ -49,17 +55,50 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       mode: "sample",
+      originalFileHash,
       transactions,
       summary: summarizeTransactions(transactions)
     });
   }
 
   const company = await ensureDefaultCompany(db);
+  const existingBatch = await db.importBatch.findFirst({
+    where: {
+      companyId: company.id,
+      sourceType: payload.sourceType,
+      originalFileHash
+    },
+    orderBy: { importedAt: "desc" }
+  });
+
+  if (existingBatch) {
+    const saved = await db.transaction.findMany({
+      where: { importBatchId: existingBatch.id },
+      include: {
+        suggestedAccount: true,
+        confirmedAccount: true
+      },
+      orderBy: { sourceRowNumber: "asc" }
+    });
+    const serialized = saved.map(serializeTransaction);
+
+    return NextResponse.json({
+      ok: true,
+      mode: "database",
+      duplicate: true,
+      importBatchId: existingBatch.id,
+      originalFileHash,
+      transactions: serialized,
+      summary: summarizeTransactions(serialized)
+    });
+  }
+
   const importBatch = await db.importBatch.create({
     data: {
       companyId: company.id,
       sourceType: payload.sourceType,
       originalFileName: payload.originalFileName,
+      originalFileHash,
       rowCount: normalized.length,
       mapping: payload.mapping
     }
@@ -136,8 +175,24 @@ export async function POST(request: Request) {
   return NextResponse.json({
     ok: true,
     mode: "database",
+    duplicate: false,
     importBatchId: importBatch.id,
+    originalFileHash,
     transactions: serialized,
     summary: summarizeTransactions(serialized)
   });
+}
+
+function createImportHash(input: { sourceType: string; headers: string[]; rows: Array<Record<string, string | number | null>> }) {
+  return createHash("sha256").update(JSON.stringify(stableValue(input))).digest("hex");
+}
+
+function stableValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (!value || typeof value !== "object") return value ?? "";
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => [key, stableValue(item)])
+  );
 }

@@ -378,10 +378,12 @@ function CsvImportPanel({
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [mapping, setMapping] = useState<CsvColumnMapping>({});
   const [saving, setSaving] = useState(false);
+  const [importMessage, setImportMessage] = useState<{ tone: "green" | "amber" | "red"; text: string } | null>(null);
   const canImport = preview && mapping.transactionDate && mapping.description && (mapping.amount || mapping.depositAmount || mapping.withdrawalAmount);
 
   function parseFile(file: File) {
     setFileName(file.name);
+    setImportMessage(null);
     Papa.parse<ParsedCsvRow>(file, {
       header: true,
       skipEmptyLines: true,
@@ -414,7 +416,13 @@ function CsvImportPanel({
       const payload = await response.json();
       if (payload.transactions?.length) {
         saveLocalMapping(sourceType, preview.headers, mapping);
+        setImportMessage({
+          tone: payload.duplicate ? "amber" : "green",
+          text: payload.duplicate ? "이미 가져온 파일입니다. 기존 거래를 다시 불러왔습니다." : `${formatNumber(payload.transactions.length)}건을 가져왔습니다.`
+        });
         onImported(payload.transactions);
+      } else if (!response.ok) {
+        setImportMessage({ tone: "red", text: "가져오기에 실패했습니다. CSV 매핑과 행 데이터를 확인해 주세요." });
       }
     } finally {
       setSaving(false);
@@ -454,6 +462,7 @@ function CsvImportPanel({
         </div>
         <div className="panel-body split">
           <div>
+            {importMessage && <div className={`import-message status ${importMessage.tone}`}>{importMessage.text}</div>}
             <label className="file-drop">
               <input
                 type="file"
