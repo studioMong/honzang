@@ -42,6 +42,11 @@ Railway는 GitHub 저장소를 연결한 뒤 다음 설정을 사용합니다.
 
 루트에 정적 `index.html`을 두면 Railway가 정적 사이트로 감지할 수 있으므로, 참고용 HTML 문서는 `attachments/` 아래에 보관합니다.
 
+배포 후 확인:
+
+- `/api/health`: 앱 서버와 DB 연결 상태
+- `/api/version`: 앱 버전과 Railway 커밋 메타데이터
+
 ## MVP 범위
 
 - 회사 기본 설정
