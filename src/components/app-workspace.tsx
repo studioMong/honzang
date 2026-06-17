@@ -1367,6 +1367,27 @@ function ReportsPanel({
   const selectedTaxReport = taxReports.find((taxReport) => taxReport.id === selectedTaxReportId) ?? null;
   const selectedPayload = selectedTaxReport ? parseDetailedTaxReportPayload(selectedTaxReport.calculatedPayload) : null;
 
+  function downloadFilingPackageJson() {
+    downloadJson(
+      buildReportJsonFileName("filing-package", selectedPeriod),
+      buildFilingPackagePayload({
+        company,
+        period: selectedPeriod,
+        periodLabel,
+        periodRange,
+        summary: reportSummary,
+        transactions: filteredTransactions,
+        reviews,
+        filingScheduleRows,
+        filingPackageRows,
+        withholdingRows,
+        corporateTaxRows,
+        financialStatementRows,
+        ledgerRows
+      })
+    );
+  }
+
   async function saveSnapshot() {
     setSavingReport(true);
     try {
@@ -1752,6 +1773,10 @@ function ReportsPanel({
                 <Download size={16} />
                 원천세
               </button>
+              <button className="secondary-button" onClick={downloadFilingPackageJson}>
+                <Download size={16} />
+                패키지 JSON
+              </button>
               <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("corporate-tax-prep", selectedPeriod), corporateTaxRows)}>
                 <Download size={16} />
                 법인세
@@ -1778,6 +1803,10 @@ function ReportsPanel({
           <h2 className="panel-title">신고 패키지</h2>
           <div className="toolbar">
             <span className="status blue">{formatNumber(filingPackageRows.length)}개 항목</span>
+            <button className="secondary-button" onClick={downloadFilingPackageJson}>
+              <Download size={16} />
+              JSON
+            </button>
             <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("filing-package", selectedPeriod), filingPackageRows)}>
               <Download size={16} />
               패키지
@@ -2731,6 +2760,10 @@ function buildReportFileName(name: string, period: string) {
   return `honzang-${period === "ALL" ? "all" : period}-${name}.csv`;
 }
 
+function buildReportJsonFileName(name: string, period: string) {
+  return `honzang-${period === "ALL" ? "all" : period}-${name}.json`;
+}
+
 function getReportPeriodRange(period: string, transactions: AppTransaction[]) {
   if (period !== "ALL") {
     const [year, month] = period.split("-").map(Number);
@@ -2988,6 +3021,70 @@ function buildReviewCsv(items: ReturnType<typeof buildReviewItems>) {
     거래처: item.transaction?.counterparty ?? "",
     금액: item.transaction?.withdrawalAmount || item.transaction?.depositAmount || 0
   }));
+}
+
+function buildFilingPackagePayload({
+  company,
+  period,
+  periodLabel,
+  periodRange,
+  summary,
+  transactions,
+  reviews,
+  filingScheduleRows,
+  filingPackageRows,
+  withholdingRows,
+  corporateTaxRows,
+  financialStatementRows,
+  ledgerRows
+}: {
+  company: AppCompany;
+  period: string;
+  periodLabel: string;
+  periodRange: { start: string; end: string };
+  summary: ReturnType<typeof summarizeTransactions>;
+  transactions: AppTransaction[];
+  reviews: ReturnType<typeof buildReviewItems>;
+  filingScheduleRows: ReturnType<typeof buildFilingScheduleRows>;
+  filingPackageRows: ReturnType<typeof buildFilingPackageRows>;
+  withholdingRows: ReturnType<typeof buildWithholdingRows>;
+  corporateTaxRows: ReturnType<typeof buildCorporateTaxRows>;
+  financialStatementRows: ReturnType<typeof buildFinancialStatementRows>;
+  ledgerRows: ReturnType<typeof buildLedgerRows>;
+}) {
+  return {
+    app: "혼자장부",
+    generatedAt: new Date().toISOString(),
+    company: {
+      name: company.name,
+      businessRegistrationNumber: company.businessRegistrationNumber,
+      industry: company.industry,
+      vatType: company.vatType,
+      fiscalYearEndMonth: company.fiscalYearEndMonth
+    },
+    period: {
+      value: period,
+      label: periodLabel,
+      start: periodRange.start,
+      end: periodRange.end
+    },
+    summary,
+    filingScheduleRows,
+    filingPackageRows,
+    tables: {
+      transactions: buildTransactionCsv(transactions),
+      vatReport: buildVatCsv(summary),
+      reviewItems: buildReviewCsv(reviews),
+      withholdingCandidates: withholdingRows,
+      corporateTaxPrep: corporateTaxRows,
+      financialStatements: financialStatementRows,
+      ledger: buildLedgerCsv(ledgerRows)
+    },
+    notes: [
+      "혼자장부 신고 패키지는 직접 신고 준비를 돕는 자료입니다.",
+      "최종 신고 전 홈택스, 국세청 공지, 세무 전문가 검토가 필요한 항목을 확인하세요."
+    ]
+  };
 }
 
 function getTransactionAccount(transaction: AppTransaction) {
