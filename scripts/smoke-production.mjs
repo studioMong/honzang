@@ -51,6 +51,7 @@ try {
   await expectBlockedClosingPeriod();
   await expectInvalidCsvImportMapping();
   await expectInvalidCsvImportRows();
+  await expectInvalidCsvOriginalFile();
   await expectInvalidManualTransactionDate();
   await expectInvalidTransactionPatch();
   await expectInvalidJournalDate();
@@ -245,6 +246,40 @@ async function expectInvalidCsvImportRows() {
   const body = JSON.parse(text);
   if (body.code !== "INVALID_CSV_ROWS" || !Array.isArray(body.issues) || body.issues.length < 3) {
     throw new Error(`/api/imports returned unexpected row validation payload: ${text}`);
+  }
+}
+
+async function expectInvalidCsvOriginalFile() {
+  const response = await fetch(`${baseUrl}/api/imports`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sourceType: "BANK",
+      originalFileName: "invalid-original-size.csv",
+      originalFileText: "거래일,적요,입금\n2026-06-17,테스트,1000\n",
+      originalFileSize: 1,
+      mapping: {
+        transactionDate: "거래일",
+        description: "적요",
+        depositAmount: "입금"
+      },
+      headers: ["거래일", "적요", "입금"],
+      rows: [
+        {
+          거래일: "2026-06-17",
+          적요: "테스트",
+          입금: "1000"
+        }
+      ]
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/imports should reject inconsistent original CSV metadata, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_ORIGINAL_FILE") {
+    throw new Error(`/api/imports returned unexpected original file validation payload: ${text}`);
   }
 }
 

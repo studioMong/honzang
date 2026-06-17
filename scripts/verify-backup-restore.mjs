@@ -9,6 +9,7 @@ const baseUrl = `http://127.0.0.1:${port}`;
 const startupTimeoutMs = Number(process.env.BACKUP_RESTORE_VERIFY_TIMEOUT_MS ?? 20_000);
 const serverPath = ".next/standalone/server.js";
 const evidenceFileText = "dry-run-evidence";
+const originalCsvText = "거래일,적요,입금\n2026-06-17,dry run,1000\n";
 
 if (!existsSync(serverPath)) {
   console.error(`${serverPath} not found. Run npm run build before npm run verify:backup-restore.`);
@@ -66,7 +67,7 @@ const backup = {
       originalFileName: "dry-run-bank.csv",
       originalFileHash: "dry-run-hash",
       originalFileMimeType: "text/csv",
-      originalFileSize: 42,
+      originalFileSize: Buffer.byteLength(originalCsvText),
       rowCount: 1,
       importedAt: "2026-06-17T00:00:00.000Z"
     }
@@ -77,8 +78,8 @@ const backup = {
       originalFileName: "dry-run-bank.csv",
       originalFileHash: "dry-run-hash",
       originalFileMimeType: "text/csv",
-      originalFileSize: 42,
-      originalFileText: "거래일,적요,입금\n2026-06-17,dry run,1000\n"
+      originalFileSize: Buffer.byteLength(originalCsvText),
+      originalFileText: originalCsvText
     }
   ],
   transactions: [
@@ -165,6 +166,7 @@ try {
   await verifyInvalidDateBackup();
   await verifyInvalidEvidenceBackup();
   await verifyInvalidJournalBackup();
+  await verifyInvalidOriginalImportFileBackup();
   await verifyConfirmGuard();
   console.log(`Backup restore verification passed at ${baseUrl}`);
 } catch (error) {
@@ -296,6 +298,22 @@ async function verifyInvalidJournalBackup() {
   assert.equal(body.code, "INVALID_BACKUP_JOURNALS", "restore should return journal validation code");
   assert.ok(Array.isArray(body.issues), "restore should return journal validation issues");
   assert.ok(body.issues.length >= 4, "restore should report missing transaction, missing account, and invalid line issues");
+}
+
+async function verifyInvalidOriginalImportFileBackup() {
+  const invalidBackup = structuredClone(backup);
+  invalidBackup.originalImportFiles = [
+    {
+      ...backup.originalImportFiles[0],
+      originalFileSize: 1
+    }
+  ];
+
+  const body = await postJson("/api/backups/restore", { backup: invalidBackup, dryRun: true }, 400);
+  assert.equal(body.ok, false, "restore should reject invalid original CSV backup data");
+  assert.equal(body.code, "INVALID_BACKUP_ORIGINAL_FILES", "restore should return original file validation code");
+  assert.ok(Array.isArray(body.issues), "restore should return original file validation issues");
+  assert.ok(body.issues.length >= 1, "restore should report inconsistent original CSV file metadata");
 }
 
 async function verifyConfirmGuard() {

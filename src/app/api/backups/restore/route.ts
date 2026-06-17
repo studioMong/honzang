@@ -15,6 +15,7 @@ import {
   validateEvidenceFile,
   validateEvidenceFileUrl
 } from "@/lib/server/evidence-validation";
+import { MAX_ORIGINAL_FILE_TEXT_SIZE, validateOriginalFileText } from "@/lib/server/source-file-validation";
 
 const sourceTypeSchema = z.enum(["BANK", "CARD", "HOMETAX_SALES", "HOMETAX_PURCHASES", "CASH_RECEIPT", "PG", "MANUAL"]);
 const accountTypeSchema = z.enum(["ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"]);
@@ -82,8 +83,8 @@ const originalImportFileSchema = z
     originalFileName: z.string().min(1).max(240),
     originalFileHash: z.string().optional().nullable(),
     originalFileMimeType: z.string().max(120).optional().nullable(),
-    originalFileSize: z.coerce.number().int().nonnegative().max(2_000_000).optional().nullable(),
-    originalFileText: z.string().max(2_000_000)
+    originalFileSize: z.coerce.number().int().nonnegative().max(MAX_ORIGINAL_FILE_TEXT_SIZE).optional().nullable(),
+    originalFileText: z.string().max(MAX_ORIGINAL_FILE_TEXT_SIZE)
   })
   .passthrough();
 
@@ -299,6 +300,19 @@ export async function POST(request: Request) {
         code: "INVALID_BACKUP_JOURNALS",
         message: "백업 분개 데이터가 올바르지 않습니다.",
         issues: journalIssues
+      },
+      { status: 400 }
+    );
+  }
+
+  const originalFileIssues = validateBackupOriginalImportFiles(parsed.data.originalImportFiles);
+  if (originalFileIssues.length > 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_BACKUP_ORIGINAL_FILES",
+        message: "백업 원본 CSV 데이터가 올바르지 않습니다.",
+        issues: originalFileIssues
       },
       { status: 400 }
     );
@@ -841,6 +855,13 @@ function validateBackupJournalEntries(backup: WorkspaceBackup) {
   }
 
   return issues;
+}
+
+function validateBackupOriginalImportFiles(originalImportFiles: WorkspaceBackup["originalImportFiles"]) {
+  return uniqueByImportBatchId(originalImportFiles).flatMap((file) => {
+    const issue = validateOriginalFileText(file);
+    return issue ? [`원본 CSV ${file.importBatchId}: ${issue}`] : [];
+  });
 }
 
 function requiredDateField(value: string | null | undefined, label: string, issues: string[]) {

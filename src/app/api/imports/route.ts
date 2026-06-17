@@ -8,6 +8,7 @@ import { applyClassificationRules, applyVendorDefaults, normalizeCsvRow, parseMo
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { closedPeriodResponse, findClosedPeriodForDates } from "@/lib/server/closing-periods";
+import { MAX_ORIGINAL_FILE_TEXT_SIZE, validateOriginalFileText } from "@/lib/server/source-file-validation";
 import {
   serializeAccount,
   serializeClassificationRule,
@@ -18,7 +19,6 @@ import {
 } from "@/lib/server/serializers";
 import type { CsvColumnMapping, ParsedCsvRow, SourceType } from "@/types";
 
-const MAX_ORIGINAL_FILE_TEXT_LENGTH = 2_000_000;
 const MAX_IMPORT_VALIDATION_ISSUES = 25;
 
 const mappingSchema = z.object({
@@ -39,8 +39,8 @@ const importSchema = z.object({
   sourceType: z.enum(["BANK", "CARD", "HOMETAX_SALES", "HOMETAX_PURCHASES", "CASH_RECEIPT", "PG", "MANUAL"]),
   originalFileName: z.string().min(1),
   originalFileMimeType: z.string().max(120).optional().nullable(),
-  originalFileSize: z.coerce.number().int().nonnegative().max(MAX_ORIGINAL_FILE_TEXT_LENGTH).optional().nullable(),
-  originalFileText: z.string().max(MAX_ORIGINAL_FILE_TEXT_LENGTH).optional().nullable(),
+  originalFileSize: z.coerce.number().int().nonnegative().max(MAX_ORIGINAL_FILE_TEXT_SIZE).optional().nullable(),
+  originalFileText: z.string().max(MAX_ORIGINAL_FILE_TEXT_SIZE).optional().nullable(),
   mapping: mappingSchema,
   headers: z.array(z.string()).optional().default([]),
   rows: z.array(z.record(z.string(), z.union([z.string(), z.number(), z.null()]))).min(1).max(2000)
@@ -333,6 +333,18 @@ export async function POST(request: Request) {
   }
 
   const payload = parsed.data;
+  const originalFileIssue = validateOriginalFileText(payload);
+  if (originalFileIssue) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_ORIGINAL_FILE",
+        message: originalFileIssue
+      },
+      { status: 400 }
+    );
+  }
+
   const mappingIssues = validateImportMapping(payload);
   if (mappingIssues.length > 0) {
     return NextResponse.json(
