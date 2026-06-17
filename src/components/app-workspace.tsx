@@ -249,7 +249,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
           />
         )}
         {activeView === "reviews" && <ReviewsPanel items={reviewItems} />}
-        {activeView === "reports" && <ReportsPanel summary={summary} transactions={transactions} journalEntries={journalEntries} />}
+        {activeView === "reports" && <ReportsPanel transactions={transactions} journalEntries={journalEntries} />}
         {activeView === "settings" && <SettingsPanel company={company} accounts={accounts} onSaved={setCompany} />}
       </main>
     </div>
@@ -837,29 +837,45 @@ function ReviewsPanel({ items }: { items: ReturnType<typeof buildReviewItems> })
   );
 }
 
-function ReportsPanel({
-  summary,
-  transactions,
-  journalEntries
-}: {
-  summary: ReturnType<typeof summarizeTransactions>;
-  transactions: AppTransaction[];
-  journalEntries: AppJournalEntry[];
-}) {
-  const expenseByAccount = groupExpensesByAccount(transactions);
-  const reviews = buildReviewItems(transactions);
-  const ledgerRows = buildLedgerRows(journalEntries);
-  const withholdingRows = buildWithholdingRows(transactions);
-  const corporateTaxRows = buildCorporateTaxRows(summary, transactions, journalEntries, ledgerRows);
-  const filingPackageRows = buildFilingPackageRows(summary, transactions, journalEntries, ledgerRows, withholdingRows);
+function ReportsPanel({ transactions, journalEntries }: { transactions: AppTransaction[]; journalEntries: AppJournalEntry[] }) {
+  const periodOptions = useMemo(() => buildPeriodOptions(transactions), [transactions]);
+  const [period, setPeriod] = useState(() => periodOptions[0]?.value ?? "ALL");
+  const selectedPeriod = period === "ALL" || periodOptions.some((option) => option.value === period) ? period : periodOptions[0]?.value ?? "ALL";
+  const filteredTransactions = useMemo(() => filterTransactionsByPeriod(transactions, selectedPeriod), [selectedPeriod, transactions]);
+  const filteredJournalEntries = useMemo(() => filterJournalEntriesByPeriod(journalEntries, selectedPeriod), [journalEntries, selectedPeriod]);
+  const reportSummary = useMemo(() => summarizeTransactions(filteredTransactions), [filteredTransactions]);
+  const expenseByAccount = groupExpensesByAccount(filteredTransactions);
+  const reviews = buildReviewItems(filteredTransactions);
+  const ledgerRows = buildLedgerRows(filteredJournalEntries);
+  const withholdingRows = buildWithholdingRows(filteredTransactions);
+  const corporateTaxRows = buildCorporateTaxRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows);
+  const filingPackageRows = buildFilingPackageRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows, withholdingRows);
+  const periodLabel = formatPeriodLabel(selectedPeriod);
   return (
     <div className="content">
+      <section className="panel report-filter-panel">
+        <div className="panel-header">
+          <h2 className="panel-title">리포트 기간</h2>
+          <div className="toolbar">
+            <span className="status blue">{periodLabel}</span>
+            <select className="secondary-button" value={selectedPeriod} onChange={(event) => setPeriod(event.target.value)}>
+              {periodOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+              <option value="ALL">전체 기간</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
       <section className="kpi-grid">
-        <Kpi label="월 손익" value={formatKRW(summary.profit)} foot={`${formatKRW(summary.revenue)} - ${formatKRW(summary.expense)}`} icon={<BarChart3 size={16} />} />
-        <Kpi label="매출 부가세" value={formatKRW(summary.vatOutput)} foot="예수금" icon={<ReceiptText size={16} />} />
-        <Kpi label="매입 부가세" value={formatKRW(summary.vatInput)} foot="대급금" icon={<FileSpreadsheet size={16} />} />
-        <Kpi label="예상 납부" value={formatKRW(summary.vatPayable)} foot="확정 전" icon={<CheckCircle2 size={16} />} />
-        <Kpi label="증빙 누락" value={formatKRW(summary.missingEvidenceAmount)} foot={`${summary.reviewCount}건 검토`} icon={<AlertTriangle size={16} />} />
+        <Kpi label="기간 손익" value={formatKRW(reportSummary.profit)} foot={`${formatKRW(reportSummary.revenue)} - ${formatKRW(reportSummary.expense)}`} icon={<BarChart3 size={16} />} />
+        <Kpi label="매출 부가세" value={formatKRW(reportSummary.vatOutput)} foot="예수금" icon={<ReceiptText size={16} />} />
+        <Kpi label="매입 부가세" value={formatKRW(reportSummary.vatInput)} foot="대급금" icon={<FileSpreadsheet size={16} />} />
+        <Kpi label="예상 납부" value={formatKRW(reportSummary.vatPayable)} foot="확정 전" icon={<CheckCircle2 size={16} />} />
+        <Kpi label="증빙 누락" value={formatKRW(reportSummary.missingEvidenceAmount)} foot={`${reportSummary.reviewCount}건 검토`} icon={<AlertTriangle size={16} />} />
       </section>
 
       <div className="split">
@@ -893,23 +909,23 @@ function ReportsPanel({
           <div className="panel-header">
             <h2 className="panel-title">신고 준비</h2>
             <div className="toolbar">
-              <button className="secondary-button" onClick={() => downloadCsv("honzang-transactions.csv", buildTransactionCsv(transactions))}>
+              <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("transactions", selectedPeriod), buildTransactionCsv(filteredTransactions))}>
                 <Download size={16} />
                 거래
               </button>
-              <button className="secondary-button" onClick={() => downloadCsv("honzang-vat-report.csv", buildVatCsv(summary))}>
+              <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("vat-report", selectedPeriod), buildVatCsv(reportSummary))}>
                 <Download size={16} />
                 부가세
               </button>
-              <button className="secondary-button" onClick={() => downloadCsv("honzang-review-items.csv", buildReviewCsv(reviews))}>
+              <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("review-items", selectedPeriod), buildReviewCsv(reviews))}>
                 <Download size={16} />
                 검토
               </button>
-              <button className="secondary-button" onClick={() => downloadCsv("honzang-withholding-candidates.csv", withholdingRows)}>
+              <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("withholding-candidates", selectedPeriod), withholdingRows)}>
                 <Download size={16} />
                 원천세
               </button>
-              <button className="secondary-button" onClick={() => downloadCsv("honzang-corporate-tax-prep.csv", corporateTaxRows)}>
+              <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("corporate-tax-prep", selectedPeriod), corporateTaxRows)}>
                 <Download size={16} />
                 법인세
               </button>
@@ -917,10 +933,10 @@ function ReportsPanel({
           </div>
           <div className="panel-body">
             <div className="review-list">
-              <ChecklistItem tone="green" title="거래 분류" value={`${formatNumber(transactions.filter((tx) => tx.confirmedAccount || tx.suggestedAccount).length)}건`} />
-              <ChecklistItem tone={summary.missingEvidenceAmount > 0 ? "red" : "green"} title="증빙 확인" value={formatKRW(summary.missingEvidenceAmount)} />
-              <ChecklistItem tone={summary.vatPayable > 0 ? "amber" : "green"} title="부가세" value={formatKRW(summary.vatPayable)} />
-              <ChecklistItem tone={summary.riskCount > 0 ? "amber" : "green"} title="원천세/대표자" value={`${summary.riskCount}건`} />
+              <ChecklistItem tone="green" title="거래 분류" value={`${formatNumber(filteredTransactions.filter((tx) => tx.confirmedAccount || tx.suggestedAccount).length)}건`} />
+              <ChecklistItem tone={reportSummary.missingEvidenceAmount > 0 ? "red" : "green"} title="증빙 확인" value={formatKRW(reportSummary.missingEvidenceAmount)} />
+              <ChecklistItem tone={reportSummary.vatPayable > 0 ? "amber" : "green"} title="부가세" value={formatKRW(reportSummary.vatPayable)} />
+              <ChecklistItem tone={reportSummary.riskCount > 0 ? "amber" : "green"} title="원천세/대표자" value={`${reportSummary.riskCount}건`} />
             </div>
           </div>
         </section>
@@ -931,7 +947,7 @@ function ReportsPanel({
           <h2 className="panel-title">신고 패키지</h2>
           <div className="toolbar">
             <span className="status blue">{formatNumber(filingPackageRows.length)}개 항목</span>
-            <button className="secondary-button" onClick={() => downloadCsv("honzang-filing-package.csv", filingPackageRows)}>
+            <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("filing-package", selectedPeriod), filingPackageRows)}>
               <Download size={16} />
               패키지
             </button>
@@ -1037,8 +1053,8 @@ function ReportsPanel({
         <div className="panel-header">
           <h2 className="panel-title">계정별 원장</h2>
           <div className="toolbar">
-            <span className="status blue">{formatNumber(journalEntries.length)}개 분개</span>
-            <button className="secondary-button" onClick={() => downloadCsv("honzang-ledger.csv", buildLedgerCsv(ledgerRows))}>
+            <span className="status blue">{formatNumber(filteredJournalEntries.length)}개 분개</span>
+            <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("ledger", selectedPeriod), buildLedgerCsv(ledgerRows))}>
               <Download size={16} />
               원장
             </button>
@@ -1327,12 +1343,40 @@ function buildReviewItems(transactions: AppTransaction[]) {
   });
 }
 
+function buildPeriodOptions(transactions: AppTransaction[]) {
+  return [...new Set(transactions.map((transaction) => transaction.transactionDate.slice(0, 7)).filter(Boolean))]
+    .sort((a, b) => b.localeCompare(a))
+    .map((value) => ({ value, label: formatPeriodLabel(value) }));
+}
+
+function formatPeriodLabel(period: string) {
+  if (period === "ALL") return "전체 기간";
+  const [year, month] = period.split("-");
+  return `${year}년 ${Number(month)}월`;
+}
+
+function filterTransactionsByPeriod(transactions: AppTransaction[], period: string) {
+  if (period === "ALL") return transactions;
+  return transactions.filter((transaction) => transaction.transactionDate.startsWith(period));
+}
+
+function filterJournalEntriesByPeriod(journalEntries: AppJournalEntry[], period: string) {
+  if (period === "ALL") return journalEntries;
+  return journalEntries.filter((entry) => entry.entryDate.startsWith(period));
+}
+
+function buildReportFileName(name: string, period: string) {
+  return `honzang-${period === "ALL" ? "all" : period}-${name}.csv`;
+}
+
 function groupExpensesByAccount(transactions: AppTransaction[]) {
   const grouped = new Map<string, { name: string; amount: number; count: number }>();
   transactions
     .filter((transaction) => transaction.withdrawalAmount > 0)
     .forEach((transaction) => {
-      const name = transaction.confirmedAccount?.name ?? transaction.suggestedAccount?.name ?? "미분류";
+      const account = transaction.confirmedAccount ?? transaction.suggestedAccount ?? null;
+      if (account && account.type !== "EXPENSE") return;
+      const name = account?.name ?? "미분류";
       const current = grouped.get(name) ?? { name, amount: 0, count: 0 };
       current.amount += transaction.withdrawalAmount;
       current.count += 1;
