@@ -114,6 +114,13 @@ DB 연결 환경에서 핵심 흐름을 검증하려면 앱 서버를 실행한 
 VERIFY_DB_WORKFLOW_BASE_URL=http://127.0.0.1:3000 npm run verify:db-workflow
 ```
 
+백업 복원 화면과 `dryRun` 검증은 프로덕션 빌드 후 아래 명령으로 확인합니다. 실제 복원은 실행하지 않고 백업 형식 검사와 `confirmReplace` 가드만 확인합니다.
+
+```bash
+npm run build
+npm run verify:backup-restore
+```
+
 ## 웹/앱 지원
 
 혼자장부는 Next.js 웹앱으로 실행하며, `manifest.webmanifest`와 service worker를 통해 설치형 PWA 기본 동작을 지원합니다. 네트워크가 끊긴 상태에서 앱 화면 이동이 실패하면 `public/offline.html`을 표시합니다.
