@@ -45,6 +45,7 @@ import type {
   SourceType
 } from "@/types";
 import { RESTORE_CONFIRMATION_TEXT } from "@/lib/backup-restore";
+import { DATA_SOURCE_TYPES, buildDataSourceRows } from "@/lib/data-sources";
 import { DEFAULT_ACCOUNTS, DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/defaults";
 import { sanitizeCsvCellValue } from "@/lib/export-safety";
 import { applyClassificationRules, buildReviewItems, generateJournalDraft, inferMapping, normalizeCsvRow, parseMoney, summarizeTransactions } from "@/lib/accounting";
@@ -201,7 +202,7 @@ const mappingFields: Array<{ key: keyof CsvColumnMapping; label: string; require
   { key: "approvalNumber", label: "승인번호" }
 ];
 
-const sourceOptions: SourceType[] = ["BANK", "CARD", "HOMETAX_SALES", "HOMETAX_PURCHASES", "CASH_RECEIPT", "PG"];
+const sourceOptions = DATA_SOURCE_TYPES;
 const MAX_IMPORT_ORIGINAL_FILE_SIZE = MAX_ORIGINAL_FILE_TEXT_SIZE;
 
 const sampleCsvLinks: Record<SourceType, { label: string; href: string }> = {
@@ -675,6 +676,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
             company={company}
             companyId={company.id || DEFAULT_COMPANY_ID}
             transactions={transactions}
+            importBatches={importBatches}
             evidences={evidences}
             reviewItems={visibleReviewItems}
             journalEntries={journalEntries}
@@ -2248,6 +2250,7 @@ function ReportsPanel({
   company,
   companyId,
   transactions,
+  importBatches,
   evidences,
   reviewItems,
   journalEntries,
@@ -2260,6 +2263,7 @@ function ReportsPanel({
   company: AppCompany;
   companyId: string;
   transactions: AppTransaction[];
+  importBatches: AppImportBatch[];
   evidences: AppEvidence[];
   reviewItems: ReviewItem[];
   journalEntries: AppJournalEntry[];
@@ -2301,7 +2305,7 @@ function ReportsPanel({
   const bankBalanceStatus = summarizeBankBalanceRows(bankBalanceRows);
   const corporateTaxRows = buildCorporateTaxRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows, financialStatementRows, cashFlowRows, bankBalanceRows);
   const filingPackageRows = buildFilingPackageRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows, withholdingRows, financialStatementRows, cashFlowRows, bankBalanceRows);
-  const dataSourceRows = buildDataSourceRows(filteredTransactions);
+  const dataSourceRows = buildDataSourceRows(filteredTransactions, importBatches);
   const filingReadinessRows = buildFilingReadinessRows({
     setupItems,
     transactions: filteredTransactions,
@@ -2764,6 +2768,8 @@ function ReportsPanel({
                 <th>자료</th>
                 <th>상태</th>
                 <th className="amount">거래</th>
+                <th>업로드</th>
+                <th>원본</th>
                 <th>기간</th>
                 <th>다음 확인</th>
               </tr>
@@ -2776,6 +2782,8 @@ function ReportsPanel({
                     <span className={`status ${row.톤}`}>{row.상태}</span>
                   </td>
                   <td className="amount">{row.거래}</td>
+                  <td>{row.업로드}</td>
+                  <td>{row.원본}</td>
                   <td>{row.기간}</td>
                   <td>{row["다음 확인"]}</td>
                 </tr>
@@ -3024,6 +3032,8 @@ function ReportsPanel({
                   <th>자료</th>
                   <th>상태</th>
                   <th className="amount">거래</th>
+                  <th>업로드</th>
+                  <th>원본</th>
                   <th>기간</th>
                   <th>다음 확인</th>
                 </tr>
@@ -3031,7 +3041,7 @@ function ReportsPanel({
               <tbody>
                 {selectedPayload.dataSourceRows.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="empty-cell">저장된 자료 수집 현황이 없습니다.</td>
+                    <td colSpan={7} className="empty-cell">저장된 자료 수집 현황이 없습니다.</td>
                   </tr>
                 ) : (
                   selectedPayload.dataSourceRows.map((row) => (
@@ -3039,6 +3049,8 @@ function ReportsPanel({
                       <td>{row.자료}</td>
                       <td>{row.상태}</td>
                       <td className="amount">{row.거래}</td>
+                      <td>{row.업로드}</td>
+                      <td>{row.원본}</td>
                       <td>{row.기간}</td>
                       <td>{row["다음 확인"]}</td>
                     </tr>
@@ -7165,66 +7177,6 @@ function buildFilingReadinessRows({
 
 function buildClosingBlockerRows(rows: FilingReadinessRow[]) {
   return rows.filter((row) => row.톤 === "red" && row.점검 !== "월 마감");
-}
-
-function buildDataSourceRows(transactions: AppTransaction[], importBatches: AppImportBatch[] = []) {
-  return sourceOptions.map((sourceType) => {
-    const sourceTransactions = transactions.filter((transaction) => transaction.sourceType === sourceType);
-    const sourceBatches = importBatches.filter((batch) => batch.sourceType === sourceType);
-    const originalFileCount = sourceBatches.filter((batch) => batch.hasOriginalFile).length;
-    const dates = sourceTransactions.map((transaction) => transaction.transactionDate).filter(Boolean).sort();
-    const hasTransactions = sourceTransactions.length > 0;
-    const optionalSource = sourceType === "PG";
-
-    return {
-      자료: SOURCE_TYPE_LABELS[sourceType],
-      상태: hasTransactions ? "반영됨" : optionalSource ? "선택" : "확인 필요",
-      톤: hasTransactions ? "green" : optionalSource ? "blue" : "amber",
-      거래: `${formatNumber(sourceTransactions.length)}건`,
-      업로드: sourceBatches.length > 0 ? `${formatNumber(sourceBatches.length)}개 업로드` : "업로드 이력 없음",
-      원본: sourceBatches.length > 0 ? `원본 CSV ${formatNumber(originalFileCount)}/${formatNumber(sourceBatches.length)}개` : "원본 CSV 없음",
-      기간: hasTransactions ? `${formatDate(dates[0])} - ${formatDate(dates.at(-1) ?? dates[0])}` : "-",
-      "다음 확인": hasTransactions ? dataSourceReadyMessage(sourceType) : dataSourceMissingMessage(sourceType)
-    };
-  });
-}
-
-function dataSourceReadyMessage(sourceType: SourceType) {
-  switch (sourceType) {
-    case "BANK":
-      return "입출금 누락 월이 없는지 잔액 흐름 확인";
-    case "CARD":
-      return "카드전표와 증빙 매칭 확인";
-    case "HOMETAX_SALES":
-      return "매출 입금과 세금계산서 매칭 확인";
-    case "HOMETAX_PURCHASES":
-      return "매입세액 공제 가능 여부 확인";
-    case "CASH_RECEIPT":
-      return "현금영수증/카드 매입 중복 반영 확인";
-    case "PG":
-      return "정산금액과 실제 입금액 차이 확인";
-    case "MANUAL":
-      return "수기 입력 거래의 계정과 증빙 확인";
-  }
-}
-
-function dataSourceMissingMessage(sourceType: SourceType) {
-  switch (sourceType) {
-    case "BANK":
-      return "법인 통장 입출금 CSV를 업로드";
-    case "CARD":
-      return "법인카드 이용내역 CSV를 업로드";
-    case "HOMETAX_SALES":
-      return "홈택스 매출 세금계산서 CSV 반영";
-    case "HOMETAX_PURCHASES":
-      return "홈택스 매입 세금계산서 CSV 반영";
-    case "CASH_RECEIPT":
-      return "홈택스 현금영수증/카드 매입 자료 확인";
-    case "PG":
-      return "PG/마켓 정산자료가 있으면 업로드";
-    case "MANUAL":
-      return "필요한 수기 거래는 거래내역에서 직접 추가";
-  }
 }
 
 function buildFilingSubmissionGuideRows({

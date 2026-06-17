@@ -3,10 +3,12 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import Papa from "papaparse";
 import { generateJournalDraft, inferMapping, summarizeTransactions } from "../src/lib/accounting";
-import { DEFAULT_COMPANY_ID } from "../src/lib/defaults";
+import { buildDataSourceRows } from "../src/lib/data-sources";
+import { DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "../src/lib/defaults";
 import type {
   AppAccount,
   AppClassificationRule,
+  AppImportBatch,
   AppJournalEntry,
   AppTransaction,
   AppVendor,
@@ -60,6 +62,28 @@ try {
   const verifiedBankTemplateCount =
     companyAfterTemplateVariants.csvTemplates?.filter((template) => template.sourceType === "BANK" && template.headerSignature?.includes(marker)).length ?? 0;
   assert.ok(verifiedBankTemplateCount >= 2, "BANK imports with different header signatures should preserve multiple CSV templates");
+  const importBatchListPayload = await requestJson<{ mode?: string; importBatches?: AppImportBatch[] }>("/api/imports");
+  assert.equal(importBatchListPayload.mode, "database", "import batch list should use database mode");
+  const workflowImportBatchIds = new Set(cleanup.importBatchIds);
+  const workflowImportBatches = importBatchListPayload.importBatches?.filter((batch) => workflowImportBatchIds.has(batch.id)) ?? [];
+  assert.equal(workflowImportBatches.length, cleanup.importBatchIds.length, "workflow import batches should be listed after import");
+  const dataSourceRows = buildDataSourceRows([...alternateBankTransactions, ...importedTransactions], workflowImportBatches);
+  const bankSourceRow = dataSourceRows.find((row) => row.자료 === SOURCE_TYPE_LABELS.BANK);
+  assert.equal(bankSourceRow?.상태, "반영됨", "BANK source status should be reflected");
+  assert.equal(bankSourceRow?.거래, "2건", "BANK source status should count imported transactions");
+  assert.equal(bankSourceRow?.업로드, "2개 업로드", "BANK source status should count import batches");
+  assert.equal(bankSourceRow?.원본, "원본 CSV 2/2개", "BANK source status should count preserved original CSV files");
+  const cardSourceRow = dataSourceRows.find((row) => row.자료 === SOURCE_TYPE_LABELS.CARD);
+  assert.equal(cardSourceRow?.상태, "반영됨", "CARD source status should be reflected");
+  assert.equal(cardSourceRow?.거래, "1건", "CARD source status should count imported transactions");
+  assert.equal(cardSourceRow?.업로드, "1개 업로드", "CARD source status should count import batches");
+  assert.equal(cardSourceRow?.원본, "원본 CSV 1/1개", "CARD source status should count preserved original CSV files");
+  const salesSourceRow = dataSourceRows.find((row) => row.자료 === SOURCE_TYPE_LABELS.HOMETAX_SALES);
+  assert.equal(salesSourceRow?.상태, "확인 필요", "missing sales source should still require upload");
+  assert.equal(salesSourceRow?.업로드, "업로드 이력 없음", "missing sales source should report no upload history");
+  assert.equal(salesSourceRow?.원본, "원본 CSV 없음", "missing sales source should report no original CSV");
+  const pgSourceRow = dataSourceRows.find((row) => row.자료 === SOURCE_TYPE_LABELS.PG);
+  assert.equal(pgSourceRow?.상태, "선택", "optional PG source should remain optional when absent");
 
   const classificationRulePayload = await requestJson<{ ok?: boolean; mode?: string; classificationRule?: AppClassificationRule }>("/api/classification-rules", {
     method: "POST",
