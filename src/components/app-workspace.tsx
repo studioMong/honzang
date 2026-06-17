@@ -273,6 +273,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
         {activeView === "reviews" && <ReviewsPanel items={reviewItems} />}
         {activeView === "reports" && (
           <ReportsPanel
+            company={company}
             companyId={company.id || DEFAULT_COMPANY_ID}
             transactions={transactions}
             journalEntries={journalEntries}
@@ -905,12 +906,14 @@ function ReviewsPanel({ items }: { items: ReturnType<typeof buildReviewItems> })
 }
 
 function ReportsPanel({
+  company,
   companyId,
   transactions,
   journalEntries,
   taxReports,
   onSaved
 }: {
+  company: AppCompany;
   companyId: string;
   transactions: AppTransaction[];
   journalEntries: AppJournalEntry[];
@@ -933,6 +936,7 @@ function ReportsPanel({
   const filingPackageRows = buildFilingPackageRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows, withholdingRows);
   const periodLabel = formatPeriodLabel(selectedPeriod);
   const periodRange = getReportPeriodRange(selectedPeriod, filteredTransactions);
+  const filingScheduleRows = buildFilingScheduleRows(company, periodRange, reportSummary, withholdingRows, ledgerRows);
   const visibleTaxReports = taxReports.slice(0, 6);
   const selectedTaxReport = taxReports.find((taxReport) => taxReport.id === selectedTaxReportId) ?? null;
   const selectedPayload = selectedTaxReport ? parseDetailedTaxReportPayload(selectedTaxReport.calculatedPayload) : null;
@@ -952,6 +956,7 @@ function ReportsPanel({
             period: selectedPeriod,
             periodLabel,
             summary: reportSummary,
+            filingScheduleRows,
             filingPackageRows,
             withholdingRows,
             corporateTaxRows,
@@ -988,6 +993,48 @@ function ReportsPanel({
               <option value="ALL">전체 기간</option>
             </select>
           </div>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="panel-title">신고 일정</h2>
+            <p className="panel-subtitle">기한은 신고 전 국세청 공지와 홈택스 기준으로 최종 확인</p>
+          </div>
+          <div className="toolbar">
+            <span className="status blue">{periodLabel}</span>
+            <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("filing-schedule", selectedPeriod), filingScheduleRows)}>
+              <Download size={16} />
+              일정
+            </button>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>신고</th>
+                <th>대상 기간</th>
+                <th>예상 기한</th>
+                <th>상태</th>
+                <th>다음 작업</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filingScheduleRows.map((row) => (
+                <tr key={row.신고}>
+                  <td>{row.신고}</td>
+                  <td>{row["대상 기간"]}</td>
+                  <td>{row["예상 기한"]}</td>
+                  <td>
+                    <span className={`status ${row.톤}`}>{row.상태}</span>
+                  </td>
+                  <td>{row["다음 작업"]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -1068,6 +1115,39 @@ function ReportsPanel({
                     <td>{row.확인}</td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="table-wrap snapshot-detail">
+            <table>
+              <thead>
+                <tr>
+                  <th>신고</th>
+                  <th>대상 기간</th>
+                  <th>예상 기한</th>
+                  <th>상태</th>
+                  <th>다음 작업</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedPayload.filingScheduleRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="empty-cell">저장된 신고 일정이 없습니다.</td>
+                  </tr>
+                ) : (
+                  selectedPayload.filingScheduleRows.map((row) => (
+                    <tr key={row.신고}>
+                      <td>{row.신고}</td>
+                      <td>{row["대상 기간"]}</td>
+                      <td>{row["예상 기한"]}</td>
+                      <td>
+                        <span className={`status ${row.톤}`}>{row.상태}</span>
+                      </td>
+                      <td>{row["다음 작업"]}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -1790,6 +1870,7 @@ function buildTaxReportPayload({
   period,
   periodLabel,
   summary,
+  filingScheduleRows,
   filingPackageRows,
   withholdingRows,
   corporateTaxRows,
@@ -1800,6 +1881,7 @@ function buildTaxReportPayload({
   period: string;
   periodLabel: string;
   summary: ReturnType<typeof summarizeTransactions>;
+  filingScheduleRows: ReturnType<typeof buildFilingScheduleRows>;
   filingPackageRows: ReturnType<typeof buildFilingPackageRows>;
   withholdingRows: ReturnType<typeof buildWithholdingRows>;
   corporateTaxRows: ReturnType<typeof buildCorporateTaxRows>;
@@ -1811,6 +1893,7 @@ function buildTaxReportPayload({
     period,
     periodLabel,
     summary,
+    filingScheduleRows,
     filingPackageRows,
     withholdingRows,
     corporateTaxRows,
@@ -1866,6 +1949,7 @@ function parseDetailedTaxReportPayload(payload: unknown) {
       reviewCount: typeof summary.reviewCount === "number" ? summary.reviewCount : 0,
       riskCount: typeof summary.riskCount === "number" ? summary.riskCount : 0
     },
+    filingScheduleRows: parseStringNumberRecordRows(record.filingScheduleRows) as ReturnType<typeof buildFilingScheduleRows>,
     filingPackageRows: parseStringNumberRecordRows(record.filingPackageRows) as ReturnType<typeof buildFilingPackageRows>,
     withholdingRows: parseStringNumberRecordRows(record.withholdingRows) as ReturnType<typeof buildWithholdingRows>,
     corporateTaxRows: parseStringNumberRecordRows(record.corporateTaxRows) as ReturnType<typeof buildCorporateTaxRows>,
@@ -2169,6 +2253,105 @@ function buildFilingPackageRows(
       "다음 확인": "계정별 원장, 증빙 누락, 대표자 거래 검토"
     }
   ];
+}
+
+function buildFilingScheduleRows(
+  company: AppCompany,
+  periodRange: { start: string; end: string },
+  summary: ReturnType<typeof summarizeTransactions>,
+  withholdingRows: ReturnType<typeof buildWithholdingRows>,
+  ledgerRows: ReturnType<typeof buildLedgerRows>
+) {
+  const periodEnd = parseIsoDate(periodRange.end);
+  const periodMonth = periodEnd.getUTCMonth() + 1;
+  const periodYear = periodEnd.getUTCFullYear();
+  const periodLabel = `${formatDate(periodRange.start)} - ${formatDate(periodRange.end)}`;
+  const vatDueDate = periodMonth <= 6 ? new Date(Date.UTC(periodYear, 6, 25)) : new Date(Date.UTC(periodYear + 1, 0, 25));
+  const vatHalfLabel = `${periodYear}년 ${periodMonth <= 6 ? "1기" : "2기"}`;
+  const withholdingDueDate = new Date(Date.UTC(periodYear, periodEnd.getUTCMonth() + 1, 10));
+  const evidenceDueDate = endOfMonth(periodYear, periodEnd.getUTCMonth());
+  const fiscalYearEndDate = getFiscalYearEndDate(periodEnd, company.fiscalYearEndMonth);
+  const corporateTaxDueDate = endOfMonth(fiscalYearEndDate.getUTCFullYear(), fiscalYearEndDate.getUTCMonth() + 3);
+  const hasWithholdingSetting = company.representativeSalaryEnabled || company.employeePayrollEnabled || company.contractorPaymentEnabled;
+  const vatNeedsTypeReview = company.vatType !== "GENERAL";
+  const missingEvidence = summary.missingEvidenceAmount > 0;
+
+  return [
+    {
+      신고: "증빙 정리",
+      "대상 기간": periodLabel,
+      "예상 기한": formatIsoDate(evidenceDueDate),
+      상태: missingEvidence ? "누락" : scheduleStatus(evidenceDueDate, "정리 가능"),
+      톤: missingEvidence ? "red" : toneForDueDate(evidenceDueDate),
+      "다음 작업": missingEvidence ? "증빙함에서 카드전표, 세금계산서, 현금영수증 매칭" : "월 마감 전 미확인 비용 증빙 점검"
+    },
+    {
+      신고: "부가세",
+      "대상 기간": vatHalfLabel,
+      "예상 기한": formatIsoDate(vatDueDate),
+      상태: missingEvidence ? "증빙 확인" : vatNeedsTypeReview ? "유형 검토" : scheduleStatus(vatDueDate, "준비 가능"),
+      톤: missingEvidence ? "red" : vatNeedsTypeReview ? "amber" : toneForDueDate(vatDueDate),
+      "다음 작업": vatNeedsTypeReview ? "면세/겸영 매출과 공제 가능 매입세액 구분" : "매출세액, 매입세액, 불공제 후보 확인"
+    },
+    {
+      신고: "원천세",
+      "대상 기간": `${periodYear}년 ${periodMonth}월 지급분`,
+      "예상 기한": formatIsoDate(withholdingDueDate),
+      상태: withholdingRows.length > 0 ? "후보 확인" : hasWithholdingSetting ? scheduleStatus(withholdingDueDate, "지급 확인") : "미사용",
+      톤: withholdingRows.length > 0 ? "amber" : hasWithholdingSetting ? toneForDueDate(withholdingDueDate) : "green",
+      "다음 작업": withholdingRows.length > 0 ? "급여대장, 외주 세금계산서, 3.3% 원천세 여부 확인" : "급여/외주 지급 발생 시 지급월별 신고 대상 확인"
+    },
+    {
+      신고: "법인세",
+      "대상 기간": `${formatIsoDate(getFiscalYearStartDate(fiscalYearEndDate))} - ${formatIsoDate(fiscalYearEndDate)}`,
+      "예상 기한": formatIsoDate(corporateTaxDueDate),
+      상태: ledgerRows.length > 0 ? scheduleStatus(corporateTaxDueDate, "원장 있음") : "분개 승인",
+      톤: ledgerRows.length > 0 ? toneForDueDate(corporateTaxDueDate) : "amber",
+      "다음 작업": ledgerRows.length > 0 ? "계정별 원장, 손익, 대표자 거래 검토" : "자동분개 탭에서 기간별 분개 승인 후 원장 생성"
+    }
+  ];
+}
+
+function parseIsoDate(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function formatIsoDate(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function endOfMonth(year: number, monthIndex: number) {
+  return new Date(Date.UTC(year, monthIndex + 1, 0));
+}
+
+function getFiscalYearEndDate(periodEnd: Date, fiscalYearEndMonth: number) {
+  const fiscalMonthIndex = fiscalYearEndMonth - 1;
+  const fiscalYear = periodEnd.getUTCMonth() > fiscalMonthIndex ? periodEnd.getUTCFullYear() + 1 : periodEnd.getUTCFullYear();
+  return endOfMonth(fiscalYear, fiscalMonthIndex);
+}
+
+function getFiscalYearStartDate(fiscalYearEndDate: Date) {
+  return new Date(Date.UTC(fiscalYearEndDate.getUTCFullYear() - 1, fiscalYearEndDate.getUTCMonth() + 1, 1));
+}
+
+function daysUntil(date: Date) {
+  const today = parseIsoDate(new Date().toISOString().slice(0, 10));
+  return Math.ceil((date.getTime() - today.getTime()) / 86_400_000);
+}
+
+function toneForDueDate(date: Date): "green" | "amber" | "red" {
+  const days = daysUntil(date);
+  if (days < 0) return "red";
+  if (days <= 30) return "amber";
+  return "green";
+}
+
+function scheduleStatus(date: Date, readyLabel: string) {
+  const days = daysUntil(date);
+  if (days < 0) return "기한 확인";
+  if (days <= 30) return "다가옴";
+  return readyLabel;
 }
 
 function buildLedgerRows(journalEntries: AppJournalEntry[]) {
