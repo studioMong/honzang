@@ -70,6 +70,7 @@ try {
   await expectInvalidEvidenceAmounts();
   await expectInvalidReportPeriod();
   await expectInvalidReportPeriodRange();
+  await expectMismatchedReportPayloadPeriod();
   await expectInvalidReportPayload();
   await expectText("/", (body) =>
     ["혼자장부", "최근 월 신고 준비", "오늘 할 일", "1인법인 신고 준비"].every((text) => body.includes(text))
@@ -652,6 +653,29 @@ async function expectInvalidReportPeriodRange() {
   const body = JSON.parse(text);
   if (body.code !== "INVALID_REPORT_PERIOD_RANGE") {
     throw new Error(`/api/reports returned unexpected period range validation payload: ${text}`);
+  }
+}
+
+async function expectMismatchedReportPayloadPeriod() {
+  const response = await fetch(`${baseUrl}/api/reports`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      reportType: "CORPORATE_TAX_PREP",
+      periodStart: "2026-06-01",
+      periodEnd: "2026-06-30",
+      calculatedPayload: {
+        period: "2026-05"
+      }
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/reports should reject mismatched payload periods, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "REPORT_PAYLOAD_PERIOD_MISMATCH" || !Array.isArray(body.issues) || body.issues.length === 0) {
+    throw new Error(`/api/reports returned unexpected payload period mismatch response: ${text}`);
   }
 }
 

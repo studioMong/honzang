@@ -6,7 +6,7 @@ import { getPrisma } from "@/lib/db";
 import { sampleTaxReports } from "@/lib/sample-data";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
-import { closedPeriodResponse, findClosedPeriodForDates } from "@/lib/server/closing-periods";
+import { closedPeriodResponse, findClosedPeriodForDates, periodRangeFromMonth } from "@/lib/server/closing-periods";
 import { parseStrictDate } from "@/lib/server/date-validation";
 import { validateJsonPayloadSize } from "@/lib/server/json-payload-validation";
 import { serializeTaxReport } from "@/lib/server/serializers";
@@ -81,6 +81,19 @@ export async function POST(request: Request) {
         ok: false,
         code: "INVALID_REPORT_PAYLOAD",
         message: payloadIssue
+      },
+      { status: 400 }
+    );
+  }
+
+  const payloadPeriodIssues = getReportPayloadPeriodIssues(payload.calculatedPayload, normalizedPeriodStart, normalizedPeriodEnd);
+  if (payloadPeriodIssues.length > 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "REPORT_PAYLOAD_PERIOD_MISMATCH",
+        message: "리포트 스냅샷 기간이 요청한 리포트 기간과 일치하지 않습니다.",
+        issues: payloadPeriodIssues
       },
       { status: 400 }
     );
@@ -172,4 +185,44 @@ export async function DELETE(request: Request) {
   });
 
   return NextResponse.json({ ok: true, id: taxReport.id, mode: "database" });
+}
+
+function getReportPayloadPeriodIssues(calculatedPayload: unknown, normalizedPeriodStart: string, normalizedPeriodEnd: string) {
+  const issues: string[] = [];
+  if (!isRecord(calculatedPayload)) return issues;
+
+  const periodValue = getPayloadPeriodValue(calculatedPayload);
+  if (periodValue && periodValue !== "ALL" && /^\d{4}-\d{2}$/.test(periodValue)) {
+    const range = periodRangeFromMonth(periodValue);
+    const expectedStart = range?.start.toISOString().slice(0, 10);
+    const expectedEnd = range?.end.toISOString().slice(0, 10);
+    if (expectedStart && expectedStart !== normalizedPeriodStart) {
+      issues.push(`payload.period(${periodValue}) 시작일은 ${expectedStart}이나 요청 시작일은 ${normalizedPeriodStart}입니다.`);
+    }
+    if (expectedEnd && expectedEnd !== normalizedPeriodEnd) {
+      issues.push(`payload.period(${periodValue}) 종료일은 ${expectedEnd}이나 요청 종료일은 ${normalizedPeriodEnd}입니다.`);
+    }
+  }
+
+  const periodObject = isRecord(calculatedPayload.period) ? calculatedPayload.period : null;
+  const payloadStart = typeof periodObject?.start === "string" ? periodObject.start : "";
+  const payloadEnd = typeof periodObject?.end === "string" ? periodObject.end : "";
+  if (payloadStart && payloadStart !== normalizedPeriodStart) {
+    issues.push(`payload.period.start(${payloadStart})가 요청 시작일 ${normalizedPeriodStart}와 일치하지 않습니다.`);
+  }
+  if (payloadEnd && payloadEnd !== normalizedPeriodEnd) {
+    issues.push(`payload.period.end(${payloadEnd})가 요청 종료일 ${normalizedPeriodEnd}와 일치하지 않습니다.`);
+  }
+
+  return issues;
+}
+
+function getPayloadPeriodValue(calculatedPayload: Record<string, unknown>) {
+  if (typeof calculatedPayload.period === "string") return calculatedPayload.period;
+  if (isRecord(calculatedPayload.period) && typeof calculatedPayload.period.value === "string") return calculatedPayload.period.value;
+  return "";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
