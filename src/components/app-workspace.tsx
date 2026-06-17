@@ -104,6 +104,16 @@ type JournalIntegrityRow = {
   "다음 작업": string;
 };
 
+type CashFlowRow = {
+  구분: string;
+  항목: string;
+  금액: number;
+  건수: number;
+  톤: StatusTone;
+  근거: string;
+  "다음 확인": string;
+};
+
 type OperationReadinessCheck = {
   key: string;
   label: string;
@@ -686,6 +696,7 @@ function Dashboard({
   const dashboardLedgerRows = buildLedgerRows(dashboardApprovedJournalEntries);
   const dashboardFinancialStatementRows = buildFinancialStatementRows(dashboardLedgerRows);
   const dashboardFinancialStatementTotals = buildFinancialStatementTotals(dashboardFinancialStatementRows);
+  const dashboardCashFlowRows = buildCashFlowRows(dashboardTransactions);
   const dashboardReadinessRows = buildFilingReadinessRows({
     transactions: dashboardTransactions,
     summary: summarizeTransactions(dashboardTransactions),
@@ -694,6 +705,7 @@ function Dashboard({
     journalEntries: dashboardJournalEntries,
     journalIntegrityRows: buildJournalIntegrityRows(dashboardApprovedJournalEntries, dashboardLedgerRows, dashboardFinancialStatementRows, dashboardFinancialStatementTotals),
     ledgerRows: dashboardLedgerRows,
+    cashFlowRows: dashboardCashFlowRows,
     isPeriodClosed: Boolean(latestPeriod && closingPeriods.some((period) => period.period === latestPeriod)),
     canClosePeriod: Boolean(latestPeriod)
   });
@@ -2025,8 +2037,10 @@ function ReportsPanel({
   const financialStatementRows = buildFinancialStatementRows(ledgerRows);
   const financialStatementTotals = buildFinancialStatementTotals(financialStatementRows);
   const journalIntegrityRows = buildJournalIntegrityRows(approvedJournalEntries, ledgerRows, financialStatementRows, financialStatementTotals);
-  const corporateTaxRows = buildCorporateTaxRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows, financialStatementRows);
-  const filingPackageRows = buildFilingPackageRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows, withholdingRows, financialStatementRows);
+  const cashFlowRows = buildCashFlowRows(filteredTransactions);
+  const cashFlowTotals = buildCashFlowTotals(cashFlowRows);
+  const corporateTaxRows = buildCorporateTaxRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows, financialStatementRows, cashFlowRows);
+  const filingPackageRows = buildFilingPackageRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows, withholdingRows, financialStatementRows, cashFlowRows);
   const dataSourceRows = buildDataSourceRows(filteredTransactions);
   const filingReadinessRows = buildFilingReadinessRows({
     transactions: filteredTransactions,
@@ -2036,6 +2050,7 @@ function ReportsPanel({
     journalEntries: filteredJournalEntries,
     journalIntegrityRows,
     ledgerRows,
+    cashFlowRows,
     isPeriodClosed,
     canClosePeriod
   });
@@ -2055,6 +2070,7 @@ function ReportsPanel({
     withholdingRows,
     ledgerRows,
     financialStatementRows,
+    cashFlowRows,
     isPeriodClosed,
     canClosePeriod
   });
@@ -2081,6 +2097,7 @@ function ReportsPanel({
       withholdingRows,
       journalIntegrityRows,
       corporateTaxRows,
+      cashFlowRows,
       financialStatementRows,
       ledgerRows
     });
@@ -2126,6 +2143,7 @@ function ReportsPanel({
             withholdingRows,
             journalIntegrityRows,
             corporateTaxRows,
+            cashFlowRows,
             financialStatementRows,
             ledgerRows,
             transactionCount: filteredTransactions.length,
@@ -2192,6 +2210,7 @@ function ReportsPanel({
               withholdingRows,
               journalIntegrityRows,
               corporateTaxRows,
+              cashFlowRows,
               financialStatementRows,
               ledgerRows,
               transactionCount: filteredTransactions.length,
@@ -2821,6 +2840,37 @@ function ReportsPanel({
             <table>
               <thead>
                 <tr>
+                  <th>현금흐름 구분</th>
+                  <th>항목</th>
+                  <th className="amount">금액</th>
+                  <th className="amount">건수</th>
+                  <th>다음 확인</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedPayload.cashFlowRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="empty-cell">저장된 현금흐름 요약이 없습니다.</td>
+                  </tr>
+                ) : (
+                  selectedPayload.cashFlowRows.map((row) => (
+                    <tr key={`${row.구분}-${row.항목}`}>
+                      <td>{row.구분}</td>
+                      <td>{row.항목}</td>
+                      <td className="amount">{formatKRW(row.금액)}</td>
+                      <td className="amount">{formatNumber(row.건수)}</td>
+                      <td>{row["다음 확인"]}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="table-wrap snapshot-detail">
+            <table>
+              <thead>
+                <tr>
                   <th>원천세 후보</th>
                   <th>거래처</th>
                   <th className="amount">지급액</th>
@@ -2904,6 +2954,10 @@ function ReportsPanel({
               <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("withholding-candidates", selectedPeriod), withholdingRows)}>
                 <Download size={16} />
                 원천세
+              </button>
+              <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("cash-flow", selectedPeriod), cashFlowRows)}>
+                <Download size={16} />
+                현금흐름
               </button>
               <button className="secondary-button" onClick={downloadFilingPackageArchive}>
                 <Download size={16} />
@@ -3104,6 +3158,56 @@ function ReportsPanel({
                   </tr>
                 ))
               )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="panel-title">현금흐름 요약</h2>
+            <p className="panel-subtitle">거래 CSV 기준 입출금 흐름, 통장 잔액 대조 전 확인용</p>
+          </div>
+          <div className="toolbar">
+            <span className={`status ${cashFlowTotals.net >= 0 ? "green" : "amber"}`}>순증감 {formatKRW(cashFlowTotals.net)}</span>
+            <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("cash-flow", selectedPeriod), cashFlowRows)}>
+              <Download size={16} />
+              CSV
+            </button>
+          </div>
+        </div>
+        <div className="panel-body">
+          <div className="review-list">
+            <ChecklistItem tone="green" title="현금 유입" value={formatKRW(cashFlowTotals.inflow)} />
+            <ChecklistItem tone={cashFlowTotals.outflow > 0 ? "amber" : "green"} title="현금 유출" value={formatKRW(cashFlowTotals.outflow)} />
+            <ChecklistItem tone={cashFlowTotals.net >= 0 ? "green" : "amber"} title="순현금증감" value={formatKRW(cashFlowTotals.net)} />
+            <ChecklistItem tone="blue" title="거래 건수" value={`${formatNumber(cashFlowTotals.count)}건`} />
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>구분</th>
+                <th>항목</th>
+                <th className="amount">금액</th>
+                <th className="amount">건수</th>
+                <th>근거</th>
+                <th>다음 확인</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cashFlowRows.map((row) => (
+                <tr key={`${row.구분}-${row.항목}`}>
+                  <td>{row.구분}</td>
+                  <td>{row.항목}</td>
+                  <td className="amount">{formatKRW(row.금액)}</td>
+                  <td className="amount">{formatNumber(row.건수)}</td>
+                  <td>{row.근거}</td>
+                  <td>{row["다음 확인"]}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -4689,6 +4793,7 @@ function buildTaxReportPayload({
   withholdingRows,
   journalIntegrityRows,
   corporateTaxRows,
+  cashFlowRows,
   financialStatementRows,
   ledgerRows,
   transactionCount,
@@ -4705,6 +4810,7 @@ function buildTaxReportPayload({
   withholdingRows: ReturnType<typeof buildWithholdingRows>;
   journalIntegrityRows: JournalIntegrityRow[];
   corporateTaxRows: ReturnType<typeof buildCorporateTaxRows>;
+  cashFlowRows: CashFlowRow[];
   financialStatementRows: ReturnType<typeof buildFinancialStatementRows>;
   ledgerRows: ReturnType<typeof buildLedgerRows>;
   transactionCount: number;
@@ -4722,6 +4828,7 @@ function buildTaxReportPayload({
     withholdingRows,
     journalIntegrityRows,
     corporateTaxRows,
+    cashFlowRows,
     financialStatementRows,
     ledgerRows,
     transactionCount,
@@ -4783,6 +4890,7 @@ function parseDetailedTaxReportPayload(payload: unknown) {
     withholdingRows: parseStringNumberRecordRows(record.withholdingRows) as ReturnType<typeof buildWithholdingRows>,
     journalIntegrityRows: parseStringNumberRecordRows(record.journalIntegrityRows) as JournalIntegrityRow[],
     corporateTaxRows: parseStringNumberRecordRows(record.corporateTaxRows) as ReturnType<typeof buildCorporateTaxRows>,
+    cashFlowRows: parseStringNumberRecordRows(record.cashFlowRows) as CashFlowRow[],
     financialStatementRows: parseStringNumberRecordRows(record.financialStatementRows) as ReturnType<typeof buildFinancialStatementRows>,
     ledgerRows: parseStringNumberRecordRows(record.ledgerRows),
     transactionCount: typeof record.transactionCount === "number" ? record.transactionCount : 0,
@@ -4800,6 +4908,7 @@ function buildTaxReportDetailRows(taxReport: AppTaxReport, payload: ReturnType<t
     { 항목: "손익", 값: formatKRW(payload.summary.profit), 확인: payload.summary.profit >= 0 ? "이익" : "손실" },
     { 항목: "예상 부가세", 값: formatKRW(payload.summary.vatPayable), 확인: "확정 전 신고 준비 금액" },
     { 항목: "증빙 누락", 값: formatKRW(payload.summary.missingEvidenceAmount), 확인: `${formatNumber(payload.summary.reviewCount)}건 검토` },
+    { 항목: "현금흐름 순증감", 값: formatKRW(buildCashFlowTotals(payload.cashFlowRows).net), 확인: "저장 당시 거래 CSV 입출금 기준" },
     { 항목: "재무제표 초안", 값: `${formatNumber(payload.financialStatementRows.length)}행`, 확인: "저장 당시 승인 분개 기준" },
     { 항목: "계정별 원장", 값: `${formatNumber(payload.ledgerRows.length)}행`, 확인: "저장 당시 원장 행 수" }
   ];
@@ -4892,6 +5001,7 @@ function downloadFilingPackageZip(fileName: string, payload: ReturnType<typeof b
     "csv/withholding-candidates.csv",
     "csv/journal-integrity.csv",
     "csv/corporate-tax-prep.csv",
+    "csv/cash-flow.csv",
     "csv/financial-statements.csv",
     "csv/ledger.csv"
   ];
@@ -4926,6 +5036,7 @@ function downloadFilingPackageZip(fileName: string, payload: ReturnType<typeof b
     { path: "csv/withholding-candidates.csv", content: toCsvFileContent(payload.tables.withholdingCandidates) },
     { path: "csv/journal-integrity.csv", content: toCsvFileContent(payload.tables.journalIntegrity) },
     { path: "csv/corporate-tax-prep.csv", content: toCsvFileContent(payload.tables.corporateTaxPrep) },
+    { path: "csv/cash-flow.csv", content: toCsvFileContent(payload.tables.cashFlow) },
     { path: "csv/financial-statements.csv", content: toCsvFileContent(payload.tables.financialStatements) },
     { path: "csv/ledger.csv", content: toCsvFileContent(payload.tables.ledger) },
     ...evidenceFiles
@@ -5388,6 +5499,7 @@ function buildFilingWorkbookSheets(payload: ReturnType<typeof buildFilingPackage
     { name: "원천세", rows: payload.tables.withholdingCandidates },
     { name: "복식검증", rows: payload.tables.journalIntegrity },
     { name: "법인세", rows: payload.tables.corporateTaxPrep },
+    { name: "현금흐름", rows: payload.tables.cashFlow },
     { name: "재무제표", rows: payload.tables.financialStatements },
     { name: "원장", rows: payload.tables.ledger }
   ];
@@ -5406,6 +5518,7 @@ function buildFilingSummaryRows(payload: ReturnType<typeof buildFilingPackagePay
     { 항목: "신고 차단 항목", 값: payload.filingReadinessRows.filter((row) => row.톤 === "red").length },
     { 항목: "신고 확인 항목", 값: payload.filingReadinessRows.filter((row) => row.톤 === "amber").length },
     { 항목: "복식부기 차단 항목", 값: payload.tables.journalIntegrity.filter((row) => row.톤 === "red").length },
+    { 항목: "현금 순증감", 값: buildCashFlowTotals(payload.tables.cashFlow).net },
     { 항목: "제출 가이드 단계", 값: payload.submissionGuideRows.length },
     { 항목: "확인 필요 자료", 값: payload.dataSourceRows.filter((row) => row.상태 === "확인 필요").length },
     { 항목: "매출", 값: payload.summary.revenue },
@@ -5679,6 +5792,7 @@ function buildFilingPackagePayload({
   withholdingRows,
   journalIntegrityRows,
   corporateTaxRows,
+  cashFlowRows,
   financialStatementRows,
   ledgerRows
 }: {
@@ -5698,6 +5812,7 @@ function buildFilingPackagePayload({
   withholdingRows: ReturnType<typeof buildWithholdingRows>;
   journalIntegrityRows: JournalIntegrityRow[];
   corporateTaxRows: ReturnType<typeof buildCorporateTaxRows>;
+  cashFlowRows: CashFlowRow[];
   financialStatementRows: ReturnType<typeof buildFinancialStatementRows>;
   ledgerRows: ReturnType<typeof buildLedgerRows>;
 }) {
@@ -5724,6 +5839,7 @@ function buildFilingPackagePayload({
     dataSourceRows,
     filingPackageRows,
     journalIntegrityRows,
+    cashFlowRows,
     tables: {
       filingReadiness: filingReadinessRows,
       submissionGuide: submissionGuideRows,
@@ -5735,6 +5851,7 @@ function buildFilingPackagePayload({
       withholdingCandidates: withholdingRows,
       journalIntegrity: journalIntegrityRows,
       corporateTaxPrep: corporateTaxRows,
+      cashFlow: cashFlowRows,
       financialStatements: financialStatementRows,
       ledger: buildLedgerCsv(ledgerRows)
     },
@@ -5747,6 +5864,100 @@ function buildFilingPackagePayload({
 
 function getTransactionAccount(transaction: AppTransaction) {
   return transaction.confirmedAccount ?? transaction.suggestedAccount ?? null;
+}
+
+function buildCashFlowRows(transactions: AppTransaction[]): CashFlowRow[] {
+  const deposits = transactions.filter((transaction) => transaction.depositAmount > 0);
+  const withdrawals = transactions.filter((transaction) => transaction.withdrawalAmount > 0);
+  const revenueInflows = deposits.filter(isRevenueCashIn);
+  const ownerInflows = deposits.filter((transaction) => !revenueInflows.includes(transaction) && isOwnerCashFlow(transaction));
+  const otherInflows = deposits.filter((transaction) => !revenueInflows.includes(transaction) && !ownerInflows.includes(transaction));
+  const taxOutflows = withdrawals.filter(isTaxCashOut);
+  const ownerOutflows = withdrawals.filter((transaction) => !taxOutflows.includes(transaction) && isOwnerCashFlow(transaction));
+  const operatingOutflows = withdrawals.filter((transaction) => !taxOutflows.includes(transaction) && !ownerOutflows.includes(transaction) && isOperatingCashOut(transaction));
+  const otherOutflows = withdrawals.filter((transaction) => !taxOutflows.includes(transaction) && !ownerOutflows.includes(transaction) && !operatingOutflows.includes(transaction));
+  const inflowTotal = sumCashFlowAmount(deposits, "DEPOSIT");
+  const outflowTotal = sumCashFlowAmount(withdrawals, "WITHDRAWAL");
+  const netCashFlow = inflowTotal - outflowTotal;
+
+  return [
+    buildCashFlowRow("현금 유입", "매출/영업 유입", revenueInflows, "DEPOSIT", "매출, PG 정산, 영업 입금", "매출 증빙과 실제 입금 매칭"),
+    buildCashFlowRow("현금 유입", "대표자/자본 유입", ownerInflows, "DEPOSIT", "대표자차입금, 자본성 입금", "대표자차입금/자본금 처리 확인"),
+    buildCashFlowRow("현금 유입", "기타 유입", otherInflows, "DEPOSIT", "매출·대표자 외 입금", "입금 성격과 계정과목 확인"),
+    buildCashFlowRow("현금 유출", "영업 비용 유출", operatingOutflows, "WITHDRAWAL", "비용 계정 출금", "증빙과 손금 가능성 확인"),
+    buildCashFlowRow("현금 유출", "세금/공과 유출", taxOutflows, "WITHDRAWAL", "세금과공과, 국세/지방세 키워드", "신고서 납부액과 이체 내역 대조"),
+    buildCashFlowRow("현금 유출", "대표자/자본 유출", ownerOutflows, "WITHDRAWAL", "대표자/개인/가지급금 신호", "가지급금, 상환, 개인 사용 여부 확인"),
+    buildCashFlowRow("현금 유출", "기타 유출", otherOutflows, "WITHDRAWAL", "비용·세금·대표자 외 출금", "출금 성격과 계정과목 확인"),
+    {
+      구분: "순현금",
+      항목: "순현금증감",
+      금액: netCashFlow,
+      건수: deposits.length + withdrawals.length,
+      톤: netCashFlow >= 0 ? "green" : "amber",
+      근거: `유입 ${formatKRW(inflowTotal)} - 유출 ${formatKRW(outflowTotal)}`,
+      "다음 확인": "기간 시작/종료 통장 잔액과 순증감 대조"
+    }
+  ];
+}
+
+function buildCashFlowRow(
+  category: string,
+  item: string,
+  transactions: AppTransaction[],
+  direction: "DEPOSIT" | "WITHDRAWAL",
+  basis: string,
+  nextCheck: string
+): CashFlowRow {
+  const amount = sumCashFlowAmount(transactions, direction);
+  return {
+    구분: category,
+    항목: item,
+    금액: amount,
+    건수: transactions.length,
+    톤: amount > 0 ? "green" : "blue",
+    근거: basis,
+    "다음 확인": nextCheck
+  };
+}
+
+function buildCashFlowTotals(rows: CashFlowRow[]) {
+  const inflow = rows.filter((row) => row.구분 === "현금 유입").reduce((sum, row) => sum + Number(row.금액 || 0), 0);
+  const outflow = rows.filter((row) => row.구분 === "현금 유출").reduce((sum, row) => sum + Number(row.금액 || 0), 0);
+  const count = rows
+    .filter((row) => row.구분 === "현금 유입" || row.구분 === "현금 유출")
+    .reduce((sum, row) => sum + Number(row.건수 || 0), 0);
+  return { inflow, outflow, net: inflow - outflow, count };
+}
+
+function sumCashFlowAmount(transactions: AppTransaction[], direction: "DEPOSIT" | "WITHDRAWAL") {
+  return transactions.reduce((sum, transaction) => sum + (direction === "DEPOSIT" ? transaction.depositAmount : transaction.withdrawalAmount), 0);
+}
+
+function isRevenueCashIn(transaction: AppTransaction) {
+  const account = getTransactionAccount(transaction);
+  const text = cashFlowText(transaction);
+  return account?.type === "REVENUE" || transaction.sourceType === "HOMETAX_SALES" || transaction.sourceType === "PG" || text.includes("매출") || text.includes("정산");
+}
+
+function isOperatingCashOut(transaction: AppTransaction) {
+  const account = getTransactionAccount(transaction);
+  return !account || account.type === "EXPENSE";
+}
+
+function isTaxCashOut(transaction: AppTransaction) {
+  const account = getTransactionAccount(transaction);
+  const text = cashFlowText(transaction);
+  return account?.code === "509" || ["세금", "국세", "지방세", "부가세", "원천세", "4대보험"].some((keyword) => text.includes(keyword));
+}
+
+function isOwnerCashFlow(transaction: AppTransaction) {
+  const account = getTransactionAccount(transaction);
+  const text = cashFlowText(transaction);
+  return account?.taxCategory === "OWNER_RISK" || ["대표", "대표자", "개인", "차입", "가지급"].some((keyword) => text.includes(keyword));
+}
+
+function cashFlowText(transaction: AppTransaction) {
+  return `${transaction.description} ${transaction.counterparty ?? ""}`.toLowerCase();
 }
 
 function buildWithholdingRows(transactions: AppTransaction[]) {
@@ -5786,7 +5997,8 @@ function buildCorporateTaxRows(
   transactions: AppTransaction[],
   journalEntries: AppJournalEntry[],
   ledgerRows: ReturnType<typeof buildLedgerRows>,
-  financialStatementRows: ReturnType<typeof buildFinancialStatementRows>
+  financialStatementRows: ReturnType<typeof buildFinancialStatementRows>,
+  cashFlowRows: CashFlowRow[]
 ) {
   const unclassifiedCount = transactions.filter((transaction) => !transaction.confirmedAccount && !transaction.suggestedAccount).length;
   const ownerRiskCount = transactions.filter((transaction) => {
@@ -5794,6 +6006,7 @@ function buildCorporateTaxRows(
     return account?.taxCategory === "OWNER_RISK" || transaction.reviewReasons?.some((reason) => reason.includes("대표자"));
   }).length;
   const approvedJournalCount = journalEntries.filter((entry) => entry.status === "APPROVED").length;
+  const cashFlowTotals = buildCashFlowTotals(cashFlowRows);
 
   return [
     {
@@ -5849,6 +6062,12 @@ function buildCorporateTaxRows(
       값: `${formatNumber(financialStatementRows.length)}개 계정`,
       상태: financialStatementRows.length > 0 ? "생성됨" : "대기",
       확인: "자산, 부채, 자본, 손익 초안 검토"
+    },
+    {
+      항목: "현금흐름 순증감",
+      값: formatKRW(cashFlowTotals.net),
+      상태: cashFlowTotals.count > 0 ? "요약 생성" : "대기",
+      확인: "통장 잔액과 현금 순증감 대조"
     }
   ];
 }
@@ -5861,6 +6080,7 @@ function buildFilingReadinessRows({
   journalEntries,
   journalIntegrityRows,
   ledgerRows,
+  cashFlowRows,
   isPeriodClosed,
   canClosePeriod
 }: {
@@ -5871,6 +6091,7 @@ function buildFilingReadinessRows({
   journalEntries: AppJournalEntry[];
   journalIntegrityRows: JournalIntegrityRow[];
   ledgerRows: ReturnType<typeof buildLedgerRows>;
+  cashFlowRows: CashFlowRow[];
   isPeriodClosed: boolean;
   canClosePeriod: boolean;
 }): FilingReadinessRow[] {
@@ -5885,6 +6106,8 @@ function buildFilingReadinessRows({
   const integrityBlockers = journalIntegrityRows.filter((row) => row.톤 === "red").length;
   const integrityWarnings = journalIntegrityRows.filter((row) => row.톤 === "amber").length;
   const integrityTone: StatusTone = integrityBlockers > 0 ? "red" : integrityWarnings > 0 ? "amber" : "green";
+  const cashFlowTotals = buildCashFlowTotals(cashFlowRows);
+  const hasCashFlow = cashFlowTotals.count > 0;
 
   return [
     {
@@ -5957,6 +6180,14 @@ function buildFilingReadinessRows({
     },
     {
       순서: 8,
+      점검: "현금흐름",
+      상태: hasCashFlow ? "요약 생성" : "대기",
+      톤: hasCashFlow ? "green" : "red",
+      근거: `유입 ${formatKRW(cashFlowTotals.inflow)} · 유출 ${formatKRW(cashFlowTotals.outflow)} · 순증감 ${formatKRW(cashFlowTotals.net)}`,
+      "다음 작업": hasCashFlow ? "통장 잔액과 현금흐름 순증감 대조" : "법인 통장 거래 CSV 업로드 후 입출금 흐름 확인"
+    },
+    {
+      순서: 9,
       점검: "월 마감",
       상태: !canClosePeriod ? "전체 기간" : isPeriodClosed ? "완료" : "확인 필요",
       톤: !canClosePeriod ? "blue" : isPeriodClosed ? "green" : "amber",
@@ -6031,6 +6262,7 @@ function buildFilingSubmissionGuideRows({
   withholdingRows,
   ledgerRows,
   financialStatementRows,
+  cashFlowRows,
   isPeriodClosed,
   canClosePeriod
 }: {
@@ -6042,6 +6274,7 @@ function buildFilingSubmissionGuideRows({
   withholdingRows: ReturnType<typeof buildWithholdingRows>;
   ledgerRows: ReturnType<typeof buildLedgerRows>;
   financialStatementRows: ReturnType<typeof buildFinancialStatementRows>;
+  cashFlowRows: CashFlowRow[];
   isPeriodClosed: boolean;
   canClosePeriod: boolean;
 }): FilingSubmissionGuideRow[] {
@@ -6058,6 +6291,7 @@ function buildFilingSubmissionGuideRows({
   const withholdingTone: StatusTone = withholdingRows.length > 0 ? "amber" : payrollEnabled ? "green" : "blue";
   const corporateTone: StatusTone = ledgerRows.length > 0 && financialStatementRows.length > 0 ? "green" : journalReadiness?.톤 === "red" ? "red" : "amber";
   const closeTone: StatusTone = !canClosePeriod ? "blue" : isPeriodClosed ? "green" : "amber";
+  const cashFlowTotals = buildCashFlowTotals(cashFlowRows);
 
   return [
     {
@@ -6094,10 +6328,10 @@ function buildFilingSubmissionGuideRows({
       순서: 4,
       신고: "법인세",
       "홈택스/제출 위치": "법인세 신고, 재무제표 입력",
-      "혼자장부에서 볼 것": "법인세 결산 체크, 재무제표 초안, 계정별 원장",
+      "혼자장부에서 볼 것": "법인세 결산 체크, 재무제표 초안, 계정별 원장, 현금흐름 요약",
       상태: corporateTone === "green" ? "준비 가능" : corporateTone === "red" ? "차단" : "원장 대기",
       톤: corporateTone,
-      "입력 기준": `원장 ${formatNumber(ledgerRows.length)}행 · 재무제표 ${formatNumber(financialStatementRows.length)}개 계정`,
+      "입력 기준": `원장 ${formatNumber(ledgerRows.length)}행 · 재무제표 ${formatNumber(financialStatementRows.length)}개 계정 · 현금 순증감 ${formatKRW(cashFlowTotals.net)}`,
       "마감 전 확인": corporateSchedule ? `${corporateSchedule["예상 기한"]} 전 ${corporateSchedule["다음 작업"]}` : "승인 분개 기준 재무제표와 원장 확인"
     },
     {
@@ -6129,12 +6363,14 @@ function buildFilingPackageRows(
   journalEntries: AppJournalEntry[],
   ledgerRows: ReturnType<typeof buildLedgerRows>,
   withholdingRows: ReturnType<typeof buildWithholdingRows>,
-  financialStatementRows: ReturnType<typeof buildFinancialStatementRows>
+  financialStatementRows: ReturnType<typeof buildFinancialStatementRows>,
+  cashFlowRows: CashFlowRow[]
 ) {
   const classifiedCount = transactions.filter((transaction) => transaction.confirmedAccount || transaction.suggestedAccount).length;
   const missingEvidenceCount = transactions.filter((transaction) => transaction.withdrawalAmount > 0 && ["UNCHECKED", "MISSING"].includes(transaction.evidenceStatus)).length;
   const approvedJournalCount = journalEntries.filter((entry) => entry.status === "APPROVED").length;
   const totalTransactions = transactions.length;
+  const cashFlowTotals = buildCashFlowTotals(cashFlowRows);
 
   return [
     {
@@ -6185,6 +6421,13 @@ function buildFilingPackageRows(
       톤: financialStatementRows.length > 0 ? "green" : "amber",
       "금액/건수": `${formatNumber(financialStatementRows.length)}개 계정`,
       "다음 확인": "재무상태표 자산/부채/자본과 손익계산서 수익/비용 확인"
+    },
+    {
+      구분: "현금흐름",
+      상태: cashFlowTotals.count > 0 ? "요약 있음" : "대기",
+      톤: cashFlowTotals.count > 0 ? "green" : "amber",
+      "금액/건수": formatKRW(cashFlowTotals.net),
+      "다음 확인": "통장 잔액과 현금 순증감 대조"
     }
   ];
 }
