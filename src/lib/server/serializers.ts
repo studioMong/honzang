@@ -1,5 +1,5 @@
-import type { Account, Evidence, JournalEntry, JournalLine, Transaction } from "@prisma/client";
-import type { AppAccount, AppEvidence, AppJournalEntry, AppTransaction } from "@/types";
+import type { Account, Evidence, JournalEntry, JournalLine, TaxReport, Transaction } from "@prisma/client";
+import type { AppAccount, AppEvidence, AppJournalEntry, AppTaxReport, AppTransaction } from "@/types";
 
 type TransactionWithAccounts = Transaction & {
   suggestedAccount?: Account | null;
@@ -76,5 +76,17 @@ export function serializeJournalEntry(
       vatType: line.vatType,
       memo: line.memo ?? undefined
     }))
+  };
+}
+
+export function serializeTaxReport(taxReport: TaxReport): AppTaxReport {
+  return {
+    id: taxReport.id,
+    reportType: taxReport.reportType,
+    periodStart: taxReport.periodStart.toISOString().slice(0, 10),
+    periodEnd: taxReport.periodEnd.toISOString().slice(0, 10),
+    calculatedPayload: taxReport.calculatedPayload,
+    createdAt: taxReport.createdAt.toISOString(),
+    updatedAt: taxReport.updatedAt.toISOString()
   };
 }

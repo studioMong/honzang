@@ -1,4 +1,4 @@
-import type { AppCompany, AppEvidence, AppJournalEntry, AppTransaction, ReviewItem, SummaryReport } from "@/types";
+import type { AppCompany, AppEvidence, AppJournalEntry, AppTaxReport, AppTransaction, ReviewItem, SummaryReport } from "@/types";
 import { DEFAULT_ACCOUNTS, DEFAULT_COMPANY_ID } from "@/lib/defaults";
 
 const account = (code: string) => DEFAULT_ACCOUNTS.find((item) => item.code === code) ?? null;
@@ -148,6 +148,8 @@ export const sampleEvidences: AppEvidence[] = [
 ];
 
 export const sampleJournalEntries: AppJournalEntry[] = [];
+
+export const sampleTaxReports: AppTaxReport[] = [];
 
 export const sampleSummary: SummaryReport = {
   periodLabel: "2026년 6월",

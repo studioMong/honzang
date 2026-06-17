@@ -17,6 +17,8 @@ export type AccountType = "ASSET" | "LIABILITY" | "EQUITY" | "REVENUE" | "EXPENS
 
 export type BillingModel = "INTERNAL_PER_USE" | "SAAS_MONTHLY" | "SAAS_ANNUAL";
 
+export type TaxReportType = "MONTHLY_PROFIT" | "VAT_PREP" | "WITHHOLDING_CHECKLIST" | "CORPORATE_TAX_PREP" | "RISK_REVIEW";
+
 export type AppCompany = {
   id: string;
   name: string;
@@ -99,6 +101,16 @@ export type AppJournalEntry = {
   status: "DRAFT" | "APPROVED" | "VOID";
   lines: JournalDraftLine[];
   transaction?: AppTransaction | null;
+};
+
+export type AppTaxReport = {
+  id: string;
+  reportType: TaxReportType;
+  periodStart: string;
+  periodEnd: string;
+  calculatedPayload: unknown;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type CsvColumnMapping = {

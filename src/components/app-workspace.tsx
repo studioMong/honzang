@@ -25,6 +25,7 @@ import type {
   AppCompany,
   AppEvidence,
   AppJournalEntry,
+  AppTaxReport,
   AppTransaction,
   CsvColumnMapping,
   CsvTemplate,
@@ -36,7 +37,7 @@ import type {
 import { DEFAULT_ACCOUNTS, DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/defaults";
 import { generateJournalDraft, normalizeCsvRow, summarizeTransactions } from "@/lib/accounting";
 import { formatDate, formatKRW, formatNumber } from "@/lib/format";
-import { sampleCompany, sampleEvidences, sampleJournalEntries, sampleTransactions } from "@/lib/sample-data";
+import { sampleCompany, sampleEvidences, sampleJournalEntries, sampleTaxReports, sampleTransactions } from "@/lib/sample-data";
 
 export type ViewKey = "dashboard" | "imports" | "transactions" | "evidences" | "journals" | "reviews" | "reports" | "settings";
 
@@ -74,6 +75,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
   const [transactions, setTransactions] = useState<AppTransaction[]>(sampleTransactions);
   const [evidences, setEvidences] = useState<AppEvidence[]>(sampleEvidences);
   const [journalEntries, setJournalEntries] = useState<AppJournalEntry[]>(sampleJournalEntries);
+  const [taxReports, setTaxReports] = useState<AppTaxReport[]>(sampleTaxReports);
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<"sample" | "database">("sample");
 
@@ -89,21 +91,25 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       ]);
       const evidenceResponse = await fetch("/api/evidences", { cache: "no-store" });
       const journalResponse = await fetch("/api/journals", { cache: "no-store" });
+      const reportResponse = await fetch("/api/reports", { cache: "no-store" });
       const companyPayload = await companyResponse.json();
       const transactionPayload = await transactionResponse.json();
       const evidencePayload = await evidenceResponse.json();
       const journalPayload = await journalResponse.json();
+      const reportPayload = await reportResponse.json();
       setCompany(companyPayload.company ?? sampleCompany);
       setAccounts(companyPayload.accounts ?? DEFAULT_ACCOUNTS);
       setCsvTemplates(companyPayload.csvTemplates ?? []);
       setTransactions(transactionPayload.transactions?.length ? transactionPayload.transactions : sampleTransactions);
       setEvidences(evidencePayload.evidences?.length ? evidencePayload.evidences : sampleEvidences);
       setJournalEntries(journalPayload.journalEntries ?? []);
+      setTaxReports(reportPayload.taxReports ?? []);
       setMode(
         companyPayload.mode === "database" ||
           transactionPayload.mode === "database" ||
           evidencePayload.mode === "database" ||
-          journalPayload.mode === "database"
+          journalPayload.mode === "database" ||
+          reportPayload.mode === "database"
           ? "database"
           : "sample"
       );
@@ -114,6 +120,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       setTransactions(sampleTransactions);
       setEvidences(sampleEvidences);
       setJournalEntries(sampleJournalEntries);
+      setTaxReports(sampleTaxReports);
       setMode("sample");
     } finally {
       setLoading(false);
@@ -249,7 +256,15 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
           />
         )}
         {activeView === "reviews" && <ReviewsPanel items={reviewItems} />}
-        {activeView === "reports" && <ReportsPanel transactions={transactions} journalEntries={journalEntries} />}
+        {activeView === "reports" && (
+          <ReportsPanel
+            companyId={company.id || DEFAULT_COMPANY_ID}
+            transactions={transactions}
+            journalEntries={journalEntries}
+            taxReports={taxReports}
+            onSaved={(taxReport) => setTaxReports((current) => [taxReport, ...current.filter((item) => item.id !== taxReport.id)])}
+          />
+        )}
         {activeView === "settings" && <SettingsPanel company={company} accounts={accounts} onSaved={setCompany} />}
       </main>
     </div>
@@ -837,9 +852,22 @@ function ReviewsPanel({ items }: { items: ReturnType<typeof buildReviewItems> })
   );
 }
 
-function ReportsPanel({ transactions, journalEntries }: { transactions: AppTransaction[]; journalEntries: AppJournalEntry[] }) {
+function ReportsPanel({
+  companyId,
+  transactions,
+  journalEntries,
+  taxReports,
+  onSaved
+}: {
+  companyId: string;
+  transactions: AppTransaction[];
+  journalEntries: AppJournalEntry[];
+  taxReports: AppTaxReport[];
+  onSaved: (taxReport: AppTaxReport) => void;
+}) {
   const periodOptions = useMemo(() => buildPeriodOptions(transactions), [transactions]);
   const [period, setPeriod] = useState(() => periodOptions[0]?.value ?? "ALL");
+  const [savingReport, setSavingReport] = useState(false);
   const selectedPeriod = period === "ALL" || periodOptions.some((option) => option.value === period) ? period : periodOptions[0]?.value ?? "ALL";
   const filteredTransactions = useMemo(() => filterTransactionsByPeriod(transactions, selectedPeriod), [selectedPeriod, transactions]);
   const filteredJournalEntries = useMemo(() => filterJournalEntriesByPeriod(journalEntries, selectedPeriod), [journalEntries, selectedPeriod]);
@@ -851,6 +879,40 @@ function ReportsPanel({ transactions, journalEntries }: { transactions: AppTrans
   const corporateTaxRows = buildCorporateTaxRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows);
   const filingPackageRows = buildFilingPackageRows(reportSummary, filteredTransactions, filteredJournalEntries, ledgerRows, withholdingRows);
   const periodLabel = formatPeriodLabel(selectedPeriod);
+  const periodRange = getReportPeriodRange(selectedPeriod, filteredTransactions);
+  const visibleTaxReports = taxReports.slice(0, 6);
+
+  async function saveSnapshot() {
+    setSavingReport(true);
+    try {
+      const response = await fetch("/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId,
+          reportType: "CORPORATE_TAX_PREP",
+          periodStart: periodRange.start,
+          periodEnd: periodRange.end,
+          calculatedPayload: buildTaxReportPayload({
+            period: selectedPeriod,
+            periodLabel,
+            summary: reportSummary,
+            filingPackageRows,
+            withholdingRows,
+            corporateTaxRows,
+            ledgerRows,
+            transactionCount: filteredTransactions.length,
+            journalEntryCount: filteredJournalEntries.length
+          })
+        })
+      });
+      const payload = await response.json();
+      if (payload.taxReport) onSaved(payload.taxReport);
+    } finally {
+      setSavingReport(false);
+    }
+  }
+
   return (
     <div className="content">
       <section className="panel report-filter-panel">
@@ -858,6 +920,10 @@ function ReportsPanel({ transactions, journalEntries }: { transactions: AppTrans
           <h2 className="panel-title">리포트 기간</h2>
           <div className="toolbar">
             <span className="status blue">{periodLabel}</span>
+            <button className="primary-button" onClick={() => void saveSnapshot()} disabled={savingReport}>
+              {savingReport ? <Loader2 size={16} className="spin" /> : <CheckCircle2 size={16} />}
+              스냅샷 저장
+            </button>
             <select className="secondary-button" value={selectedPeriod} onChange={(event) => setPeriod(event.target.value)}>
               {periodOptions.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -869,6 +935,46 @@ function ReportsPanel({ transactions, journalEntries }: { transactions: AppTrans
           </div>
         </div>
       </section>
+
+      {visibleTaxReports.length > 0 && (
+        <section className="panel">
+          <div className="panel-header">
+            <h2 className="panel-title">저장된 리포트</h2>
+            <span className="status blue">{formatNumber(taxReports.length)}개</span>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>저장일</th>
+                  <th>기간</th>
+                  <th>유형</th>
+                  <th className="amount">거래</th>
+                  <th className="amount">손익</th>
+                  <th className="amount">예상 부가세</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleTaxReports.map((taxReport) => {
+                  const payload = parseTaxReportPayload(taxReport.calculatedPayload);
+                  return (
+                    <tr key={taxReport.id}>
+                      <td>{formatDate(taxReport.createdAt)}</td>
+                      <td>
+                        {formatDate(taxReport.periodStart)} - {formatDate(taxReport.periodEnd)}
+                      </td>
+                      <td>{taxReportTypeLabel(taxReport.reportType)}</td>
+                      <td className="amount">{formatNumber(payload.transactionCount ?? 0)}건</td>
+                      <td className="amount">{formatKRW(payload.profit ?? 0)}</td>
+                      <td className="amount">{formatKRW(payload.vatPayable ?? 0)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       <section className="kpi-grid">
         <Kpi label="기간 손익" value={formatKRW(reportSummary.profit)} foot={`${formatKRW(reportSummary.revenue)} - ${formatKRW(reportSummary.expense)}`} icon={<BarChart3 size={16} />} />
@@ -1367,6 +1473,77 @@ function filterJournalEntriesByPeriod(journalEntries: AppJournalEntry[], period:
 
 function buildReportFileName(name: string, period: string) {
   return `honzang-${period === "ALL" ? "all" : period}-${name}.csv`;
+}
+
+function getReportPeriodRange(period: string, transactions: AppTransaction[]) {
+  if (period !== "ALL") {
+    const [year, month] = period.split("-").map(Number);
+    const start = new Date(Date.UTC(year, month - 1, 1)).toISOString().slice(0, 10);
+    const end = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+    return { start, end };
+  }
+
+  const dates = transactions.map((transaction) => transaction.transactionDate).sort();
+  const today = new Date().toISOString().slice(0, 10);
+  return { start: dates[0] ?? today, end: dates.at(-1) ?? today };
+}
+
+function buildTaxReportPayload({
+  period,
+  periodLabel,
+  summary,
+  filingPackageRows,
+  withholdingRows,
+  corporateTaxRows,
+  ledgerRows,
+  transactionCount,
+  journalEntryCount
+}: {
+  period: string;
+  periodLabel: string;
+  summary: ReturnType<typeof summarizeTransactions>;
+  filingPackageRows: ReturnType<typeof buildFilingPackageRows>;
+  withholdingRows: ReturnType<typeof buildWithholdingRows>;
+  corporateTaxRows: ReturnType<typeof buildCorporateTaxRows>;
+  ledgerRows: ReturnType<typeof buildLedgerRows>;
+  transactionCount: number;
+  journalEntryCount: number;
+}) {
+  return {
+    period,
+    periodLabel,
+    summary,
+    filingPackageRows,
+    withholdingRows,
+    corporateTaxRows,
+    ledgerRows,
+    transactionCount,
+    journalEntryCount
+  };
+}
+
+function parseTaxReportPayload(payload: unknown) {
+  if (!payload || typeof payload !== "object") return {};
+  const record = payload as {
+    summary?: Partial<ReturnType<typeof summarizeTransactions>>;
+    transactionCount?: unknown;
+  };
+  return {
+    transactionCount: typeof record.transactionCount === "number" ? record.transactionCount : 0,
+    profit: typeof record.summary?.profit === "number" ? record.summary.profit : 0,
+    vatPayable: typeof record.summary?.vatPayable === "number" ? record.summary.vatPayable : 0
+  };
+}
+
+function taxReportTypeLabel(type: AppTaxReport["reportType"]) {
+  const labels: Record<AppTaxReport["reportType"], string> = {
+    MONTHLY_PROFIT: "월 손익",
+    VAT_PREP: "부가세",
+    WITHHOLDING_CHECKLIST: "원천세",
+    CORPORATE_TAX_PREP: "법인세 준비",
+    RISK_REVIEW: "위험 검토"
+  };
+  return labels[type];
 }
 
 function groupExpensesByAccount(transactions: AppTransaction[]) {

@@ -1,0 +1,78 @@
+import type { Prisma } from "@prisma/client";
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { DEFAULT_COMPANY_ID } from "@/lib/defaults";
+import { getPrisma } from "@/lib/db";
+import { sampleTaxReports } from "@/lib/sample-data";
+import { ensureDefaultCompany } from "@/lib/server/bootstrap";
+import { serializeTaxReport } from "@/lib/server/serializers";
+
+const taxReportSchema = z.object({
+  companyId: z.string().default(DEFAULT_COMPANY_ID),
+  reportType: z.enum(["MONTHLY_PROFIT", "VAT_PREP", "WITHHOLDING_CHECKLIST", "CORPORATE_TAX_PREP", "RISK_REVIEW"]).default("CORPORATE_TAX_PREP"),
+  periodStart: z.string().min(1),
+  periodEnd: z.string().min(1),
+  calculatedPayload: z.unknown()
+});
+
+export async function GET() {
+  const db = getPrisma();
+
+  if (!db) {
+    return NextResponse.json({ taxReports: sampleTaxReports, mode: "sample" });
+  }
+
+  const company = await ensureDefaultCompany(db);
+  const taxReports = await db.taxReport.findMany({
+    where: { companyId: company.id },
+    orderBy: { createdAt: "desc" },
+    take: 20
+  });
+
+  return NextResponse.json({ taxReports: taxReports.map(serializeTaxReport), mode: "database" });
+}
+
+export async function POST(request: Request) {
+  const parsed = taxReportSchema.safeParse(await request.json());
+  if (!parsed.success) {
+    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const payload = parsed.data;
+  const periodStart = new Date(payload.periodStart);
+  const periodEnd = new Date(payload.periodEnd);
+
+  if (Number.isNaN(periodStart.getTime()) || Number.isNaN(periodEnd.getTime())) {
+    return NextResponse.json({ ok: false, message: "기간 날짜가 올바르지 않습니다." }, { status: 400 });
+  }
+
+  const db = getPrisma();
+  if (!db) {
+    return NextResponse.json({
+      ok: true,
+      taxReport: {
+        id: `tax-report-preview-${Date.now()}`,
+        reportType: payload.reportType,
+        periodStart: payload.periodStart,
+        periodEnd: payload.periodEnd,
+        calculatedPayload: payload.calculatedPayload,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      },
+      mode: "sample"
+    });
+  }
+
+  const company = await ensureDefaultCompany(db);
+  const taxReport = await db.taxReport.create({
+    data: {
+      companyId: company.id,
+      reportType: payload.reportType,
+      periodStart,
+      periodEnd,
+      calculatedPayload: payload.calculatedPayload as Prisma.InputJsonValue
+    }
+  });
+
+  return NextResponse.json({ ok: true, taxReport: serializeTaxReport(taxReport), mode: "database" });
+}
