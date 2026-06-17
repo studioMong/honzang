@@ -171,6 +171,7 @@ try {
   await verifyInvalidEvidenceAmountBackup();
   await verifyInvalidEvidenceTransactionBackup();
   await verifyInvalidAccountReferenceBackup();
+  await verifyInvalidReviewItemBackup();
   await verifyInvalidJournalBackup();
   await verifyInvalidOriginalImportFileBackup();
   await verifyConfirmGuard();
@@ -315,6 +316,29 @@ async function verifyInvalidAccountReferenceBackup() {
   assert.ok(Array.isArray(body.issues), "restore should return account reference validation issues");
   assert.ok(body.issues.some((issue) => issue.includes("기본 계정과목 NO_VENDOR_ACCOUNT")), "restore should report missing vendor account");
   assert.ok(body.issues.some((issue) => issue.includes("계정과목 NO_RULE_ACCOUNT")), "restore should report missing classification account");
+}
+
+async function verifyInvalidReviewItemBackup() {
+  const invalidBackup = structuredClone(backup);
+  invalidBackup.reviewItems = [
+    {
+      id: "review-missing-transaction-1",
+      severity: "WARNING",
+      reason: "missing transaction review",
+      recommendation: "거래 연결을 확인하세요.",
+      status: "OPEN",
+      transaction: {
+        ...backup.transactions[0],
+        id: "missing-transaction"
+      }
+    }
+  ];
+
+  const body = await postJson("/api/backups/restore", { backup: invalidBackup, dryRun: true }, 400);
+  assert.equal(body.ok, false, "restore should reject review items linked to missing transactions");
+  assert.equal(body.code, "INVALID_BACKUP_REVIEW_ITEMS", "restore should return review item validation code");
+  assert.ok(Array.isArray(body.issues), "restore should return review item validation issues");
+  assert.ok(body.issues.some((issue) => issue.includes("연결 거래 missing-transaction")), "restore should report missing review transaction");
 }
 
 async function verifyInvalidDateBackup() {

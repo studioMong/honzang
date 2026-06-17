@@ -320,6 +320,19 @@ export async function POST(request: Request) {
     );
   }
 
+  const reviewItemIssues = validateBackupReviewItems(parsed.data);
+  if (reviewItemIssues.length > 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_BACKUP_REVIEW_ITEMS",
+        message: "백업 검토 항목 데이터가 올바르지 않습니다.",
+        issues: reviewItemIssues
+      },
+      { status: 400 }
+    );
+  }
+
   const journalIssues = validateBackupJournalEntries(parsed.data);
   if (journalIssues.length > 0) {
     return NextResponse.json(
@@ -873,6 +886,23 @@ function validateBackupAccountReferences(backup: WorkspaceBackup) {
   for (const rule of uniqueById(backup.classificationRules)) {
     if (!accountCodes.has(rule.accountCode)) {
       issues.push(`자동분류 ${rule.id}: 계정과목 ${rule.accountCode}를 백업 계정 목록에서 찾을 수 없습니다.`);
+    }
+  }
+
+  return issues;
+}
+
+function validateBackupReviewItems(backup: WorkspaceBackup) {
+  const issues: string[] = [];
+  const transactionIds = new Set(uniqueById(backup.transactions).map((transaction) => transaction.id));
+
+  for (const item of uniqueById(backup.reviewItems)) {
+    const label = `검토 항목 ${item.id}`;
+    const transactionId = item.transaction?.id;
+    if (!transactionId) {
+      issues.push(`${label}: 연결 거래가 필요합니다.`);
+    } else if (!transactionIds.has(transactionId)) {
+      issues.push(`${label}: 연결 거래 ${transactionId}를 백업 거래 목록에서 찾을 수 없습니다.`);
     }
   }
 
