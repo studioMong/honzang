@@ -42,6 +42,7 @@ import { DEFAULT_ACCOUNTS, DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/
 import { applyClassificationRules, buildReviewItems, generateJournalDraft, inferMapping, normalizeCsvRow, parseMoney, summarizeTransactions } from "@/lib/accounting";
 import { formatDate, formatDateTime, formatKRW, formatNumber } from "@/lib/format";
 import { sampleCompany, sampleEvidences, sampleJournalEntries, sampleTaxReports, sampleTransactions } from "@/lib/sample-data";
+import { createXlsxBlob, type XlsxSheet } from "@/lib/xlsx";
 import { createZipBlob, type ZipFile } from "@/lib/zip";
 
 export type ViewKey = "dashboard" | "imports" | "transactions" | "evidences" | "journals" | "reviews" | "reports" | "settings";
@@ -1462,6 +1463,10 @@ function ReportsPanel({
     downloadFilingPackageZip(buildReportZipFileName("filing-package", selectedPeriod), buildCurrentFilingPackagePayload(), filteredEvidences);
   }
 
+  function downloadFilingPackageWorkbook() {
+    downloadFilingPackageXlsx(buildReportXlsxFileName("filing-package", selectedPeriod), buildCurrentFilingPackagePayload());
+  }
+
   async function saveSnapshot() {
     setSavingReport(true);
     try {
@@ -1879,6 +1884,10 @@ function ReportsPanel({
                 <Download size={16} />
                 패키지 ZIP
               </button>
+              <button className="secondary-button" onClick={downloadFilingPackageWorkbook}>
+                <Download size={16} />
+                엑셀
+              </button>
               <button className="secondary-button" onClick={downloadFilingPackageJson}>
                 <Download size={16} />
                 패키지 JSON
@@ -1916,6 +1925,10 @@ function ReportsPanel({
             <button className="secondary-button" onClick={downloadFilingPackageArchive}>
               <Download size={16} />
               ZIP
+            </button>
+            <button className="secondary-button" onClick={downloadFilingPackageWorkbook}>
+              <Download size={16} />
+              XLSX
             </button>
             <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("filing-package", selectedPeriod), filingPackageRows)}>
               <Download size={16} />
@@ -2892,6 +2905,10 @@ function buildReportZipFileName(name: string, period: string) {
   return `honzang-${period === "ALL" ? "all" : period}-${name}.zip`;
 }
 
+function buildReportXlsxFileName(name: string, period: string) {
+  return `honzang-${period === "ALL" ? "all" : period}-${name}.xlsx`;
+}
+
 function getReportPeriodRange(period: string, transactions: AppTransaction[]) {
   if (period !== "ALL") {
     const [year, month] = period.split("-").map(Number);
@@ -3084,6 +3101,10 @@ function downloadJson(fileName: string, payload: unknown) {
   downloadBlob(fileName, new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" }));
 }
 
+function downloadFilingPackageXlsx(fileName: string, payload: ReturnType<typeof buildFilingPackagePayload>) {
+  downloadBlob(fileName, createXlsxBlob(buildFilingWorkbookSheets(payload)));
+}
+
 function downloadFilingPackageZip(fileName: string, payload: ReturnType<typeof buildFilingPackagePayload>, evidences: AppEvidence[]) {
   const evidenceFiles = buildEvidenceFileZipEntries(evidences);
   const packageFiles = [
@@ -3179,6 +3200,44 @@ function toCsv(rows: Array<Record<string, string | number>>) {
 
 function toCsvFileContent(rows: Array<Record<string, string | number>>) {
   return `\uFEFF${toCsv(rows)}`;
+}
+
+function buildFilingWorkbookSheets(payload: ReturnType<typeof buildFilingPackagePayload>): XlsxSheet[] {
+  return [
+    { name: "요약", rows: buildFilingSummaryRows(payload) },
+    { name: "신고일정", rows: payload.filingScheduleRows },
+    { name: "신고패키지", rows: payload.filingPackageRows },
+    { name: "거래", rows: payload.tables.transactions },
+    { name: "증빙", rows: payload.tables.evidences },
+    { name: "부가세", rows: payload.tables.vatReport },
+    { name: "검토", rows: payload.tables.reviewItems },
+    { name: "원천세", rows: payload.tables.withholdingCandidates },
+    { name: "법인세", rows: payload.tables.corporateTaxPrep },
+    { name: "재무제표", rows: payload.tables.financialStatements },
+    { name: "원장", rows: payload.tables.ledger }
+  ];
+}
+
+function buildFilingSummaryRows(payload: ReturnType<typeof buildFilingPackagePayload>) {
+  return [
+    { 항목: "앱", 값: payload.app },
+    { 항목: "생성일시", 값: payload.generatedAt },
+    { 항목: "회사명", 값: payload.company.name ?? "" },
+    { 항목: "사업자등록번호", 값: payload.company.businessRegistrationNumber ?? "" },
+    { 항목: "업종", 값: payload.company.industry ?? "" },
+    { 항목: "기간", 값: payload.period.label },
+    { 항목: "기간 시작", 값: payload.period.start },
+    { 항목: "기간 종료", 값: payload.period.end },
+    { 항목: "매출", 값: payload.summary.revenue },
+    { 항목: "비용", 값: payload.summary.expense },
+    { 항목: "손익", 값: payload.summary.profit },
+    { 항목: "매출 부가세", 값: payload.summary.vatOutput },
+    { 항목: "매입 부가세", 값: payload.summary.vatInput },
+    { 항목: "예상 납부/환급 부가세", 값: payload.summary.vatPayable },
+    { 항목: "증빙 누락 비용", 값: payload.summary.missingEvidenceAmount },
+    { 항목: "검토 필요 건수", 값: payload.summary.reviewCount },
+    { 항목: "위험 거래 건수", 값: payload.summary.riskCount }
+  ];
 }
 
 function buildEvidenceFileZipEntries(evidences: AppEvidence[]) {
