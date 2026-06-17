@@ -144,6 +144,29 @@ export async function POST(request: Request) {
   const closedTransactionPeriod = await findClosedPeriodForDate(db, company.id, transaction?.transactionDate);
   if (closedTransactionPeriod) return closedPeriodResponse(closedTransactionPeriod.period);
 
+  if (transaction && payload.status !== "APPROVED") {
+    const approvedJournal = await db.journalEntry.findFirst({
+      where: {
+        companyId: company.id,
+        transactionId: transaction.id,
+        status: "APPROVED"
+      },
+      select: { id: true }
+    });
+
+    if (approvedJournal) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "APPROVED_JOURNAL_REPLACEMENT_BLOCKED",
+          message: "승인된 분개가 있는 거래는 비승인 분개로 교체할 수 없습니다. 먼저 승인 취소 후 다시 저장하세요.",
+          approvedJournalId: approvedJournal.id
+        },
+        { status: 409 }
+      );
+    }
+  }
+
   const created = await db.$transaction(async (tx) => {
     if (transaction) {
       await tx.journalEntry.deleteMany({

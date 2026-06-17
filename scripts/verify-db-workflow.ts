@@ -133,6 +133,34 @@ try {
   const approvedIds = new Set(journalList.journalEntries?.filter((entry) => entry.status === "APPROVED").map((entry) => entry.id));
   approvedEntries.forEach((entry) => assert.ok(approvedIds.has(entry.id), `approved journal should be listed: ${entry.id}`));
 
+  const draftReplacementPayload = await requestJson<{ ok?: boolean; code?: string; approvedJournalId?: string }>("/api/journals", {
+    method: "POST",
+    expectedStatus: 409,
+    body: {
+      companyId,
+      transactionId: approvedEntries[0]?.transactionId,
+      entryDate: approvedEntries[0]?.entryDate,
+      memo: `${marker} approved replacement should fail`,
+      status: "DRAFT",
+      lines: approvedEntries[0]?.lines.map((line) => ({
+        accountCode: line.accountCode,
+        accountName: line.accountName,
+        accountType: line.accountType,
+        debitAmount: line.debitAmount,
+        creditAmount: line.creditAmount,
+        vatType: line.vatType,
+        memo: line.memo
+      }))
+    }
+  });
+  assert.equal(draftReplacementPayload.ok, false, "DRAFT replacement of an approved journal should fail");
+  assert.equal(
+    draftReplacementPayload.code,
+    "APPROVED_JOURNAL_REPLACEMENT_BLOCKED",
+    "DRAFT replacement of an approved journal should return a replacement guard code"
+  );
+  assert.equal(draftReplacementPayload.approvedJournalId, approvedEntries[0]?.id, "replacement guard should identify the existing approved journal");
+
   const transactionDates = importedTransactions.map((transaction) => transaction.transactionDate).sort();
   const reportPayload = await requestJson<{ ok?: boolean; mode?: string; taxReport?: { id?: string } }>("/api/reports", {
     method: "POST",
