@@ -3,8 +3,8 @@ import { z } from "zod";
 import { getPrisma } from "@/lib/db";
 import { sampleTransactions } from "@/lib/sample-data";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
-import { serializeTransaction } from "@/lib/server/serializers";
-import { inferAccount, summarizeTransactions } from "@/lib/accounting";
+import { serializeTransaction, serializeVendor } from "@/lib/server/serializers";
+import { applyVendorDefaults, inferAccount, summarizeTransactions } from "@/lib/accounting";
 
 const manualTransactionSchema = z.object({
   transactionDate: z.string().min(1),
@@ -91,10 +91,22 @@ export async function POST(request: Request) {
 
   const company = await ensureDefaultCompany(db);
   const inferred = inferAccount(payload.description, payload.counterparty);
+  const vendors = await db.vendor.findMany({
+    where: { companyId: company.id },
+    include: { defaultAccount: true }
+  });
+  const vendorApplied = applyVendorDefaults(
+    {
+      counterparty: payload.counterparty,
+      suggestedAccount: inferred.account,
+      reviewReasons: inferred.reason ? [inferred.reason] : []
+    },
+    vendors.map(serializeVendor)
+  );
   const suggestedAccount = await db.account.findFirst({
     where: {
       companyId: company.id,
-      code: inferred.account.code,
+      code: vendorApplied.suggestedAccount?.code ?? inferred.account.code,
       isActive: true
     }
   });
@@ -130,7 +142,7 @@ export async function POST(request: Request) {
       memo: payload.memo,
       rawPayload: {
         manual: true,
-        reviewReason: inferred.reason ?? null
+        reviewReasons: vendorApplied.reviewReasons ?? []
       }
     },
     include: {

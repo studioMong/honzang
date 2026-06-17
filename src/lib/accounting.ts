@@ -1,4 +1,4 @@
-import type { AppAccount, AppClassificationRule, AppTransaction, JournalDraft, ParsedCsvRow, CsvColumnMapping, ReviewItem, SourceType } from "@/types";
+import type { AppAccount, AppClassificationRule, AppTransaction, AppVendor, JournalDraft, ParsedCsvRow, CsvColumnMapping, ReviewItem, SourceType } from "@/types";
 import { DEFAULT_ACCOUNTS } from "@/lib/defaults";
 
 const keywordAccountRules: Array<{ keywords: string[]; code: string; reason?: string }> = [
@@ -140,6 +140,34 @@ export function applyClassificationRules<T extends Pick<AppTransaction, "sourceT
   };
 }
 
+export function applyVendorDefaults<T extends Pick<AppTransaction, "counterparty" | "suggestedAccount"> & { reviewReasons?: string[] }>(
+  transaction: T,
+  vendors: AppVendor[]
+): T {
+  const counterparty = normalizeVendorText(transaction.counterparty);
+  if (!counterparty) return transaction;
+
+  const vendor = vendors.find((item) => {
+    const name = normalizeVendorText(item.name);
+    return Boolean(name && (counterparty.includes(name) || name.includes(counterparty)));
+  });
+  if (!vendor) return transaction;
+
+  const reasons = [...(transaction.reviewReasons ?? [])];
+  if (vendor.defaultAccount) {
+    reasons.push(`거래처 기본 계정 적용: ${vendor.name}`);
+  }
+  if (vendor.withholdingType && vendor.withholdingType !== "NONE") {
+    reasons.push(`거래처 원천세 유형 확인: ${vendor.withholdingType}`);
+  }
+
+  return {
+    ...transaction,
+    suggestedAccount: vendor.defaultAccount ?? transaction.suggestedAccount,
+    reviewReasons: [...new Set(reasons)]
+  };
+}
+
 export function collectReviewReasons(input: {
   description: string;
   counterparty?: string | null;
@@ -228,6 +256,10 @@ function reviewReasonCategory(reason: string) {
   if (reason.includes("접대비")) return "ENTERTAINMENT";
   if (reason.includes("증빙")) return "EVIDENCE";
   return reason;
+}
+
+function normalizeVendorText(value?: string | null) {
+  return (value ?? "").toLowerCase().replace(/\s+/g, "").trim();
 }
 
 function transactionAccount(transaction: AppTransaction) {

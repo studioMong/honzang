@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import Papa from "papaparse";
-import { applyClassificationRules, inferMapping, normalizeCsvRow, summarizeTransactions } from "../src/lib/accounting";
+import { applyClassificationRules, applyVendorDefaults, inferMapping, normalizeCsvRow, summarizeTransactions } from "../src/lib/accounting";
 import { DEFAULT_ACCOUNTS } from "../src/lib/defaults";
 import type { AppClassificationRule, AppTransaction, ParsedCsvRow, SourceType } from "../src/types";
 
@@ -151,15 +151,26 @@ const customRules: AppClassificationRule[] = [
   }
 ];
 const classified = applyClassificationRules(
-  {
+  applyVendorDefaults(
+    {
     id: "card-openai-rule",
     ...normalizeCsvRow(openAiRow, cardMapping, "CARD", 0)
-  },
+    },
+    [
+      {
+        id: "vendor-openai",
+        name: "OpenAI",
+        defaultAccount: DEFAULT_ACCOUNTS.find((account) => account.code === "506") ?? null,
+        withholdingType: "NONE"
+      }
+    ]
+  ),
   customRules,
   DEFAULT_ACCOUNTS
 );
 
 assert.equal(classified.suggestedAccount?.code, "508", "custom classification rule should override default account");
+assert.ok(classified.reviewReasons?.some((reason) => reason.includes("거래처 기본 계정 적용")), "vendor default reason should be recorded");
 assert.ok(classified.reviewReasons?.some((reason) => reason.includes("OpenAI 교육비")), "custom classification rule reason should be recorded");
 console.log("Verified custom classification rule override.");
 

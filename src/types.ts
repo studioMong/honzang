@@ -154,6 +154,15 @@ export type AppImportBatch = {
   importedAt: string;
 };
 
+export type AppVendor = {
+  id: string;
+  name: string;
+  businessRegistrationNumber?: string | null;
+  defaultAccount?: AppAccount | null;
+  withholdingType?: string | null;
+  memo?: string | null;
+};
+
 export type ParsedCsvRow = Record<string, string | number | null | undefined>;
 
 export type ImportPreview = {

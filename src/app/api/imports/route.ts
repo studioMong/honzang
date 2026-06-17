@@ -3,9 +3,9 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
-import { applyClassificationRules, normalizeCsvRow, summarizeTransactions } from "@/lib/accounting";
+import { applyClassificationRules, applyVendorDefaults, normalizeCsvRow, summarizeTransactions } from "@/lib/accounting";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
-import { serializeAccount, serializeClassificationRule, serializeImportBatch, serializeTransaction } from "@/lib/server/serializers";
+import { serializeAccount, serializeClassificationRule, serializeImportBatch, serializeTransaction, serializeVendor } from "@/lib/server/serializers";
 import type { CsvColumnMapping, ParsedCsvRow, SourceType } from "@/types";
 
 const mappingSchema = z.object({
@@ -228,8 +228,14 @@ export async function POST(request: Request) {
     },
     orderBy: [{ priority: "asc" }, { updatedAt: "desc" }]
   });
+  const vendors = await db.vendor.findMany({
+    where: { companyId: company.id },
+    include: { defaultAccount: true },
+    orderBy: [{ name: "asc" }]
+  });
   const appRules = classificationRules.map((rule) => serializeClassificationRule(rule, accountByCode));
-  const classified = normalized.map((transaction) => applyClassificationRules(transaction, appRules, appAccounts));
+  const appVendors = vendors.map(serializeVendor);
+  const classified = normalized.map((transaction) => applyClassificationRules(applyVendorDefaults(transaction, appVendors), appRules, appAccounts));
 
   const importBatch = await db.importBatch.create({
     data: {

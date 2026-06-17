@@ -1,10 +1,11 @@
-import type { Account, ClassificationRule, Evidence, ImportBatch, JournalEntry, JournalLine, ReviewItem, TaxReport, Transaction } from "@prisma/client";
+import type { Account, ClassificationRule, Evidence, ImportBatch, JournalEntry, JournalLine, ReviewItem, TaxReport, Transaction, Vendor } from "@prisma/client";
 import type {
   AppAccount,
   AppClassificationRule,
   AppEvidence,
   AppImportBatch,
   AppJournalEntry,
+  AppVendor,
   ReviewItem as AppReviewItem,
   AppTaxReport,
   AppTransaction
@@ -79,8 +80,17 @@ export function serializeTransaction(transaction: TransactionWithAccounts): AppT
     suggestedAccount: serializeAccount(transaction.suggestedAccount),
     confirmedAccount: serializeAccount(transaction.confirmedAccount),
     evidenceStatus: transaction.evidenceStatus,
-    memo: transaction.memo
+    memo: transaction.memo,
+    reviewReasons: readReviewReasons(transaction.rawPayload)
   };
+}
+
+function readReviewReasons(rawPayload: unknown) {
+  if (!isRecord(rawPayload)) return undefined;
+  if (Array.isArray(rawPayload.reviewReasons)) {
+    return rawPayload.reviewReasons.filter((item): item is string => typeof item === "string");
+  }
+  return typeof rawPayload.reviewReason === "string" ? [rawPayload.reviewReason] : undefined;
 }
 
 export function serializeEvidence(evidence: Evidence & { transaction?: TransactionWithAccounts | null }): AppEvidence {
@@ -108,6 +118,17 @@ export function serializeReviewItem(reviewItem: ReviewItem & { transaction?: Tra
     recommendation: reviewItem.recommendation,
     status: reviewItem.status,
     transaction: reviewItem.transaction ? serializeTransaction(reviewItem.transaction) : null
+  };
+}
+
+export function serializeVendor(vendor: Vendor & { defaultAccount?: Account | null }): AppVendor {
+  return {
+    id: vendor.id,
+    name: vendor.name,
+    businessRegistrationNumber: vendor.businessRegistrationNumber,
+    defaultAccount: serializeAccount(vendor.defaultAccount),
+    withholdingType: vendor.withholdingType,
+    memo: vendor.memo
   };
 }
 

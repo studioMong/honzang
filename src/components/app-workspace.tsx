@@ -29,6 +29,7 @@ import type {
   AppJournalEntry,
   AppTaxReport,
   AppTransaction,
+  AppVendor,
   CsvColumnMapping,
   CsvTemplate,
   EvidenceStatus,
@@ -91,6 +92,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
   const [evidences, setEvidences] = useState<AppEvidence[]>(sampleEvidences);
   const [journalEntries, setJournalEntries] = useState<AppJournalEntry[]>(sampleJournalEntries);
   const [taxReports, setTaxReports] = useState<AppTaxReport[]>(sampleTaxReports);
+  const [vendors, setVendors] = useState<AppVendor[]>([]);
   const [reviewItems, setReviewItems] = useState<ReviewItem[]>(buildReviewItems(sampleTransactions));
   const [reviewStatusOverrides, setReviewStatusOverrides] = useState<Record<string, ReviewItem["status"]>>({});
   const [loading, setLoading] = useState(false);
@@ -119,6 +121,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       const journalResponse = await fetch("/api/journals", { cache: "no-store" });
       const reportResponse = await fetch("/api/reports", { cache: "no-store" });
       const reviewResponse = await fetch("/api/reviews", { cache: "no-store" });
+      const vendorResponse = await fetch("/api/vendors", { cache: "no-store" });
       const companyPayload = await companyResponse.json();
       const transactionPayload = await transactionResponse.json();
       const importPayload = await importResponse.json();
@@ -126,6 +129,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       const journalPayload = await journalResponse.json();
       const reportPayload = await reportResponse.json();
       const reviewPayload = await reviewResponse.json();
+      const vendorPayload = await vendorResponse.json();
       const isDatabaseMode =
         companyPayload.mode === "database" ||
         transactionPayload.mode === "database" ||
@@ -133,7 +137,8 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
         evidencePayload.mode === "database" ||
         journalPayload.mode === "database" ||
         reportPayload.mode === "database" ||
-        reviewPayload.mode === "database";
+        reviewPayload.mode === "database" ||
+        vendorPayload.mode === "database";
       const nextTransactions = isDatabaseMode ? transactionPayload.transactions ?? [] : transactionPayload.transactions?.length ? transactionPayload.transactions : sampleTransactions;
       setCompany(companyPayload.company ?? sampleCompany);
       setAccounts(companyPayload.accounts ?? DEFAULT_ACCOUNTS);
@@ -144,6 +149,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       setEvidences(isDatabaseMode ? evidencePayload.evidences ?? [] : evidencePayload.evidences?.length ? evidencePayload.evidences : sampleEvidences);
       setJournalEntries(journalPayload.journalEntries ?? []);
       setTaxReports(reportPayload.taxReports ?? []);
+      setVendors(vendorPayload.vendors ?? []);
       setReviewItems(reviewPayload.reviewItems ?? buildReviewItems(nextTransactions));
       setMode(isDatabaseMode ? "database" : "sample");
     } catch {
@@ -156,6 +162,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       setEvidences(sampleEvidences);
       setJournalEntries(sampleJournalEntries);
       setTaxReports(sampleTaxReports);
+      setVendors([]);
       setReviewItems(buildReviewItems(sampleTransactions));
       setMode("sample");
     } finally {
@@ -357,8 +364,10 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
           <SettingsPanel
             company={company}
             accounts={accounts}
+            vendors={vendors}
             classificationRules={classificationRules}
             onSaved={setCompany}
+            onVendorsChanged={setVendors}
             onRulesChanged={setClassificationRules}
           />
         )}
@@ -1850,17 +1859,28 @@ function ReportsPanel({
 function SettingsPanel({
   company,
   accounts,
+  vendors,
   classificationRules,
   onSaved,
+  onVendorsChanged,
   onRulesChanged
 }: {
   company: AppCompany;
   accounts: AppAccount[];
+  vendors: AppVendor[];
   classificationRules: AppClassificationRule[];
   onSaved: (company: AppCompany) => void;
+  onVendorsChanged: (vendors: AppVendor[]) => void;
   onRulesChanged: (rules: AppClassificationRule[]) => void;
 }) {
   const [form, setForm] = useState<AppCompany>(company);
+  const [vendorForm, setVendorForm] = useState({
+    name: "",
+    businessRegistrationNumber: "",
+    defaultAccountId: accounts.find((account) => account.code === "599")?.id ?? accounts[0]?.id ?? "",
+    withholdingType: "NONE",
+    memo: ""
+  });
   const [ruleForm, setRuleForm] = useState({
     name: "",
     keyword: "",
@@ -1869,6 +1889,7 @@ function SettingsPanel({
     priority: "100"
   });
   const [saving, setSaving] = useState(false);
+  const [savingVendor, setSavingVendor] = useState(false);
   const [savingRule, setSavingRule] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const setupItems = buildCompanySetupItems(form);
@@ -1887,6 +1908,10 @@ function SettingsPanel({
 
   function updateRuleForm(key: keyof typeof ruleForm, value: string) {
     setRuleForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateVendorForm(key: keyof typeof vendorForm, value: string) {
+    setVendorForm((current) => ({ ...current, [key]: value }));
   }
 
   async function saveSettings() {
@@ -1928,6 +1953,48 @@ function SettingsPanel({
       }
     } finally {
       setSavingRule(false);
+    }
+  }
+
+  async function createVendor() {
+    if (!vendorForm.name.trim()) return;
+    setSavingVendor(true);
+    try {
+      const response = await fetch("/api/vendors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: vendorForm.name.trim(),
+          businessRegistrationNumber: vendorForm.businessRegistrationNumber.trim() || null,
+          defaultAccountId: vendorForm.defaultAccountId || null,
+          withholdingType: vendorForm.withholdingType,
+          memo: vendorForm.memo.trim() || null
+        })
+      });
+      const payload = await response.json();
+      if (payload.vendor) {
+        const defaultAccount = accounts.find((account) => account.id === vendorForm.defaultAccountId) ?? null;
+        const createdVendor = { ...payload.vendor, defaultAccount: payload.vendor.defaultAccount ?? defaultAccount };
+        onVendorsChanged([createdVendor, ...vendors.filter((vendor) => vendor.id !== createdVendor.id)]);
+        setVendorForm((current) => ({ ...current, name: "", businessRegistrationNumber: "", memo: "" }));
+      }
+    } finally {
+      setSavingVendor(false);
+    }
+  }
+
+  async function deleteVendor(vendorId: string) {
+    const previous = vendors;
+    onVendorsChanged(vendors.filter((vendor) => vendor.id !== vendorId));
+    try {
+      const response = await fetch("/api/vendors", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: vendorId })
+      });
+      if (!response.ok) onVendorsChanged(previous);
+    } catch {
+      onVendorsChanged(previous);
     }
   }
 
@@ -2053,6 +2120,96 @@ function SettingsPanel({
             checked={form.contractorPaymentEnabled}
             onChange={(checked) => updateForm("contractorPaymentEnabled", checked)}
           />
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="panel-title">거래처 기본값</h2>
+            <p className="panel-subtitle">반복 거래처의 기본 계정과 원천세 확인 유형</p>
+          </div>
+          <span className="status blue">{formatNumber(vendors.length)}개</span>
+        </div>
+        <div className="panel-body form-grid">
+          <div className="field">
+            <label>거래처명</label>
+            <input value={vendorForm.name} onChange={(event) => updateVendorForm("name", event.target.value)} placeholder="예: 김디자인" />
+          </div>
+          <div className="field">
+            <label>사업자등록번호</label>
+            <input
+              value={vendorForm.businessRegistrationNumber}
+              onChange={(event) => updateVendorForm("businessRegistrationNumber", event.target.value)}
+              placeholder="선택 입력"
+            />
+          </div>
+          <div className="field">
+            <label>기본 계정</label>
+            <select value={vendorForm.defaultAccountId} onChange={(event) => updateVendorForm("defaultAccountId", event.target.value)}>
+              <option value="">자동 추론</option>
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.code} {account.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label>원천세 유형</label>
+            <select value={vendorForm.withholdingType} onChange={(event) => updateVendorForm("withholdingType", event.target.value)}>
+              <option value="NONE">해당 없음</option>
+              <option value="TAX_INVOICE">세금계산서 수취</option>
+              <option value="BUSINESS_INCOME">사업소득 3.3%</option>
+              <option value="OTHER_INCOME">기타소득</option>
+              <option value="PAYROLL">급여</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>메모</label>
+            <input value={vendorForm.memo} onChange={(event) => updateVendorForm("memo", event.target.value)} />
+          </div>
+          <div className="field">
+            <label>작업</label>
+            <button className="primary-button" onClick={() => void createVendor()} disabled={savingVendor || !vendorForm.name.trim()}>
+              {savingVendor ? <Loader2 size={17} className="spin" /> : <CheckCircle2 size={17} />}
+              거래처 추가
+            </button>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>거래처</th>
+                <th>사업자등록번호</th>
+                <th>기본 계정</th>
+                <th>원천세</th>
+                <th>메모</th>
+                <th>작업</th>
+              </tr>
+            </thead>
+            <tbody>
+              {vendors.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="empty-cell">아직 거래처 기본값이 없습니다.</td>
+                </tr>
+              ) : (
+                vendors.map((vendor) => (
+                  <tr key={vendor.id}>
+                    <td>{vendor.name}</td>
+                    <td>{vendor.businessRegistrationNumber ?? "-"}</td>
+                    <td>{vendor.defaultAccount ? `${vendor.defaultAccount.code} ${vendor.defaultAccount.name}` : "자동 추론"}</td>
+                    <td>{withholdingTypeLabel(vendor.withholdingType)}</td>
+                    <td>{vendor.memo ?? "-"}</td>
+                    <td>
+                      <button className="ghost-button" onClick={() => void deleteVendor(vendor.id)}>삭제</button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -2577,6 +2734,17 @@ function taxReportTypeLabel(type: AppTaxReport["reportType"]) {
     RISK_REVIEW: "위험 검토"
   };
   return labels[type];
+}
+
+function withholdingTypeLabel(type?: string | null) {
+  const labels: Record<string, string> = {
+    NONE: "해당 없음",
+    TAX_INVOICE: "세금계산서 수취",
+    BUSINESS_INCOME: "사업소득 3.3%",
+    OTHER_INCOME: "기타소득",
+    PAYROLL: "급여"
+  };
+  return labels[type ?? "NONE"] ?? type ?? "해당 없음";
 }
 
 function groupExpensesByAccount(transactions: AppTransaction[]) {
