@@ -98,6 +98,8 @@ npm run audit:railway
 RAILWAY_AUDIT_SOFT=1 npm run audit:railway
 ```
 
+공개 도메인이 이전 static/legacy 서비스에 연결되어 `/api/version`, `/api/health`, `/manifest.webmanifest`가 404로 응답하면 [Railway 배포 전환 체크리스트](docs/railway-cutover.md)를 따라 도메인 연결 대상 서비스를 최신 Next.js 앱으로 전환합니다.
+
 ## MVP 범위
 
 - 회사 기본 설정

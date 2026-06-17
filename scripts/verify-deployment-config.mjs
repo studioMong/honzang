@@ -8,6 +8,7 @@ const dockerfile = readText("Dockerfile");
 const nextConfig = readText("next.config.ts");
 const dockerignore = readText(".dockerignore");
 const readme = readText("README.md");
+const railwayCutoverDoc = readText("docs/railway-cutover.md");
 const proxy = readText("src/proxy.ts");
 
 assert.equal(packageJson.scripts?.build, "prisma generate && next build && node scripts/prepare-standalone.mjs", "package build script should create the standalone server");
@@ -45,6 +46,12 @@ assert.ok(readdirSync("prisma/migrations").some((entry) => existsSync(path.join(
 
 assert.match(readme, /HONZANG_ACCESS_CODE=/, "README should document the deployment access code variable");
 assert.match(readme, /HONZANG_ACCESS_TOKEN_SALT=/, "README should document the access-token salt variable");
+assert.match(readme, /docs\/railway-cutover\.md/, "README should link to the Railway cutover checklist");
+assert.match(railwayCutoverDoc, /honzang-production\.up\.railway\.app/, "Railway cutover checklist should name the production domain");
+assert.match(railwayCutoverDoc, /\/api\/version/, "Railway cutover checklist should include version endpoint verification");
+assert.match(railwayCutoverDoc, /\/api\/health/, "Railway cutover checklist should include health endpoint verification");
+assert.match(railwayCutoverDoc, /\/manifest\.webmanifest/, "Railway cutover checklist should include PWA manifest verification");
+assert.match(railwayCutoverDoc, /VERIFY_DB_WORKFLOW_BASE_URL/, "Railway cutover checklist should include DB workflow guidance");
 
 console.log("Deployment config verification passed.");
 
