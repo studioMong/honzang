@@ -42,7 +42,7 @@ import { DEFAULT_ACCOUNTS, DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/
 import { applyClassificationRules, buildReviewItems, generateJournalDraft, inferMapping, normalizeCsvRow, parseMoney, summarizeTransactions } from "@/lib/accounting";
 import { formatDate, formatDateTime, formatKRW, formatNumber } from "@/lib/format";
 import { sampleCompany, sampleEvidences, sampleJournalEntries, sampleTaxReports, sampleTransactions } from "@/lib/sample-data";
-import { createZipBlob } from "@/lib/zip";
+import { createZipBlob, type ZipFile } from "@/lib/zip";
 
 export type ViewKey = "dashboard" | "imports" | "transactions" | "evidences" | "journals" | "reviews" | "reports" | "settings";
 
@@ -1459,7 +1459,7 @@ function ReportsPanel({
   }
 
   function downloadFilingPackageArchive() {
-    downloadFilingPackageZip(buildReportZipFileName("filing-package", selectedPeriod), buildCurrentFilingPackagePayload());
+    downloadFilingPackageZip(buildReportZipFileName("filing-package", selectedPeriod), buildCurrentFilingPackagePayload(), filteredEvidences);
   }
 
   async function saveSnapshot() {
@@ -3084,8 +3084,22 @@ function downloadJson(fileName: string, payload: unknown) {
   downloadBlob(fileName, new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" }));
 }
 
-function downloadFilingPackageZip(fileName: string, payload: ReturnType<typeof buildFilingPackagePayload>) {
-  const files = [
+function downloadFilingPackageZip(fileName: string, payload: ReturnType<typeof buildFilingPackagePayload>, evidences: AppEvidence[]) {
+  const evidenceFiles = buildEvidenceFileZipEntries(evidences);
+  const packageFiles = [
+    "filing-package.json",
+    "csv/filing-schedule.csv",
+    "csv/filing-package.csv",
+    "csv/transactions.csv",
+    "csv/evidences.csv",
+    "csv/vat-report.csv",
+    "csv/review-items.csv",
+    "csv/withholding-candidates.csv",
+    "csv/corporate-tax-prep.csv",
+    "csv/financial-statements.csv",
+    "csv/ledger.csv"
+  ];
+  const files: ZipFile[] = [
     {
       path: "manifest.json",
       content: JSON.stringify(
@@ -3095,19 +3109,8 @@ function downloadFilingPackageZip(fileName: string, payload: ReturnType<typeof b
           company: payload.company,
           period: payload.period,
           summary: payload.summary,
-          files: [
-            "filing-package.json",
-            "csv/filing-schedule.csv",
-            "csv/filing-package.csv",
-            "csv/transactions.csv",
-            "csv/evidences.csv",
-            "csv/vat-report.csv",
-            "csv/review-items.csv",
-            "csv/withholding-candidates.csv",
-            "csv/corporate-tax-prep.csv",
-            "csv/financial-statements.csv",
-            "csv/ledger.csv"
-          ],
+          files: packageFiles,
+          evidenceFiles: evidenceFiles.map((file) => file.path),
           notes: payload.notes
         },
         null,
@@ -3124,7 +3127,8 @@ function downloadFilingPackageZip(fileName: string, payload: ReturnType<typeof b
     { path: "csv/withholding-candidates.csv", content: toCsvFileContent(payload.tables.withholdingCandidates) },
     { path: "csv/corporate-tax-prep.csv", content: toCsvFileContent(payload.tables.corporateTaxPrep) },
     { path: "csv/financial-statements.csv", content: toCsvFileContent(payload.tables.financialStatements) },
-    { path: "csv/ledger.csv", content: toCsvFileContent(payload.tables.ledger) }
+    { path: "csv/ledger.csv", content: toCsvFileContent(payload.tables.ledger) },
+    ...evidenceFiles
   ];
   downloadBlob(fileName, createZipBlob(files));
 }
@@ -3175,6 +3179,76 @@ function toCsv(rows: Array<Record<string, string | number>>) {
 
 function toCsvFileContent(rows: Array<Record<string, string | number>>) {
   return `\uFEFF${toCsv(rows)}`;
+}
+
+function buildEvidenceFileZipEntries(evidences: AppEvidence[]) {
+  const usedPaths = new Set<string>();
+  const files: ZipFile[] = [];
+
+  evidences.forEach((evidence, index) => {
+    if (!evidence.fileDataUrl) return;
+    const content = decodeDataUrl(evidence.fileDataUrl);
+    if (!content) return;
+    const fileName = buildSafeEvidenceFileName(evidence, index);
+    const path = uniqueZipPath(`evidences/${fileName}`, usedPaths);
+    files.push({ path, content });
+  });
+
+  return files;
+}
+
+function decodeDataUrl(dataUrl: string) {
+  const commaIndex = dataUrl.indexOf(",");
+  if (commaIndex === -1) return null;
+  const meta = dataUrl.slice(0, commaIndex);
+  const data = dataUrl.slice(commaIndex + 1);
+
+  try {
+    if (/;base64/i.test(meta)) {
+      const binary = atob(data);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+      return bytes;
+    }
+    return new TextEncoder().encode(decodeURIComponent(data));
+  } catch {
+    return null;
+  }
+}
+
+function buildSafeEvidenceFileName(evidence: AppEvidence, index: number) {
+  const rawName = evidence.fileName?.split(/[\\/]/).pop()?.trim() || `evidence-${index + 1}${extensionFromMimeType(evidence.fileMimeType)}`;
+  const cleaned = rawName.replace(/[<>:"|?*\u0000-\u001F]/g, "_").replace(/^\.+$/, "");
+  return cleaned || `evidence-${index + 1}${extensionFromMimeType(evidence.fileMimeType)}`;
+}
+
+function extensionFromMimeType(mimeType?: string | null) {
+  if (mimeType === "application/pdf") return ".pdf";
+  if (mimeType === "image/png") return ".png";
+  if (mimeType === "image/jpeg") return ".jpg";
+  if (mimeType === "text/plain") return ".txt";
+  if (mimeType === "text/csv") return ".csv";
+  return "";
+}
+
+function uniqueZipPath(path: string, usedPaths: Set<string>) {
+  if (!usedPaths.has(path)) {
+    usedPaths.add(path);
+    return path;
+  }
+
+  const extensionIndex = path.lastIndexOf(".");
+  const hasExtension = extensionIndex > path.lastIndexOf("/");
+  const base = hasExtension ? path.slice(0, extensionIndex) : path;
+  const extension = hasExtension ? path.slice(extensionIndex) : "";
+  let index = 2;
+  let candidate = `${base}-${index}${extension}`;
+  while (usedPaths.has(candidate)) {
+    index += 1;
+    candidate = `${base}-${index}${extension}`;
+  }
+  usedPaths.add(candidate);
+  return candidate;
 }
 
 function buildTransactionCsv(transactions: AppTransaction[]) {
