@@ -1621,6 +1621,10 @@ function EvidencesPanel({
         })
       });
       const payload = await response.json();
+      if (!response.ok) {
+        setFileError(payload.message ?? "증빙 저장에 실패했습니다.");
+        return;
+      }
       if (payload.evidence) {
         onCreated(payload.evidence);
         setForm((current) => ({
@@ -1637,6 +1641,8 @@ function EvidencesPanel({
           transactionId: ""
         }));
         setFileError(null);
+      } else {
+        setFileError("증빙 저장 결과를 확인할 수 없습니다.");
       }
     } finally {
       setSaving(false);

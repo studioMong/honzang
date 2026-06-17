@@ -51,6 +51,9 @@ try {
   await expectInvalidCsvImportRows();
   await expectInvalidManualTransactionDate();
   await expectInvalidTransactionPatch();
+  await expectInvalidEvidenceDate();
+  await expectInvalidEvidenceFile();
+  await expectInvalidEvidenceFileUrl();
   await expectText("/", (body) =>
     ["혼자장부", "최근 월 신고 준비", "오늘 할 일", "1인법인 신고 준비"].every((text) => body.includes(text))
   );
@@ -234,6 +237,68 @@ async function expectInvalidTransactionPatch() {
   const body = JSON.parse(text);
   if (!body.errors?.fieldErrors?.evidenceStatus?.length) {
     throw new Error(`/api/transactions returned unexpected patch validation payload: ${text}`);
+  }
+}
+
+async function expectInvalidEvidenceDate() {
+  const response = await fetch(`${baseUrl}/api/evidences`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      evidenceType: "전자세금계산서",
+      issueDate: "2026-02-31"
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/evidences should reject invalid evidence dates, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_EVIDENCE_DATE") {
+    throw new Error(`/api/evidences returned unexpected date validation payload: ${text}`);
+  }
+}
+
+async function expectInvalidEvidenceFile() {
+  const response = await fetch(`${baseUrl}/api/evidences`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      evidenceType: "카드전표",
+      issueDate: "2026-06-17",
+      fileName: "receipt.txt",
+      fileDataUrl: "data:text/plain;base64,SGVsbG8=",
+      fileMimeType: "text/plain",
+      fileSize: 999
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/evidences should reject inconsistent file payloads, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_EVIDENCE_FILE") {
+    throw new Error(`/api/evidences returned unexpected file validation payload: ${text}`);
+  }
+}
+
+async function expectInvalidEvidenceFileUrl() {
+  const response = await fetch(`${baseUrl}/api/evidences`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      evidenceType: "기타영수증",
+      issueDate: "2026-06-17",
+      fileUrl: "javascript:alert(1)"
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/evidences should reject unsafe file URLs, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_EVIDENCE_FILE_URL") {
+    throw new Error(`/api/evidences returned unexpected file URL validation payload: ${text}`);
   }
 }
 
