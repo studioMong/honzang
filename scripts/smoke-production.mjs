@@ -47,6 +47,7 @@ try {
     Number.isInteger(body.summary?.blockers)
   );
   await expectBlockedClosingPeriod();
+  await expectInvalidCsvImportMapping();
   await expectText("/", (body) =>
     ["혼자장부", "최근 월 신고 준비", "오늘 할 일", "1인법인 신고 준비"].every((text) => body.includes(text))
   );
@@ -130,6 +131,34 @@ async function expectBlockedClosingPeriod() {
   const body = JSON.parse(text);
   if (body.code !== "FILING_READINESS_BLOCKED" || !Array.isArray(body.blockers) || body.blockers[0]?.check !== "증빙") {
     throw new Error(`/api/closing-periods returned unexpected blocker payload: ${text}`);
+  }
+}
+
+async function expectInvalidCsvImportMapping() {
+  const response = await fetch(`${baseUrl}/api/imports`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sourceType: "BANK",
+      originalFileName: "invalid-mapping.csv",
+      mapping: {},
+      headers: ["거래일", "적요", "입금"],
+      rows: [
+        {
+          거래일: "2026-06-17",
+          적요: "테스트 입금",
+          입금: "1000"
+        }
+      ]
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/imports should reject missing CSV mappings, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_CSV_MAPPING" || !Array.isArray(body.issues) || body.issues.length < 3) {
+    throw new Error(`/api/imports returned unexpected mapping validation payload: ${text}`);
   }
 }
 

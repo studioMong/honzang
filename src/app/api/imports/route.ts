@@ -50,6 +50,45 @@ const deleteImportSchema = z.object({
   importBatchId: z.string().min(1)
 });
 
+type ImportPayloadData = z.infer<typeof importSchema>;
+
+const mappingFieldLabels: Array<[keyof CsvColumnMapping, string]> = [
+  ["transactionDate", "거래일"],
+  ["description", "내용/적요"],
+  ["counterparty", "거래처"],
+  ["depositAmount", "입금"],
+  ["withdrawalAmount", "출금"],
+  ["amount", "금액"],
+  ["supplyAmount", "공급가액"],
+  ["vatAmount", "부가세"],
+  ["balance", "잔액"],
+  ["approvalNumber", "승인번호"]
+];
+
+function validateImportMapping(payload: ImportPayloadData) {
+  const mapping = payload.mapping as CsvColumnMapping;
+  const issues: string[] = [];
+  const hasMappedColumn = (column?: string) => Boolean(column?.trim());
+
+  if (!hasMappedColumn(mapping.transactionDate)) issues.push("거래일 컬럼을 매핑해야 합니다.");
+  if (!hasMappedColumn(mapping.description)) issues.push("내용/적요 컬럼을 매핑해야 합니다.");
+  if (!hasMappedColumn(mapping.amount) && !hasMappedColumn(mapping.depositAmount) && !hasMappedColumn(mapping.withdrawalAmount)) {
+    issues.push("금액 또는 입금/출금 컬럼 중 하나를 매핑해야 합니다.");
+  }
+
+  if (payload.headers.length > 0) {
+    const headerSet = new Set(payload.headers);
+    for (const [key, label] of mappingFieldLabels) {
+      const mappedColumn = mapping[key]?.trim();
+      if (mappedColumn && !headerSet.has(mappedColumn)) {
+        issues.push(`${label} 매핑 컬럼(${mappedColumn})이 CSV 헤더에 없습니다.`);
+      }
+    }
+  }
+
+  return issues;
+}
+
 export async function GET(request: Request) {
   const db = getPrisma();
 
@@ -219,6 +258,19 @@ export async function POST(request: Request) {
   }
 
   const payload = parsed.data;
+  const mappingIssues = validateImportMapping(payload);
+  if (mappingIssues.length > 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_CSV_MAPPING",
+        message: "CSV 매핑을 확인해야 합니다.",
+        issues: mappingIssues
+      },
+      { status: 400 }
+    );
+  }
+
   const originalFileHash = createImportHash({
     sourceType: payload.sourceType,
     headers: payload.headers,
