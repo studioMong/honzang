@@ -163,6 +163,34 @@ try {
   );
   assert.equal(draftReplacementPayload.approvedJournalId, approvedEntries[0]?.id, "replacement guard should identify the existing approved journal");
 
+  const approvedReplacementPayload = await requestJson<{ ok?: boolean; code?: string; approvedJournalId?: string }>("/api/journals", {
+    method: "POST",
+    expectedStatus: 409,
+    body: {
+      companyId,
+      transactionId: approvedEntries[0]?.transactionId,
+      entryDate: approvedEntries[0]?.entryDate,
+      memo: `${marker} approved-to-approved replacement should fail`,
+      status: "APPROVED",
+      lines: approvedEntries[0]?.lines.map((line) => ({
+        accountCode: line.accountCode,
+        accountName: line.accountName,
+        accountType: line.accountType,
+        debitAmount: line.debitAmount,
+        creditAmount: line.creditAmount,
+        vatType: line.vatType,
+        memo: line.memo
+      }))
+    }
+  });
+  assert.equal(approvedReplacementPayload.ok, false, "APPROVED replacement of an approved journal should fail");
+  assert.equal(
+    approvedReplacementPayload.code,
+    "APPROVED_JOURNAL_REPLACEMENT_BLOCKED",
+    "APPROVED replacement of an approved journal should return a replacement guard code"
+  );
+  assert.equal(approvedReplacementPayload.approvedJournalId, approvedEntries[0]?.id, "APPROVED replacement guard should identify the existing approved journal");
+
   const approvedAccountPatchPayload = await requestJson<{ ok?: boolean; code?: string; approvedJournalId?: string }>("/api/transactions", {
     method: "PATCH",
     expectedStatus: 409,
