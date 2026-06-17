@@ -58,7 +58,18 @@ try {
   await expectJson("/api/reviews", (body) => Array.isArray(body.reviewItems));
   await expectJson("/api/vendors", (body) => Array.isArray(body.vendors));
   await expectJson("/api/audit-events", (body) => Array.isArray(body.auditEvents));
-  await expectJson("/api/closing-periods", (body) => Array.isArray(body.closingPeriods));
+  await expectJson(
+    "/api/closing-periods",
+    (body) =>
+      Array.isArray(body.closingPeriods) &&
+      (body.mode !== "sample" ||
+        body.closingPeriods.some(
+          (period) =>
+            period.period === "2026-05" &&
+            Array.isArray(period.summaryPayload?.report?.filingInputSummaryRows) &&
+            period.summaryPayload.report.filingInputSummaryRows.some((row) => row["입력 항목"] === "과세 매출 공급가액")
+        ))
+  );
   await expectJson("/api/operations/readiness", (body) =>
     body.app === "honzang" &&
     Array.isArray(body.checks) &&
