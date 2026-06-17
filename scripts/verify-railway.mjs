@@ -39,6 +39,7 @@ try {
   console.error(error instanceof Error ? error.message : error);
   console.error(`Railway verification failed at ${baseUrl}`);
   console.error("Check that the public domain is attached to the Next.js service built from the latest main branch commit, and that DATABASE_URL is configured.");
+  await printDiagnostics();
   process.exit(1);
 }
 
@@ -63,4 +64,32 @@ async function expectText(path) {
     throw new Error(`${path} returned HTTP ${response.status}: ${text}`);
   }
   return text;
+}
+
+async function printDiagnostics() {
+  console.error("Railway response diagnostics:");
+
+  for (const path of ["/", "/api/version", "/api/health", "/manifest.webmanifest"]) {
+    try {
+      const response = await fetch(`${baseUrl}${path}`, { cache: "no-store" });
+      const text = await response.text();
+      const contentType = response.headers.get("content-type") ?? "unknown";
+      console.error(`- ${path}: HTTP ${response.status}, content-type=${contentType}, bytes=${Buffer.byteLength(text, "utf8")}`);
+
+      if (path === "/") {
+        if (/프로젝트 정리/.test(text)) {
+          console.error("  root page appears to be the legacy static project summary.");
+        }
+        if (/__next|self\.__next_f/.test(text)) {
+          console.error("  root page contains Next.js runtime markers.");
+        }
+      }
+
+      if (path.startsWith("/api/") && text && !contentType.includes("application/json")) {
+        console.error(`  body preview: ${text.slice(0, 120)}`);
+      }
+    } catch (diagnosticError) {
+      console.error(`- ${path}: diagnostics failed: ${diagnosticError instanceof Error ? diagnosticError.message : diagnosticError}`);
+    }
+  }
 }
