@@ -358,6 +358,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
             journalEntries={journalEntries}
             taxReports={taxReports}
             onSaved={(taxReport) => setTaxReports((current) => [taxReport, ...current.filter((item) => item.id !== taxReport.id)])}
+            onDeleted={(taxReportId) => setTaxReports((current) => current.filter((item) => item.id !== taxReportId))}
           />
         )}
         {activeView === "settings" && (
@@ -1359,7 +1360,8 @@ function ReportsPanel({
   transactions,
   journalEntries,
   taxReports,
-  onSaved
+  onSaved,
+  onDeleted
 }: {
   company: AppCompany;
   companyId: string;
@@ -1367,10 +1369,12 @@ function ReportsPanel({
   journalEntries: AppJournalEntry[];
   taxReports: AppTaxReport[];
   onSaved: (taxReport: AppTaxReport) => void;
+  onDeleted: (taxReportId: string) => void;
 }) {
   const periodOptions = useMemo(() => buildPeriodOptions(transactions), [transactions]);
   const [period, setPeriod] = useState(() => periodOptions[0]?.value ?? "ALL");
   const [savingReport, setSavingReport] = useState(false);
+  const [deletingReportId, setDeletingReportId] = useState<string | null>(null);
   const [selectedTaxReportId, setSelectedTaxReportId] = useState<string | null>(null);
   const selectedPeriod = period === "ALL" || periodOptions.some((option) => option.value === period) ? period : periodOptions[0]?.value ?? "ALL";
   const filteredTransactions = useMemo(() => filterTransactionsByPeriod(transactions, selectedPeriod), [selectedPeriod, transactions]);
@@ -1443,6 +1447,24 @@ function ReportsPanel({
       if (payload.taxReport) onSaved(payload.taxReport);
     } finally {
       setSavingReport(false);
+    }
+  }
+
+  async function deleteTaxReport(taxReportId: string) {
+    setDeletingReportId(taxReportId);
+    try {
+      const response = await fetch("/api/reports", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: taxReportId })
+      });
+      const payload = await response.json();
+      if (payload.ok) {
+        onDeleted(taxReportId);
+        if (selectedTaxReportId === taxReportId) setSelectedTaxReportId(null);
+      }
+    } finally {
+      setDeletingReportId(null);
     }
   }
 
@@ -1545,6 +1567,9 @@ function ReportsPanel({
                       <td className="amount">{formatKRW(payload.vatPayable ?? 0)}</td>
                       <td>
                         <button className="ghost-button" onClick={() => setSelectedTaxReportId(taxReport.id)}>열기</button>
+                        <button className="ghost-button" disabled={deletingReportId === taxReport.id} onClick={() => void deleteTaxReport(taxReport.id)}>
+                          {deletingReportId === taxReport.id ? "삭제 중" : "삭제"}
+                        </button>
                       </td>
                     </tr>
                   );
@@ -1567,6 +1592,9 @@ function ReportsPanel({
               >
                 <Download size={16} />
                 JSON
+              </button>
+              <button className="ghost-button" disabled={deletingReportId === selectedTaxReport.id} onClick={() => void deleteTaxReport(selectedTaxReport.id)}>
+                {deletingReportId === selectedTaxReport.id ? "삭제 중" : "삭제"}
               </button>
               <button className="ghost-button" onClick={() => setSelectedTaxReportId(null)}>닫기</button>
             </div>
