@@ -55,6 +55,9 @@ export function serializeImportBatch(importBatch: ImportBatch): AppImportBatch {
     sourceType: importBatch.sourceType,
     originalFileName: importBatch.originalFileName,
     originalFileHash: importBatch.originalFileHash,
+    originalFileMimeType: importBatch.originalFileMimeType,
+    originalFileSize: importBatch.originalFileSize,
+    hasOriginalFile: Boolean(importBatch.originalFileText),
     rowCount: importBatch.rowCount,
     importedAt: importBatch.importedAt.toISOString()
   };

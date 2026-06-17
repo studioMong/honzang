@@ -153,6 +153,9 @@ export type AppImportBatch = {
   sourceType: SourceType;
   originalFileName: string;
   originalFileHash?: string | null;
+  originalFileMimeType?: string | null;
+  originalFileSize?: number | null;
+  hasOriginalFile?: boolean;
   rowCount: number;
   importedAt: string;
 };

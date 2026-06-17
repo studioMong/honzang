@@ -106,6 +106,7 @@ async function importSample(companyId: string, sourceType: SourceType, filePath:
     mode?: string;
     duplicate?: boolean;
     importBatchId?: string;
+    importBatch?: { hasOriginalFile?: boolean; originalFileName?: string };
     transactions?: AppTransaction[];
   }>("/api/imports", {
     method: "POST",
@@ -113,6 +114,9 @@ async function importSample(companyId: string, sourceType: SourceType, filePath:
       companyId,
       sourceType,
       originalFileName: `${marker}-${sourceType}.csv`,
+      originalFileText: csv,
+      originalFileMimeType: "text/csv",
+      originalFileSize: Buffer.byteLength(csv, "utf8"),
       mapping,
       headers,
       rows
@@ -123,7 +127,16 @@ async function importSample(companyId: string, sourceType: SourceType, filePath:
   assert.equal(payload.mode, "database", `${sourceType} import should use database mode`);
   assert.equal(payload.duplicate, false, `${sourceType} import should create a fresh batch`);
   assert.ok(payload.importBatchId, `${sourceType} import should return an import batch id`);
+  assert.equal(payload.importBatch?.hasOriginalFile, true, `${sourceType} import should preserve original CSV`);
   assert.equal(payload.transactions?.length, rowCount, `${sourceType} import should return imported transactions`);
+  const originalFilePayload = await requestJson<{
+    ok?: boolean;
+    originalFileName?: string;
+    originalFileText?: string;
+  }>(`/api/imports?importBatchId=${payload.importBatchId}`);
+  assert.equal(originalFilePayload.ok, true, `${sourceType} original CSV download should succeed`);
+  assert.equal(originalFilePayload.originalFileName, `${marker}-${sourceType}.csv`, `${sourceType} original CSV filename`);
+  assert.ok(originalFilePayload.originalFileText?.includes(headers[0] ?? ""), `${sourceType} original CSV should include header`);
   cleanup.importBatchIds.push(payload.importBatchId);
   return payload.transactions ?? [];
 }

@@ -8,6 +8,8 @@ import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { serializeAccount, serializeClassificationRule, serializeImportBatch, serializeTransaction, serializeVendor } from "@/lib/server/serializers";
 import type { CsvColumnMapping, ParsedCsvRow, SourceType } from "@/types";
 
+const MAX_ORIGINAL_FILE_TEXT_LENGTH = 2_000_000;
+
 const mappingSchema = z.object({
   transactionDate: z.string().optional(),
   description: z.string().optional(),
@@ -25,6 +27,9 @@ const importSchema = z.object({
   companyId: z.string().default(DEFAULT_COMPANY_ID),
   sourceType: z.enum(["BANK", "CARD", "HOMETAX_SALES", "HOMETAX_PURCHASES", "CASH_RECEIPT", "PG", "MANUAL"]),
   originalFileName: z.string().min(1),
+  originalFileMimeType: z.string().max(120).optional().nullable(),
+  originalFileSize: z.coerce.number().int().nonnegative().max(MAX_ORIGINAL_FILE_TEXT_LENGTH).optional().nullable(),
+  originalFileText: z.string().max(MAX_ORIGINAL_FILE_TEXT_LENGTH).optional().nullable(),
   mapping: mappingSchema,
   headers: z.array(z.string()).optional().default([]),
   rows: z.array(z.record(z.string(), z.union([z.string(), z.number(), z.null()]))).min(1).max(2000)
@@ -35,7 +40,7 @@ const deleteImportSchema = z.object({
   importBatchId: z.string().min(1)
 });
 
-export async function GET() {
+export async function GET(request: Request) {
   const db = getPrisma();
 
   if (!db) {
@@ -43,6 +48,35 @@ export async function GET() {
   }
 
   const company = await ensureDefaultCompany(db);
+  const importBatchId = new URL(request.url).searchParams.get("importBatchId");
+
+  if (importBatchId) {
+    const importBatch = await db.importBatch.findFirst({
+      where: {
+        id: importBatchId,
+        companyId: company.id
+      }
+    });
+
+    if (!importBatch) {
+      return NextResponse.json({ ok: false, message: "업로드 이력을 찾을 수 없습니다." }, { status: 404 });
+    }
+    if (!importBatch.originalFileText) {
+      return NextResponse.json({ ok: false, message: "보관된 원본 CSV가 없습니다." }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      mode: "database",
+      importBatch: serializeImportBatch(importBatch),
+      originalFileName: importBatch.originalFileName,
+      originalFileHash: importBatch.originalFileHash,
+      originalFileMimeType: importBatch.originalFileMimeType,
+      originalFileSize: importBatch.originalFileSize,
+      originalFileText: importBatch.originalFileText
+    });
+  }
+
   const importBatches = await db.importBatch.findMany({
     where: { companyId: company.id },
     orderBy: { importedAt: "desc" },
@@ -193,8 +227,19 @@ export async function POST(request: Request) {
   });
 
   if (existingBatch) {
+    const importBatch =
+      !existingBatch.originalFileText && payload.originalFileText
+        ? await db.importBatch.update({
+            where: { id: existingBatch.id },
+            data: {
+              originalFileText: payload.originalFileText,
+              originalFileMimeType: payload.originalFileMimeType ?? "text/csv",
+              originalFileSize: payload.originalFileSize ?? payload.originalFileText.length
+            }
+          })
+        : existingBatch;
     const saved = await db.transaction.findMany({
-      where: { importBatchId: existingBatch.id },
+      where: { importBatchId: importBatch.id },
       include: {
         suggestedAccount: true,
         confirmedAccount: true
@@ -207,8 +252,8 @@ export async function POST(request: Request) {
       ok: true,
       mode: "database",
       duplicate: true,
-      importBatchId: existingBatch.id,
-      importBatch: serializeImportBatch(existingBatch),
+      importBatchId: importBatch.id,
+      importBatch: serializeImportBatch(importBatch),
       originalFileHash,
       transactions: serialized,
       summary: summarizeTransactions(serialized)
@@ -243,6 +288,9 @@ export async function POST(request: Request) {
       sourceType: payload.sourceType,
       originalFileName: payload.originalFileName,
       originalFileHash,
+      originalFileText: payload.originalFileText ?? null,
+      originalFileMimeType: payload.originalFileMimeType ?? (payload.originalFileText ? "text/csv" : null),
+      originalFileSize: payload.originalFileSize ?? payload.originalFileText?.length ?? null,
       rowCount: classified.length,
       mapping: payload.mapping
     }

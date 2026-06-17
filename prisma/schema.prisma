@@ -140,6 +140,9 @@ model ImportBatch {
   sourceType      SourceType
   originalFileName String
   originalFileHash String?
+  originalFileMimeType String?
+  originalFileSize Int?
+  originalFileText String?
   rowCount        Int         @default(0)
   mapping         Json?
   importedAt      DateTime    @default(now())

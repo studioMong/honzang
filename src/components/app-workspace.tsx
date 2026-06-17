@@ -73,6 +73,7 @@ const mappingFields: Array<{ key: keyof CsvColumnMapping; label: string; require
 
 const sourceOptions: SourceType[] = ["BANK", "CARD", "HOMETAX_SALES", "HOMETAX_PURCHASES", "CASH_RECEIPT", "PG"];
 const MAX_EVIDENCE_FILE_SIZE = 750_000;
+const MAX_IMPORT_ORIGINAL_FILE_SIZE = 2_000_000;
 
 const sampleCsvLinks: Record<SourceType, { label: string; href: string }> = {
   BANK: { label: "통장 샘플", href: "/samples/bank-transactions.csv" },
@@ -479,6 +480,8 @@ function CsvImportPanel({
 }) {
   const [sourceType, setSourceType] = useState<SourceType>("BANK");
   const [fileName, setFileName] = useState("");
+  const [originalFileText, setOriginalFileText] = useState("");
+  const [originalFileMeta, setOriginalFileMeta] = useState<{ mimeType: string; size: number } | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [mapping, setMapping] = useState<CsvColumnMapping>({});
   const [saving, setSaving] = useState(false);
@@ -486,10 +489,32 @@ function CsvImportPanel({
   const [importMessage, setImportMessage] = useState<{ tone: "green" | "amber" | "red"; text: string } | null>(null);
   const canImport = preview && mapping.transactionDate && mapping.description && (mapping.amount || mapping.depositAmount || mapping.withdrawalAmount);
 
-  function parseFile(file: File) {
+  async function parseFile(file: File) {
     setFileName(file.name);
+    setOriginalFileText("");
+    setOriginalFileMeta(null);
+    setPreview(null);
     setImportMessage(null);
-    Papa.parse<ParsedCsvRow>(file, {
+    if (file.size > MAX_IMPORT_ORIGINAL_FILE_SIZE) {
+      setImportMessage({
+        tone: "red",
+        text: `원본 CSV 보관을 위해 ${formatFileSize(MAX_IMPORT_ORIGINAL_FILE_SIZE)} 이하 파일만 업로드할 수 있습니다.`
+      });
+      return;
+    }
+
+    const text = await file.text();
+    if (text.length > MAX_IMPORT_ORIGINAL_FILE_SIZE) {
+      setImportMessage({
+        tone: "red",
+        text: `원본 CSV 텍스트가 ${formatFileSize(MAX_IMPORT_ORIGINAL_FILE_SIZE)}를 초과합니다.`
+      });
+      return;
+    }
+
+    setOriginalFileText(text);
+    setOriginalFileMeta({ mimeType: file.type || "text/csv", size: file.size });
+    Papa.parse<ParsedCsvRow>(text, {
       header: true,
       skipEmptyLines: true,
       transformHeader: (header) => header.trim(),
@@ -513,6 +538,9 @@ function CsvImportPanel({
           companyId,
           sourceType,
           originalFileName: fileName,
+          originalFileText,
+          originalFileMimeType: originalFileMeta?.mimeType ?? "text/csv",
+          originalFileSize: originalFileMeta?.size ?? originalFileText.length,
           mapping,
           headers: preview.headers,
           rows: preview.rows
@@ -564,6 +592,24 @@ function CsvImportPanel({
     }
   }
 
+  async function downloadImportBatchSource(batch: AppImportBatch) {
+    try {
+      const response = await fetch(`/api/imports?importBatchId=${encodeURIComponent(batch.id)}`, { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok || !payload.originalFileText) {
+        setImportMessage({ tone: "red", text: payload.message ?? "원본 CSV를 찾을 수 없습니다." });
+        return;
+      }
+
+      downloadBlob(
+        payload.originalFileName ?? batch.originalFileName,
+        new Blob([payload.originalFileText], { type: payload.originalFileMimeType ?? "text/csv;charset=utf-8" })
+      );
+    } catch {
+      setImportMessage({ tone: "red", text: "원본 CSV 다운로드에 실패했습니다." });
+    }
+  }
+
   const previewRows = useMemo(() => {
     if (!preview) return [];
     return preview.rows.slice(0, 5).map((row, index) => ({
@@ -604,13 +650,17 @@ function CsvImportPanel({
                 accept=".csv,text/csv"
                 onChange={(event) => {
                   const file = event.target.files?.[0];
-                  if (file) parseFile(file);
+                  if (file) void parseFile(file);
                 }}
               />
               <span>
                 <FileSpreadsheet size={28} />
                 <strong>{fileName || "CSV 파일 선택"}</strong>
-                <span>{preview ? `${formatNumber(preview.rows.length)}행 · ${formatNumber(preview.headers.length)}개 컬럼` : "통장, 카드, 홈택스, PG"}</span>
+                <span>
+                  {preview
+                    ? `${formatNumber(preview.rows.length)}행 · ${formatNumber(preview.headers.length)}개 컬럼 · 원본 ${formatFileSize(originalFileMeta?.size ?? originalFileText.length)} 보관`
+                    : `통장, 카드, 홈택스, PG · 원본 ${formatFileSize(MAX_IMPORT_ORIGINAL_FILE_SIZE)} 이하 보관`}
+                </span>
               </span>
             </label>
 
@@ -664,13 +714,14 @@ function CsvImportPanel({
                 <th>파일</th>
                 <th className="amount">행</th>
                 <th>해시</th>
+                <th>원본</th>
                 <th>작업</th>
               </tr>
             </thead>
             <tbody>
               {importBatches.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="empty-cell">아직 업로드한 CSV가 없습니다.</td>
+                  <td colSpan={7} className="empty-cell">아직 업로드한 CSV가 없습니다.</td>
                 </tr>
               ) : (
                 importBatches.map((batch) => (
@@ -680,6 +731,15 @@ function CsvImportPanel({
                     <td>{batch.originalFileName}</td>
                     <td className="amount">{formatNumber(batch.rowCount)}</td>
                     <td>{batch.originalFileHash ? batch.originalFileHash.slice(0, 12) : "-"}</td>
+                    <td>
+                      {batch.hasOriginalFile ? (
+                        <button className="ghost-button" onClick={() => void downloadImportBatchSource(batch)}>
+                          원본
+                        </button>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
                     <td>
                       <button className="ghost-button" onClick={() => void deleteImportBatch(batch)} disabled={deletingBatchId === batch.id}>
                         {deletingBatchId === batch.id ? "삭제 중" : "삭제"}
