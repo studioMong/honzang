@@ -738,8 +738,28 @@ function Dashboard({
     taxReports,
     closingPeriods
   });
+  const onboardingActions = transactions.length === 0 ? buildInitialOnboardingActions(setupItems) : [];
   return (
     <div className="content">
+      {onboardingActions.length > 0 && (
+        <section className="panel">
+          <div className="panel-header">
+            <div>
+              <h2 className="panel-title">초기 장부 시작</h2>
+              <p className="panel-subtitle">빈 Postgres 데이터베이스에서 첫 신고 준비까지 이어지는 작업 순서</p>
+            </div>
+            <span className="status blue">거래 0건</span>
+          </div>
+          <div className="panel-body">
+            <div className="action-list">
+              {onboardingActions.map((item) => (
+                <DashboardActionItem key={item.title} item={item} onMove={onMove} />
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       <section className="kpi-grid">
         <Kpi label="매출" value={formatKRW(summary.revenue)} foot="공급가액 기준" icon={<ReceiptText size={16} />} />
         <Kpi label="비용" value={formatKRW(summary.expense)} foot="공급가액 추정" icon={<WalletCards size={16} />} />
@@ -1388,43 +1408,49 @@ function TransactionsPanel({
             </tr>
           </thead>
           <tbody>
-            {transactions.map((transaction) => (
-              <tr key={transaction.id}>
-                <td>{formatDate(transaction.transactionDate)}</td>
-                <td>{SOURCE_TYPE_LABELS[transaction.sourceType]}</td>
-                <td>
-                  <strong>{transaction.description}</strong>
-                  {transaction.counterparty && <div className="muted">{transaction.counterparty}</div>}
-                </td>
-                <td>
-                  <select
-                    value={transaction.confirmedAccount?.id ?? transaction.suggestedAccount?.id ?? ""}
-                    onChange={(event) => onUpdate(transaction.id, { confirmedAccountId: event.target.value })}
-                  >
-                    <option value="">미분류</option>
-                    {accounts.map((account) => (
-                      <option key={account.id} value={account.id}>
-                        {account.code} {account.name}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td>
-                  <select
-                    value={transaction.evidenceStatus}
-                    onChange={(event) => onUpdate(transaction.id, { evidenceStatus: event.target.value as EvidenceStatus })}
-                  >
-                    <option value="UNCHECKED">미확인</option>
-                    <option value="MISSING">누락</option>
-                    <option value="ATTACHED">첨부</option>
-                    <option value="MATCHED">매칭</option>
-                    <option value="NOT_REQUIRED">불필요</option>
-                  </select>
-                </td>
-                <td className="amount">{transaction.depositAmount ? formatKRW(transaction.depositAmount) : "-"}</td>
-                <td className="amount">{transaction.withdrawalAmount ? formatKRW(transaction.withdrawalAmount) : "-"}</td>
+            {transactions.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="empty-cell">아직 거래가 없습니다. 법인 통장 CSV를 업로드하거나 수기 거래를 추가하세요.</td>
               </tr>
-            ))}
+            ) : (
+              transactions.map((transaction) => (
+                <tr key={transaction.id}>
+                  <td>{formatDate(transaction.transactionDate)}</td>
+                  <td>{SOURCE_TYPE_LABELS[transaction.sourceType]}</td>
+                  <td>
+                    <strong>{transaction.description}</strong>
+                    {transaction.counterparty && <div className="muted">{transaction.counterparty}</div>}
+                  </td>
+                  <td>
+                    <select
+                      value={transaction.confirmedAccount?.id ?? transaction.suggestedAccount?.id ?? ""}
+                      onChange={(event) => onUpdate(transaction.id, { confirmedAccountId: event.target.value })}
+                    >
+                      <option value="">미분류</option>
+                      {accounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.code} {account.name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <select
+                      value={transaction.evidenceStatus}
+                      onChange={(event) => onUpdate(transaction.id, { evidenceStatus: event.target.value as EvidenceStatus })}
+                    >
+                      <option value="UNCHECKED">미확인</option>
+                      <option value="MISSING">누락</option>
+                      <option value="ATTACHED">첨부</option>
+                      <option value="MATCHED">매칭</option>
+                      <option value="NOT_REQUIRED">불필요</option>
+                    </select>
+                  </td>
+                  <td className="amount">{transaction.depositAmount ? formatKRW(transaction.depositAmount) : "-"}</td>
+                  <td className="amount">{transaction.withdrawalAmount ? formatKRW(transaction.withdrawalAmount) : "-"}</td>
+                </tr>
+              ))
+            )}
           </tbody>
           </table>
         </div>
@@ -4322,6 +4348,53 @@ type DashboardAction = {
   actionLabel: string;
 };
 
+function buildInitialOnboardingActions(setupItems: CompanySetupItem[]): DashboardAction[] {
+  const missingSetupCount = setupItems.filter((item) => item.tone === "red").length;
+
+  return [
+    {
+      title: "법인 기본정보 확정",
+      detail: missingSetupCount > 0 ? "사업자등록번호, 업종, 급여/외주 지급 여부를 먼저 맞춥니다." : "법인 기본정보와 1인법인 설정이 준비되어 있습니다.",
+      status: missingSetupCount > 0 ? `${formatNumber(missingSetupCount)}개 필요` : "완료",
+      tone: missingSetupCount > 0 ? "red" : "green",
+      target: "settings",
+      actionLabel: "설정"
+    },
+    {
+      title: "법인 통장 CSV 업로드",
+      detail: "거래일, 적요, 입금, 출금, 잔액 컬럼이 있는 법인 통장 파일을 먼저 반영합니다.",
+      status: "1순위",
+      tone: "blue",
+      target: "imports",
+      actionLabel: "업로드"
+    },
+    {
+      title: "카드·홈택스 자료 반영",
+      detail: "법인카드, 홈택스 매출·매입, 현금영수증, PG 정산 자료를 같은 기간으로 맞춥니다.",
+      status: "보조자료",
+      tone: "amber",
+      target: "imports",
+      actionLabel: "자료"
+    },
+    {
+      title: "CSV에 없는 거래 보완",
+      detail: "대표자 입출금, 현금 거래, 조정분처럼 파일에 없는 항목은 수기로 남깁니다.",
+      status: "필요 시",
+      tone: "blue",
+      target: "transactions",
+      actionLabel: "입력"
+    },
+    {
+      title: "분개 승인 후 리포트 저장",
+      detail: "거래 분류, 증빙 매칭, 자동분개 승인을 끝낸 뒤 신고 패키지와 마감 잠금을 진행합니다.",
+      status: "마지막",
+      tone: "green",
+      target: "reports",
+      actionLabel: "리포트"
+    }
+  ];
+}
+
 function buildCompanySetupItems(company: AppCompany): CompanySetupItem[] {
   const missingBasics = [
     hasText(company.name) ? null : "법인명",
@@ -4720,19 +4793,25 @@ function TransactionsTable({ transactions, compact = false }: { transactions: Ap
         </tr>
       </thead>
       <tbody>
-        {transactions.map((transaction) => (
-          <tr key={transaction.id}>
-            <td>{formatDate(transaction.transactionDate)}</td>
-            <td>
-              <strong>{transaction.description}</strong>
-              {transaction.counterparty && <div className="muted">{transaction.counterparty}</div>}
-            </td>
-            {!compact && <td>{transaction.confirmedAccount?.name ?? transaction.suggestedAccount?.name ?? "미분류"}</td>}
-            <td className="amount">{transaction.depositAmount ? formatKRW(transaction.depositAmount) : "-"}</td>
-            <td className="amount">{transaction.withdrawalAmount ? formatKRW(transaction.withdrawalAmount) : "-"}</td>
-            <td>{evidenceBadge(transaction.evidenceStatus)}</td>
+        {transactions.length === 0 ? (
+          <tr>
+            <td colSpan={compact ? 5 : 6} className="empty-cell">아직 거래가 없습니다. 법인 통장 CSV를 업로드하거나 수기 거래를 추가하세요.</td>
           </tr>
-        ))}
+        ) : (
+          transactions.map((transaction) => (
+            <tr key={transaction.id}>
+              <td>{formatDate(transaction.transactionDate)}</td>
+              <td>
+                <strong>{transaction.description}</strong>
+                {transaction.counterparty && <div className="muted">{transaction.counterparty}</div>}
+              </td>
+              {!compact && <td>{transaction.confirmedAccount?.name ?? transaction.suggestedAccount?.name ?? "미분류"}</td>}
+              <td className="amount">{transaction.depositAmount ? formatKRW(transaction.depositAmount) : "-"}</td>
+              <td className="amount">{transaction.withdrawalAmount ? formatKRW(transaction.withdrawalAmount) : "-"}</td>
+              <td>{evidenceBadge(transaction.evidenceStatus)}</td>
+            </tr>
+          ))
+        )}
       </tbody>
     </table>
   );
