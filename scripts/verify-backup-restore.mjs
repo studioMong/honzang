@@ -155,6 +155,9 @@ async function verifySettingsUi() {
   assert.match(body, /백업 JSON/, "settings page should expose JSON backup action");
   assert.match(body, /백업 ZIP/, "settings page should expose ZIP backup action");
   assert.match(body, /백업 복원/, "settings page should expose restore action");
+  assert.match(body, /백업 점검/, "settings page should expose backup readiness table");
+  assert.match(body, /원본 CSV/, "settings page should expose original CSV backup status");
+  assert.match(body, /증빙 파일/, "settings page should expose evidence file backup status");
   assert.match(body, /활동 로그/, "settings page should expose audit log section");
   assert.match(body, /마감/, "settings page should expose closing period backup count");
 }

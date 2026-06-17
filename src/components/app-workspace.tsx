@@ -63,6 +63,14 @@ type FilingReadinessRow = {
   "다음 작업": string;
 };
 
+type BackupReadinessRow = {
+  데이터: string;
+  상태: string;
+  톤: StatusTone;
+  건수: string;
+  확인: string;
+};
+
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
@@ -2898,6 +2906,20 @@ function SettingsPanel({
   const setupItems = buildCompanySetupItems(form);
   const billingEstimate = buildBillingEstimate(form, transactions);
   const missingCount = setupItems.filter((item) => item.tone === "red").length;
+  const backupReadinessRows = buildBackupReadinessRows({
+    company: form,
+    accounts,
+    importBatches,
+    transactions,
+    evidences,
+    journalEntries,
+    taxReports,
+    vendors,
+    classificationRules,
+    auditEvents,
+    closingPeriods,
+    reviewItems
+  });
   function buildCurrentBackupPayload(originalImportFiles: OriginalImportFile[] = []) {
     return buildWorkspaceBackupPayload({
       mode,
@@ -3556,6 +3578,28 @@ function SettingsPanel({
             <ChecklistItem tone="green" title="리포트" value={`${formatNumber(taxReports.length)}개`} />
             <ChecklistItem tone="green" title="마감" value={`${formatNumber(closingPeriods.length)}개`} />
             <ChecklistItem tone="green" title="원본 CSV" value={`${formatNumber(importBatches.filter((batch) => batch.hasOriginalFile).length)}개`} />
+          </div>
+          <div className="table-wrap" style={{ marginTop: 16 }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>백업 점검</th>
+                  <th>상태</th>
+                  <th>건수</th>
+                  <th>확인</th>
+                </tr>
+              </thead>
+              <tbody>
+                {backupReadinessRows.map((row) => (
+                  <tr key={row.데이터}>
+                    <td>{row.데이터}</td>
+                    <td><span className={`status ${row.톤}`}>{row.상태}</span></td>
+                    <td>{row.건수}</td>
+                    <td>{row.확인}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
           {backupMessage && <div className={`import-message status ${backupMessage.tone}`}>{backupMessage.text}</div>}
         </div>
@@ -4448,6 +4492,96 @@ type OriginalImportFile = {
   originalFileText: string;
 };
 
+function buildBackupReadinessRows({
+  company,
+  accounts,
+  importBatches,
+  originalImportFiles,
+  transactions,
+  evidences,
+  journalEntries,
+  taxReports,
+  vendors,
+  classificationRules,
+  auditEvents,
+  closingPeriods,
+  reviewItems
+}: {
+  company: AppCompany;
+  accounts: AppAccount[];
+  importBatches: AppImportBatch[];
+  originalImportFiles?: OriginalImportFile[];
+  transactions: AppTransaction[];
+  evidences: AppEvidence[];
+  journalEntries: AppJournalEntry[];
+  taxReports: AppTaxReport[];
+  vendors: AppVendor[];
+  classificationRules: AppClassificationRule[];
+  auditEvents: AppAuditEvent[];
+  closingPeriods: AppClosingPeriod[];
+  reviewItems: ReviewItem[];
+}): BackupReadinessRow[] {
+  const sourceBatchesWithFile = importBatches.filter((batch) => batch.hasOriginalFile).length;
+  const sourceFilesIncluded = originalImportFiles?.length ?? sourceBatchesWithFile;
+  const approvedEntries = journalEntries.filter((entry) => entry.status === "APPROVED").length;
+  const dbEvidenceFiles = evidences.filter((evidence) => evidence.fileDataUrl).length;
+  const externalEvidenceFiles = evidences.filter((evidence) => !evidence.fileDataUrl && evidence.fileUrl).length;
+  const evidenceRecordsWithoutFile = evidences.filter((evidence) => !evidence.fileDataUrl && !evidence.fileUrl).length;
+  const missingCompanyBasics = [hasText(company.name), hasText(company.businessRegistrationNumber), accounts.length > 0].filter((item) => !item).length;
+
+  return [
+    {
+      데이터: "회사/계정",
+      상태: missingCompanyBasics === 0 ? "포함" : missingCompanyBasics >= 2 ? "확인 필요" : "부분",
+      톤: missingCompanyBasics === 0 ? "green" : missingCompanyBasics >= 2 ? "red" : "amber",
+      건수: `계정 ${formatNumber(accounts.length)}개`,
+      확인: "법인명, 사업자등록번호, 계정과목 복구 기준"
+    },
+    {
+      데이터: "원본 CSV",
+      상태: importBatches.length === 0 ? "대기" : sourceFilesIncluded === importBatches.length ? "포함" : sourceFilesIncluded > 0 ? "부분" : "메타만",
+      톤: importBatches.length === 0 ? "amber" : sourceFilesIncluded > 0 ? (sourceFilesIncluded === importBatches.length ? "green" : "amber") : "red",
+      건수: `${formatNumber(sourceFilesIncluded)}/${formatNumber(importBatches.length)}개`,
+      확인: "은행, 카드, 홈택스 원본 업로드 파일 재검증용"
+    },
+    {
+      데이터: "거래/검토",
+      상태: transactions.length > 0 ? "포함" : "확인 필요",
+      톤: transactions.length > 0 ? "green" : "red",
+      건수: `거래 ${formatNumber(transactions.length)}건 · 검토 ${formatNumber(reviewItems.length)}건`,
+      확인: "복원 후 분류, 증빙, 신고 점검을 재현할 기본 데이터"
+    },
+    {
+      데이터: "증빙 파일",
+      상태: evidences.length === 0 ? "대기" : evidenceRecordsWithoutFile > 0 ? "확인 필요" : externalEvidenceFiles > 0 ? "외부 링크" : "포함",
+      톤: evidences.length === 0 ? "amber" : evidenceRecordsWithoutFile > 0 || externalEvidenceFiles > 0 ? "amber" : "green",
+      건수: `DB ${formatNumber(dbEvidenceFiles)}개 · 외부 ${formatNumber(externalEvidenceFiles)}개 · 파일없음 ${formatNumber(evidenceRecordsWithoutFile)}개`,
+      확인: "DB 보관 파일은 백업에 포함, 외부 URL은 원본 위치 유지 필요"
+    },
+    {
+      데이터: "분개/리포트",
+      상태: journalEntries.length > 0 || taxReports.length > 0 ? "포함" : "대기",
+      톤: approvedEntries > 0 || taxReports.length > 0 ? "green" : journalEntries.length > 0 ? "amber" : "amber",
+      건수: `분개 ${formatNumber(journalEntries.length)}건 · 승인 ${formatNumber(approvedEntries)}건 · 리포트 ${formatNumber(taxReports.length)}개`,
+      확인: "복식부기 원장, 재무제표 초안, 신고 자료 재생성 기준"
+    },
+    {
+      데이터: "월 마감",
+      상태: closingPeriods.length > 0 ? "포함" : "미마감",
+      톤: closingPeriods.length > 0 ? "green" : "amber",
+      건수: `${formatNumber(closingPeriods.length)}개`,
+      확인: "복원 후 확정 기간 잠금과 감사 기준 유지"
+    },
+    {
+      데이터: "규칙/감사",
+      상태: classificationRules.length > 0 && auditEvents.length > 0 ? "포함" : classificationRules.length > 0 || auditEvents.length > 0 || vendors.length > 0 ? "부분" : "대기",
+      톤: classificationRules.length > 0 && auditEvents.length > 0 ? "green" : "amber",
+      건수: `거래처 ${formatNumber(vendors.length)}개 · 규칙 ${formatNumber(classificationRules.length)}개 · 로그 ${formatNumber(auditEvents.length)}건`,
+      확인: "자동 분류 기준과 주요 작업 이력 복구"
+    }
+  ];
+}
+
 function buildWorkspaceBackupPayload({
   mode,
   company,
@@ -4481,6 +4615,22 @@ function buildWorkspaceBackupPayload({
   closingPeriods: AppClosingPeriod[];
   reviewItems: ReviewItem[];
 }) {
+  const backupReadinessRows = buildBackupReadinessRows({
+    company,
+    accounts,
+    importBatches,
+    originalImportFiles,
+    transactions,
+    evidences,
+    journalEntries,
+    taxReports,
+    vendors,
+    classificationRules,
+    auditEvents,
+    closingPeriods,
+    reviewItems
+  });
+
   return {
     app: "혼자장부",
     backupVersion: 1,
@@ -4501,6 +4651,7 @@ function buildWorkspaceBackupPayload({
       closingPeriods: closingPeriods.length,
       reviewItems: reviewItems.length
     },
+    backupReadinessRows,
     company,
     accounts,
     csvTemplates,
@@ -4518,6 +4669,7 @@ function buildWorkspaceBackupPayload({
     notes: [
       "혼자장부 전체 백업 파일입니다.",
       "민감한 거래처, 금액, 증빙 파일 정보가 포함될 수 있으므로 안전한 위치에 보관하세요.",
+      "backupReadinessRows와 csv/backup-readiness.csv에는 백업 누락 가능성이 있는 항목이 요약됩니다.",
       "가능한 경우 원본 CSV는 originalImportFiles에 포함되며 ZIP 백업에는 별도 CSV 파일로도 함께 포함됩니다.",
       "DB 보관 증빙 파일은 백업 JSON과 ZIP의 evidences 폴더에 포함됩니다."
     ]
@@ -4545,7 +4697,9 @@ function downloadWorkspaceBackupArchive(
             businessRegistrationNumber: payload.company.businessRegistrationNumber
           },
           counts: payload.counts,
-          files: ["workspace-backup.json"],
+          backupReadinessRows: payload.backupReadinessRows,
+          readinessIssues: payload.backupReadinessRows.filter((row) => row.톤 === "red" || row.톤 === "amber").length,
+          files: ["workspace-backup.json", "csv/backup-readiness.csv"],
           originalCsvFiles: importSourceFiles.map((file) => file.path),
           evidenceFiles: evidenceFiles.map((file) => file.path),
           notes: payload.notes
@@ -4555,6 +4709,7 @@ function downloadWorkspaceBackupArchive(
       )
     },
     { path: "workspace-backup.json", content: JSON.stringify(payload, null, 2) },
+    { path: "csv/backup-readiness.csv", content: toCsvFileContent(payload.backupReadinessRows) },
     ...importSourceFiles,
     ...evidenceFiles
   ];
