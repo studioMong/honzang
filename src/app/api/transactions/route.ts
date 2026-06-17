@@ -6,6 +6,7 @@ import { sampleTransactions } from "@/lib/sample-data";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { closedPeriodResponse, findClosedPeriodForDate } from "@/lib/server/closing-periods";
+import { parseStrictDate } from "@/lib/server/date-validation";
 import { serializeTransaction, serializeVendor } from "@/lib/server/serializers";
 import { validateTransactionAmounts } from "@/lib/server/transaction-validation";
 import { applyVendorDefaults, inferAccount, summarizeTransactions } from "@/lib/accounting";
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
   }
 
   const payload = parsed.data;
-  const transactionDate = parseStrictTransactionDate(payload.transactionDate);
+  const transactionDate = parseStrictDate(payload.transactionDate);
   if (!transactionDate) {
     return NextResponse.json(
       {
@@ -299,32 +300,6 @@ export async function PATCH(request: Request) {
   });
 
   return NextResponse.json({ ok: true, transaction: serializeTransaction(transaction), mode: "database" });
-}
-
-function parseStrictTransactionDate(value: unknown) {
-  const text = String(value ?? "").trim();
-  if (!text) return null;
-
-  const dotted = text.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
-  if (dotted) {
-    const [, year, month, day] = dotted;
-    return validDateParts(Number(year), Number(month), Number(day));
-  }
-
-  const compact = text.match(/^(\d{4})(\d{2})(\d{2})$/);
-  if (compact) {
-    const [, year, month, day] = compact;
-    return validDateParts(Number(year), Number(month), Number(day));
-  }
-
-  return null;
-}
-
-function validDateParts(year: number, month: number, day: number) {
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  const date = new Date(Date.UTC(year, month - 1, day));
-  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 function transactionUpdateMetadata(input: {

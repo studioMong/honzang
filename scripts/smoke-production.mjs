@@ -314,6 +314,11 @@ async function expectInvalidCsvImportRows() {
           거래일: "06/17/2026",
           적요: "미국식 날짜",
           입금: "1000"
+        },
+        {
+          거래일: "2026-06-17Tgarbage",
+          적요: "잘못된 일시",
+          입금: "1000"
         }
       ]
     })
@@ -326,8 +331,9 @@ async function expectInvalidCsvImportRows() {
   if (
     body.code !== "INVALID_CSV_ROWS" ||
     !Array.isArray(body.issues) ||
-    body.issues.length < 4 ||
-    !body.issues.some((issue) => issue.includes("2행 거래일"))
+    body.issues.length < 5 ||
+    !body.issues.some((issue) => issue.includes("2행 거래일")) ||
+    !body.issues.some((issue) => issue.includes("3행 거래일"))
   ) {
     throw new Error(`/api/imports returned unexpected row validation payload: ${text}`);
   }

@@ -15,6 +15,10 @@ const keywordAccountRules: Array<{ keywords: string[]; code: string; reason?: st
   { keywords: ["세금", "국세", "지방세", "고용보험", "산재보험"], code: "509" }
 ];
 
+const optionalTimeSuffix = "(?:[T ]+(?:[01]?\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d{1,6})?)?(?: ?(?:Z|[+-](?:[01]\\d|2[0-3]):?[0-5]\\d))?)?";
+const separatedDatePattern = new RegExp(`^(\\d{4})[./-](\\d{1,2})[./-](\\d{1,2})${optionalTimeSuffix}$`);
+const compactDatePattern = new RegExp(`^(\\d{4})(\\d{2})(\\d{2})${optionalTimeSuffix}$`);
+
 export function parseMoney(value: unknown): number {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
   if (typeof value !== "string") return 0;
@@ -32,12 +36,12 @@ export function parseDate(value: unknown): string {
   const trimmed = value.trim();
   if (!trimmed) return "";
 
-  const dotted = trimmed.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})(?:[T\s].*)?$/);
+  const dotted = trimmed.match(separatedDatePattern);
   if (dotted) {
     const [, year, month, day] = dotted;
     return validDateParts(Number(year), Number(month), Number(day)) ?? trimmed;
   }
-  const compact = trimmed.match(/^(\d{4})(\d{2})(\d{2})$/);
+  const compact = trimmed.match(compactDatePattern);
   if (compact) {
     const [, year, month, day] = compact;
     return validDateParts(Number(year), Number(month), Number(day)) ?? trimmed;

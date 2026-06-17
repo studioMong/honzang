@@ -1,20 +1,18 @@
+const OPTIONAL_TIME_SUFFIX = "(?:[T ]+(?:[01]?\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d{1,6})?)?(?: ?(?:Z|[+-](?:[01]\\d|2[0-3]):?[0-5]\\d))?)?";
+const SEPARATED_DATE_PATTERN = new RegExp(`^(\\d{4})[./-](\\d{1,2})[./-](\\d{1,2})${OPTIONAL_TIME_SUFFIX}$`);
+const COMPACT_DATE_PATTERN = new RegExp(`^(\\d{4})(\\d{2})(\\d{2})${OPTIONAL_TIME_SUFFIX}$`);
+
 export function parseStrictDate(value: string | null | undefined) {
   const text = String(value ?? "").trim();
   if (!text) return null;
 
-  const isoDatePrefix = text.match(/^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/);
-  if (isoDatePrefix) {
-    const [, year, month, day] = isoDatePrefix;
-    return validDateParts(Number(year), Number(month), Number(day));
-  }
-
-  const separated = text.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
+  const separated = text.match(SEPARATED_DATE_PATTERN);
   if (separated) {
     const [, year, month, day] = separated;
     return validDateParts(Number(year), Number(month), Number(day));
   }
 
-  const compact = text.match(/^(\d{4})(\d{2})(\d{2})$/);
+  const compact = text.match(COMPACT_DATE_PATTERN);
   if (compact) {
     const [, year, month, day] = compact;
     return validDateParts(Number(year), Number(month), Number(day));

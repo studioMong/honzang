@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import Papa from "papaparse";
 import { applyClassificationRules, applyVendorDefaults, generateJournalDraft, inferMapping, normalizeCsvRow, parseDate, parseMoney, summarizeTransactions } from "../src/lib/accounting";
 import { DEFAULT_ACCOUNTS } from "../src/lib/defaults";
+import { parseStrictDate } from "../src/lib/server/date-validation";
 import { buildEvidenceAmountReviewItems, resolveTransactionEvidenceStatus, type EvidenceAmountReviewTransaction } from "../src/lib/server/evidence-amount-reviews";
 import type { AppClassificationRule, AppTransaction, ParsedCsvRow, SourceType } from "../src/types";
 
@@ -74,8 +75,15 @@ assert.equal(parseMoney("1,234-"), 1_234, "trailing negative money should parse 
 assert.equal(parseMoney("-1,234"), 1_234, "leading negative money should parse as an absolute amount");
 assert.equal(parseDate("2026.6.7"), "2026-06-07", "dotted dates should normalize");
 assert.equal(parseDate("20260607"), "2026-06-07", "compact dates should normalize");
+assert.equal(parseDate("2026.6.7 13:20"), "2026-06-07", "dates with common time suffixes should normalize");
+assert.equal(parseDate("2026-06-07T13:20:00+09:00"), "2026-06-07", "ISO datetime suffixes should normalize");
 assert.equal(parseDate("2026-02-31"), "2026-02-31", "invalid calendar dates should not become today's date");
 assert.equal(parseDate("날짜아님"), "날짜아님", "invalid date text should be preserved for preview and validation");
+assert.equal(parseDate("2026-06-07Tgarbage"), "2026-06-07Tgarbage", "invalid datetime suffixes should be preserved for validation");
+assert.equal(parseStrictDate("2026.6.7 13:20"), "2026-06-07", "strict dates should allow common time suffixes");
+assert.equal(parseStrictDate("2026-06-07T13:20:00+09:00"), "2026-06-07", "strict dates should allow ISO datetime suffixes");
+assert.equal(parseStrictDate("2026-06-07Tgarbage"), null, "strict dates should reject arbitrary datetime suffixes");
+assert.equal(parseStrictDate("2026-06-07 25:00"), null, "strict dates should reject invalid time suffixes");
 
 function parseSampleCsv(filePath: string) {
   const csv = readFileSync(resolve(filePath), "utf8");
