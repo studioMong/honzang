@@ -3648,6 +3648,7 @@ function SettingsPanel({
   const [exportingBackup, setExportingBackup] = useState(false);
   const [restoringBackup, setRestoringBackup] = useState(false);
   const [backupMessage, setBackupMessage] = useState<{ tone: "green" | "red" | "amber"; text: string } | null>(null);
+  const [settingsMessage, setSettingsMessage] = useState<PanelMessage | null>(null);
   const [operationReadiness, setOperationReadiness] = useState<OperationReadinessPayload | null>(null);
   const [operationLoading, setOperationLoading] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -3727,6 +3728,7 @@ function SettingsPanel({
 
   async function saveSettings() {
     setSaving(true);
+    setSettingsMessage(null);
     try {
       const response = await fetch("/api/companies", {
         method: "PATCH",
@@ -3734,8 +3736,15 @@ function SettingsPanel({
         body: JSON.stringify(form)
       });
       const payload = await response.json();
+      if (!response.ok) {
+        setSettingsMessage({ tone: "red", text: payload.message ?? "회사 설정 저장에 실패했습니다." });
+        return;
+      }
       onSaved(payload.company ?? form);
       setSavedAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }));
+      setSettingsMessage({ tone: "green", text: "회사 설정을 저장했습니다." });
+    } catch {
+      setSettingsMessage({ tone: "red", text: "회사 설정 저장 중 오류가 발생했습니다." });
     } finally {
       setSaving(false);
     }
@@ -3759,6 +3768,7 @@ function SettingsPanel({
   async function createRule() {
     if (!ruleForm.keyword.trim() || !ruleForm.accountCode) return;
     setSavingRule(true);
+    setSettingsMessage(null);
     try {
       const response = await fetch("/api/classification-rules", {
         method: "POST",
@@ -3773,10 +3783,15 @@ function SettingsPanel({
         })
       });
       const payload = await response.json();
-      if (payload.classificationRule) {
-        onRulesChanged([payload.classificationRule, ...classificationRules]);
-        setRuleForm((current) => ({ ...current, name: "", keyword: "" }));
+      if (!response.ok || !payload.classificationRule) {
+        setSettingsMessage({ tone: "red", text: payload.message ?? "자동 분류 규칙 추가에 실패했습니다." });
+        return;
       }
+      onRulesChanged([payload.classificationRule, ...classificationRules]);
+      setRuleForm((current) => ({ ...current, name: "", keyword: "" }));
+      setSettingsMessage({ tone: "green", text: "자동 분류 규칙을 추가했습니다." });
+    } catch {
+      setSettingsMessage({ tone: "red", text: "자동 분류 규칙 추가 중 오류가 발생했습니다." });
     } finally {
       setSavingRule(false);
     }
@@ -3785,6 +3800,7 @@ function SettingsPanel({
   async function createVendor() {
     if (!vendorForm.name.trim()) return;
     setSavingVendor(true);
+    setSettingsMessage(null);
     try {
       const response = await fetch("/api/vendors", {
         method: "POST",
@@ -3798,12 +3814,17 @@ function SettingsPanel({
         })
       });
       const payload = await response.json();
-      if (payload.vendor) {
-        const defaultAccount = accounts.find((account) => account.id === vendorForm.defaultAccountId) ?? null;
-        const createdVendor = { ...payload.vendor, defaultAccount: payload.vendor.defaultAccount ?? defaultAccount };
-        onVendorsChanged([createdVendor, ...vendors.filter((vendor) => vendor.id !== createdVendor.id)]);
-        setVendorForm((current) => ({ ...current, name: "", businessRegistrationNumber: "", memo: "" }));
+      if (!response.ok || !payload.vendor) {
+        setSettingsMessage({ tone: "red", text: payload.message ?? "거래처 기본값 추가에 실패했습니다." });
+        return;
       }
+      const defaultAccount = accounts.find((account) => account.id === vendorForm.defaultAccountId) ?? null;
+      const createdVendor = { ...payload.vendor, defaultAccount: payload.vendor.defaultAccount ?? defaultAccount };
+      onVendorsChanged([createdVendor, ...vendors.filter((vendor) => vendor.id !== createdVendor.id)]);
+      setVendorForm((current) => ({ ...current, name: "", businessRegistrationNumber: "", memo: "" }));
+      setSettingsMessage({ tone: "green", text: "거래처 기본값을 추가했습니다." });
+    } catch {
+      setSettingsMessage({ tone: "red", text: "거래처 기본값 추가 중 오류가 발생했습니다." });
     } finally {
       setSavingVendor(false);
     }
@@ -3815,21 +3836,30 @@ function SettingsPanel({
 
     const previous = vendors;
     onVendorsChanged(vendors.filter((vendor) => vendor.id !== vendorId));
+    setSettingsMessage(null);
     try {
       const response = await fetch("/api/vendors", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: vendorId })
       });
-      if (!response.ok) onVendorsChanged(previous);
+      const payload = await response.json();
+      if (!response.ok) {
+        onVendorsChanged(previous);
+        setSettingsMessage({ tone: "red", text: payload.message ?? "거래처 기본값 삭제에 실패했습니다." });
+        return;
+      }
+      setSettingsMessage({ tone: "green", text: "거래처 기본값을 삭제했습니다." });
     } catch {
       onVendorsChanged(previous);
+      setSettingsMessage({ tone: "red", text: "거래처 기본값 삭제 중 오류가 발생했습니다." });
     }
   }
 
   async function toggleRule(rule: AppClassificationRule) {
     const next = { ...rule, isActive: !rule.isActive };
     onRulesChanged(classificationRules.map((item) => (item.id === rule.id ? next : item)));
+    setSettingsMessage(null);
     try {
       const response = await fetch("/api/classification-rules", {
         method: "PATCH",
@@ -3837,11 +3867,16 @@ function SettingsPanel({
         body: JSON.stringify({ id: rule.id, isActive: next.isActive })
       });
       const payload = await response.json();
-      if (payload.classificationRule) {
-        onRulesChanged(classificationRules.map((item) => (item.id === rule.id ? payload.classificationRule : item)));
+      if (!response.ok || !payload.classificationRule) {
+        onRulesChanged(classificationRules);
+        setSettingsMessage({ tone: "red", text: payload.message ?? "자동 분류 규칙 상태 변경에 실패했습니다." });
+        return;
       }
+      onRulesChanged(classificationRules.map((item) => (item.id === rule.id ? payload.classificationRule : item)));
+      setSettingsMessage({ tone: "green", text: `자동 분류 규칙을 ${payload.classificationRule.isActive ? "사용" : "중지"} 상태로 변경했습니다.` });
     } catch {
       onRulesChanged(classificationRules);
+      setSettingsMessage({ tone: "red", text: "자동 분류 규칙 상태 변경 중 오류가 발생했습니다." });
     }
   }
 
@@ -3851,15 +3886,23 @@ function SettingsPanel({
 
     const previous = classificationRules;
     onRulesChanged(classificationRules.filter((rule) => rule.id !== ruleId));
+    setSettingsMessage(null);
     try {
       const response = await fetch("/api/classification-rules", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: ruleId })
       });
-      if (!response.ok) onRulesChanged(previous);
+      const payload = await response.json();
+      if (!response.ok) {
+        onRulesChanged(previous);
+        setSettingsMessage({ tone: "red", text: payload.message ?? "자동 분류 규칙 삭제에 실패했습니다." });
+        return;
+      }
+      setSettingsMessage({ tone: "green", text: "자동 분류 규칙을 삭제했습니다." });
     } catch {
       onRulesChanged(previous);
+      setSettingsMessage({ tone: "red", text: "자동 분류 규칙 삭제 중 오류가 발생했습니다." });
     }
   }
 
@@ -3870,15 +3913,23 @@ function SettingsPanel({
     const previous = csvTemplates;
     onCsvTemplatesChanged(csvTemplates.filter((item) => item.id !== templateId));
     setDeletingCsvTemplateId(templateId);
+    setSettingsMessage(null);
     try {
       const response = await fetch("/api/csv-templates", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ companyId: company.id || DEFAULT_COMPANY_ID, id: templateId })
       });
-      if (!response.ok) onCsvTemplatesChanged(previous);
+      const payload = await response.json();
+      if (!response.ok) {
+        onCsvTemplatesChanged(previous);
+        setSettingsMessage({ tone: "red", text: payload.message ?? "CSV 매핑 템플릿 삭제에 실패했습니다." });
+        return;
+      }
+      setSettingsMessage({ tone: "green", text: "CSV 매핑 템플릿을 삭제했습니다." });
     } catch {
       onCsvTemplatesChanged(previous);
+      setSettingsMessage({ tone: "red", text: "CSV 매핑 템플릿 삭제 중 오류가 발생했습니다." });
     } finally {
       setDeletingCsvTemplateId(null);
     }
@@ -3978,6 +4029,7 @@ function SettingsPanel({
 
   return (
     <div className="content">
+      {settingsMessage && <div className={`import-message status ${settingsMessage.tone}`}>{settingsMessage.text}</div>}
       <section className="panel">
         <div className="panel-header">
           <div>
