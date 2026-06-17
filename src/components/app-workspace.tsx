@@ -1889,6 +1889,7 @@ function JournalDraftsPanel({
   const [savingId, setSavingId] = useState<string | null>(null);
   const [bulkSaving, setBulkSaving] = useState(false);
   const [draftFilter, setDraftFilter] = useState<JournalDraftFilter>("ALL");
+  const [journalMessage, setJournalMessage] = useState<PanelMessage | null>(null);
   const approvedTransactionIds = new Set(journalEntries.filter((entry) => entry.status === "APPROVED").map((entry) => entry.transactionId).filter(Boolean));
   const approvedDrafts = drafts.filter((draft) => approvedTransactionIds.has(draft.transactionId));
   const pendingDrafts = drafts.filter((draft) => !approvedTransactionIds.has(draft.transactionId));
@@ -1904,31 +1905,40 @@ function JournalDraftsPanel({
   ];
 
   async function saveDraft(draft: JournalDraft) {
-    const response = await fetch("/api/journals", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        companyId,
-        transactionId: draft.transactionId,
-        entryDate: draft.entryDate,
-        memo: draft.memo,
-        status: "APPROVED",
-        lines: draft.lines
-      })
-    });
-    const payload = await response.json();
-    if (!response.ok || !payload.journalEntry?.lines) {
-      window.alert(payload.message ?? "분개 승인에 실패했습니다.");
-      return null;
+    try {
+      const response = await fetch("/api/journals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId,
+          transactionId: draft.transactionId,
+          entryDate: draft.entryDate,
+          memo: draft.memo,
+          status: "APPROVED",
+          lines: draft.lines
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.journalEntry?.lines) {
+        return { entry: null, error: payload.message ?? "분개 승인에 실패했습니다." };
+      }
+      return { entry: payload.journalEntry as AppJournalEntry };
+    } catch {
+      return { entry: null, error: "분개 승인 중 오류가 발생했습니다." };
     }
-    return payload.journalEntry as AppJournalEntry;
   }
 
   async function approveDraft(draft: JournalDraft) {
     setSavingId(draft.transactionId);
+    setJournalMessage(null);
     try {
-      const entry = await saveDraft(draft);
-      if (entry) onChanged(entry);
+      const result = await saveDraft(draft);
+      if (!result.entry) {
+        setJournalMessage({ tone: "red", text: result.error ?? "분개 승인에 실패했습니다." });
+        return;
+      }
+      onChanged(result.entry);
+      setJournalMessage({ tone: "green", text: "분개를 승인했습니다." });
     } finally {
       setSavingId(null);
     }
@@ -1939,6 +1949,7 @@ function JournalDraftsPanel({
     if (!approvedEntry) return;
 
     setSavingId(draft.transactionId);
+    setJournalMessage(null);
     try {
       const response = await fetch("/api/journals", {
         method: "PATCH",
@@ -1947,10 +1958,13 @@ function JournalDraftsPanel({
       });
       const payload = await response.json();
       if (!response.ok || !payload.journalEntry?.lines) {
-        window.alert(payload.message ?? "분개 승인 취소에 실패했습니다.");
+        setJournalMessage({ tone: "red", text: payload.message ?? "분개 승인 취소에 실패했습니다." });
         return;
       }
       onChanged(payload.journalEntry);
+      setJournalMessage({ tone: "green", text: "분개 승인을 취소했습니다." });
+    } catch {
+      setJournalMessage({ tone: "red", text: "분개 승인 취소 중 오류가 발생했습니다." });
     } finally {
       setSavingId(null);
     }
@@ -1958,12 +1972,27 @@ function JournalDraftsPanel({
 
   async function approveReadyDrafts() {
     setBulkSaving(true);
+    setJournalMessage(null);
+    let approvedCount = 0;
     try {
       for (const draft of readyDrafts) {
         setSavingId(draft.transactionId);
-        const entry = await saveDraft(draft);
-        if (!entry) break;
-        onChanged(entry);
+        const result = await saveDraft(draft);
+        if (!result.entry) {
+          setJournalMessage({
+            tone: "red",
+            text:
+              approvedCount > 0
+                ? `${formatNumber(approvedCount)}건 승인 후 중단했습니다. ${result.error ?? "남은 분개 승인에 실패했습니다."}`
+                : result.error ?? "일괄 분개 승인에 실패했습니다."
+          });
+          break;
+        }
+        approvedCount += 1;
+        onChanged(result.entry);
+      }
+      if (approvedCount === readyDrafts.length && approvedCount > 0) {
+        setJournalMessage({ tone: "green", text: `정상 초안 ${formatNumber(approvedCount)}건을 승인했습니다.` });
       }
     } finally {
       setSavingId(null);
@@ -1986,6 +2015,7 @@ function JournalDraftsPanel({
             </button>
           </div>
         </div>
+        {journalMessage && <div className={`import-message status ${journalMessage.tone}`}>{journalMessage.text}</div>}
         <div className="panel-body review-list">
           <div className="journal-summary-grid">
             <button type="button" className="journal-summary-card" data-tone="green" data-active={draftFilter === "READY"} onClick={() => setDraftFilter("READY")}>
