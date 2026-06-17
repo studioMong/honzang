@@ -70,6 +70,7 @@ try {
     await expectText(path, (body) => body.includes(expectedHeader));
   }
   await expectInvalidClosingPeriod();
+  await expectInvalidClosingJson();
   await expectInvalidClosingPayload();
   await expectMissingClosingReadiness();
   await expectBlockedClosingPeriod();
@@ -88,6 +89,7 @@ try {
   await expectInvalidEvidenceFileUrl();
   await expectInvalidEvidenceAmounts();
   await expectInvalidReportPeriod();
+  await expectInvalidReportJson();
   await expectInvalidReportPeriodRange();
   await expectMismatchedReportPayloadPeriod();
   await expectInvalidReportPayload();
@@ -217,6 +219,22 @@ async function expectInvalidClosingPeriod() {
   const body = JSON.parse(text);
   if (body.code !== "INVALID_CLOSING_PERIOD") {
     throw new Error(`/api/closing-periods returned unexpected invalid period payload: ${text}`);
+  }
+}
+
+async function expectInvalidClosingJson() {
+  const response = await fetch(`${baseUrl}/api/closing-periods`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{"
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/closing-periods should reject malformed JSON, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_JSON_PAYLOAD") {
+    throw new Error(`/api/closing-periods returned unexpected invalid JSON payload: ${text}`);
   }
 }
 
@@ -667,6 +685,22 @@ async function expectInvalidReportPeriod() {
   const body = JSON.parse(text);
   if (body.code !== "INVALID_REPORT_PERIOD") {
     throw new Error(`/api/reports returned unexpected period validation payload: ${text}`);
+  }
+}
+
+async function expectInvalidReportJson() {
+  const response = await fetch(`${baseUrl}/api/reports`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{"
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/reports should reject malformed JSON, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_JSON_PAYLOAD") {
+    throw new Error(`/api/reports returned unexpected invalid JSON payload: ${text}`);
   }
 }
 

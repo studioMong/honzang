@@ -9,6 +9,7 @@ import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { closedPeriodResponse, findClosedPeriodOverlappingRange, periodRangeFromMonth } from "@/lib/server/closing-periods";
 import { parseStrictDate } from "@/lib/server/date-validation";
 import { validateJsonPayloadSize } from "@/lib/server/json-payload-validation";
+import { parseJsonRequest } from "@/lib/server/request-json";
 import { serializeTaxReport } from "@/lib/server/serializers";
 
 const taxReportSchema = z.object({
@@ -41,10 +42,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const parsed = taxReportSchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
-  }
+  const parsed = await parseJsonRequest(request, taxReportSchema, { label: "리포트 저장 요청" });
+  if (!parsed.ok) return parsed.response;
 
   const payload = parsed.data;
   const normalizedPeriodStart = parseStrictDate(payload.periodStart);
@@ -149,10 +148,8 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const parsed = deleteTaxReportSchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
-  }
+  const parsed = await parseJsonRequest(request, deleteTaxReportSchema, { label: "리포트 삭제 요청" });
+  if (!parsed.ok) return parsed.response;
 
   const db = getPrisma();
   if (!db) {

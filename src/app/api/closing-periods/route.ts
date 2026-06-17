@@ -5,6 +5,7 @@ import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { asJsonValue, periodRangeFromMonth } from "@/lib/server/closing-periods";
 import { validateJsonPayloadSize } from "@/lib/server/json-payload-validation";
+import { parseJsonRequest } from "@/lib/server/request-json";
 import { serializeClosingPeriod } from "@/lib/server/serializers";
 
 const closePeriodSchema = z.object({
@@ -33,10 +34,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const parsed = closePeriodSchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
-  }
+  const parsed = await parseJsonRequest(request, closePeriodSchema, { label: "마감 잠금 요청" });
+  if (!parsed.ok) return parsed.response;
 
   const range = periodRangeFromMonth(parsed.data.period);
   if (!range) {
@@ -168,10 +167,8 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const parsed = reopenPeriodSchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
-  }
+  const parsed = await parseJsonRequest(request, reopenPeriodSchema, { label: "마감 해제 요청" });
+  if (!parsed.ok) return parsed.response;
 
   const db = getPrisma();
   if (!db) {
