@@ -34,6 +34,8 @@ server.on("exit", (code, signal) => {
 
 try {
   await waitForServer();
+  await expectSecurityHeaders("/");
+  await expectSecurityHeaders("/api/version");
   await expectJson("/api/version", (body) => body.app === "honzang" && body.environment === "production");
   await expectJson("/api/health", (body) => body.ok === true && body.app === "honzang");
   await expectJson("/api/reviews", (body) => Array.isArray(body.reviewItems));
@@ -142,6 +144,27 @@ async function expectText(path, predicate) {
   }
   if (!predicate(body)) {
     throw new Error(`${path} returned unexpected body.`);
+  }
+}
+
+async function expectSecurityHeaders(path) {
+  const response = await fetch(`${baseUrl}${path}`, { cache: "no-store" });
+  const expectedHeaders = [
+    ["content-security-policy", /frame-ancestors 'none'/],
+    ["cross-origin-opener-policy", /^same-origin$/],
+    ["cross-origin-resource-policy", /^same-origin$/],
+    ["permissions-policy", /camera=\(\).*microphone=\(\)/],
+    ["referrer-policy", /^no-referrer$/],
+    ["strict-transport-security", /max-age=63072000/],
+    ["x-content-type-options", /^nosniff$/],
+    ["x-frame-options", /^DENY$/]
+  ];
+
+  for (const [header, pattern] of expectedHeaders) {
+    const value = response.headers.get(header) ?? "";
+    if (!pattern.test(value)) {
+      throw new Error(`${path} missing security header ${header}: ${value}`);
+    }
   }
 }
 

@@ -33,6 +33,12 @@ assert.match(dockerfile, /EXPOSE 3000/, "Dockerfile should expose the Railway ap
 assert.match(dockerfile, /CMD \["npm", "run", "start"\]/, "Dockerfile should start through npm run start");
 
 assert.match(nextConfig, /output:\s*"standalone"/, "Next config should produce standalone output");
+assert.match(nextConfig, /Content-Security-Policy/, "Next config should set a baseline CSP header");
+assert.match(nextConfig, /frame-ancestors 'none'/, "CSP should prevent framing");
+assert.match(nextConfig, /X-Content-Type-Options/, "Next config should prevent content-type sniffing");
+assert.match(nextConfig, /Strict-Transport-Security/, "Next config should set HSTS for production responses");
+assert.match(nextConfig, /Referrer-Policy/, "Next config should set a referrer policy");
+assert.match(nextConfig, /Permissions-Policy/, "Next config should disable unused browser capabilities");
 assert.match(proxy, /api\/auth\/login/, "proxy should leave auth login public");
 assert.match(proxy, /api\/health/, "proxy should leave healthcheck public");
 assert.match(proxy, /isRequestAuthenticated/, "proxy should protect private routes by access cookie");
