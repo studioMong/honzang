@@ -1,5 +1,5 @@
-import type { Account, Evidence, JournalEntry, JournalLine, TaxReport, Transaction } from "@prisma/client";
-import type { AppAccount, AppEvidence, AppJournalEntry, AppTaxReport, AppTransaction } from "@/types";
+import type { Account, ClassificationRule, Evidence, JournalEntry, JournalLine, TaxReport, Transaction } from "@prisma/client";
+import type { AppAccount, AppClassificationRule, AppEvidence, AppJournalEntry, AppTaxReport, AppTransaction } from "@/types";
 
 type TransactionWithAccounts = Transaction & {
   suggestedAccount?: Account | null;
@@ -15,6 +15,32 @@ export function serializeAccount(account: Account | null | undefined): AppAccoun
     type: account.type,
     taxCategory: account.taxCategory
   };
+}
+
+export function serializeClassificationRule(
+  rule: ClassificationRule,
+  accountByCode = new Map<string, Account>()
+): AppClassificationRule {
+  const condition = isRecord(rule.condition) ? rule.condition : {};
+  const action = isRecord(rule.action) ? rule.action : {};
+  const keyword = typeof condition.keyword === "string" ? condition.keyword : "";
+  const accountCode = typeof action.accountCode === "string" ? action.accountCode : "";
+  const account = accountByCode.get(accountCode);
+
+  return {
+    id: rule.id,
+    name: rule.name,
+    keyword,
+    accountCode,
+    accountName: account?.name ?? null,
+    sourceType: rule.sourceType,
+    priority: rule.priority,
+    isActive: rule.isActive
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 export function serializeTransaction(transaction: TransactionWithAccounts): AppTransaction {

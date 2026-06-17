@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import type {
   AppAccount,
+  AppClassificationRule,
   AppCompany,
   AppEvidence,
   AppJournalEntry,
@@ -35,7 +36,7 @@ import type {
   SourceType
 } from "@/types";
 import { DEFAULT_ACCOUNTS, DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/defaults";
-import { generateJournalDraft, inferMapping, normalizeCsvRow, parseMoney, summarizeTransactions } from "@/lib/accounting";
+import { applyClassificationRules, generateJournalDraft, inferMapping, normalizeCsvRow, parseMoney, summarizeTransactions } from "@/lib/accounting";
 import { formatDate, formatKRW, formatNumber } from "@/lib/format";
 import { sampleCompany, sampleEvidences, sampleJournalEntries, sampleTaxReports, sampleTransactions } from "@/lib/sample-data";
 
@@ -82,6 +83,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
   const [company, setCompany] = useState<AppCompany>(sampleCompany);
   const [accounts, setAccounts] = useState<AppAccount[]>(DEFAULT_ACCOUNTS);
   const [csvTemplates, setCsvTemplates] = useState<CsvTemplate[]>([]);
+  const [classificationRules, setClassificationRules] = useState<AppClassificationRule[]>([]);
   const [transactions, setTransactions] = useState<AppTransaction[]>(sampleTransactions);
   const [evidences, setEvidences] = useState<AppEvidence[]>(sampleEvidences);
   const [journalEntries, setJournalEntries] = useState<AppJournalEntry[]>(sampleJournalEntries);
@@ -110,6 +112,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       setCompany(companyPayload.company ?? sampleCompany);
       setAccounts(companyPayload.accounts ?? DEFAULT_ACCOUNTS);
       setCsvTemplates(companyPayload.csvTemplates ?? []);
+      setClassificationRules(companyPayload.classificationRules ?? []);
       setTransactions(transactionPayload.transactions?.length ? transactionPayload.transactions : sampleTransactions);
       setEvidences(evidencePayload.evidences?.length ? evidencePayload.evidences : sampleEvidences);
       setJournalEntries(journalPayload.journalEntries ?? []);
@@ -127,6 +130,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       setCompany(sampleCompany);
       setAccounts(DEFAULT_ACCOUNTS);
       setCsvTemplates([]);
+      setClassificationRules([]);
       setTransactions(sampleTransactions);
       setEvidences(sampleEvidences);
       setJournalEntries(sampleJournalEntries);
@@ -233,7 +237,9 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
         {activeView === "imports" && (
           <CsvImportPanel
             companyId={company.id || DEFAULT_COMPANY_ID}
+            accounts={accounts}
             csvTemplates={csvTemplates}
+            classificationRules={classificationRules}
             onImported={(imported) => {
               setTransactions(imported);
               setActiveView("transactions");
@@ -281,7 +287,15 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
             onSaved={(taxReport) => setTaxReports((current) => [taxReport, ...current.filter((item) => item.id !== taxReport.id)])}
           />
         )}
-        {activeView === "settings" && <SettingsPanel company={company} accounts={accounts} onSaved={setCompany} />}
+        {activeView === "settings" && (
+          <SettingsPanel
+            company={company}
+            accounts={accounts}
+            classificationRules={classificationRules}
+            onSaved={setCompany}
+            onRulesChanged={setClassificationRules}
+          />
+        )}
       </main>
     </div>
   );
@@ -366,11 +380,15 @@ function Dashboard({
 
 function CsvImportPanel({
   companyId,
+  accounts,
   csvTemplates,
+  classificationRules,
   onImported
 }: {
   companyId: string;
+  accounts: AppAccount[];
   csvTemplates: CsvTemplate[];
+  classificationRules: AppClassificationRule[];
   onImported: (transactions: AppTransaction[]) => void;
 }) {
   const [sourceType, setSourceType] = useState<SourceType>("BANK");
@@ -433,9 +451,9 @@ function CsvImportPanel({
     if (!preview) return [];
     return preview.rows.slice(0, 5).map((row, index) => ({
       id: `row-${index}`,
-      ...normalizeCsvRow(row, mapping, sourceType, index)
+      ...applyClassificationRules(normalizeCsvRow(row, mapping, sourceType, index), classificationRules, accounts)
     }));
-  }, [mapping, preview, sourceType]);
+  }, [accounts, classificationRules, mapping, preview, sourceType]);
 
   return (
     <div className="content">
@@ -1510,14 +1528,26 @@ function ReportsPanel({
 function SettingsPanel({
   company,
   accounts,
-  onSaved
+  classificationRules,
+  onSaved,
+  onRulesChanged
 }: {
   company: AppCompany;
   accounts: AppAccount[];
+  classificationRules: AppClassificationRule[];
   onSaved: (company: AppCompany) => void;
+  onRulesChanged: (rules: AppClassificationRule[]) => void;
 }) {
   const [form, setForm] = useState<AppCompany>(company);
+  const [ruleForm, setRuleForm] = useState({
+    name: "",
+    keyword: "",
+    accountCode: accounts.find((account) => account.code === "599")?.code ?? accounts[0]?.code ?? "",
+    sourceType: "",
+    priority: "100"
+  });
   const [saving, setSaving] = useState(false);
+  const [savingRule, setSavingRule] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const setupItems = buildCompanySetupItems(form);
   const missingCount = setupItems.filter((item) => item.tone === "red").length;
@@ -1533,6 +1563,10 @@ function SettingsPanel({
     setForm((current) => ({ ...current, [key]: value }));
   }
 
+  function updateRuleForm(key: keyof typeof ruleForm, value: string) {
+    setRuleForm((current) => ({ ...current, [key]: value }));
+  }
+
   async function saveSettings() {
     setSaving(true);
     try {
@@ -1546,6 +1580,65 @@ function SettingsPanel({
       setSavedAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function createRule() {
+    if (!ruleForm.keyword.trim() || !ruleForm.accountCode) return;
+    setSavingRule(true);
+    try {
+      const response = await fetch("/api/classification-rules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: ruleForm.name.trim() || `${ruleForm.keyword.trim()} 자동 분류`,
+          keyword: ruleForm.keyword.trim(),
+          accountCode: ruleForm.accountCode,
+          sourceType: ruleForm.sourceType || null,
+          priority: Number(ruleForm.priority) || 100,
+          isActive: true
+        })
+      });
+      const payload = await response.json();
+      if (payload.classificationRule) {
+        onRulesChanged([payload.classificationRule, ...classificationRules]);
+        setRuleForm((current) => ({ ...current, name: "", keyword: "" }));
+      }
+    } finally {
+      setSavingRule(false);
+    }
+  }
+
+  async function toggleRule(rule: AppClassificationRule) {
+    const next = { ...rule, isActive: !rule.isActive };
+    onRulesChanged(classificationRules.map((item) => (item.id === rule.id ? next : item)));
+    try {
+      const response = await fetch("/api/classification-rules", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: rule.id, isActive: next.isActive })
+      });
+      const payload = await response.json();
+      if (payload.classificationRule) {
+        onRulesChanged(classificationRules.map((item) => (item.id === rule.id ? payload.classificationRule : item)));
+      }
+    } catch {
+      onRulesChanged(classificationRules);
+    }
+  }
+
+  async function deleteRule(ruleId: string) {
+    const previous = classificationRules;
+    onRulesChanged(classificationRules.filter((rule) => rule.id !== ruleId));
+    try {
+      const response = await fetch("/api/classification-rules", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: ruleId })
+      });
+      if (!response.ok) onRulesChanged(previous);
+    } catch {
+      onRulesChanged(previous);
     }
   }
 
@@ -1638,6 +1731,103 @@ function SettingsPanel({
             checked={form.contractorPaymentEnabled}
             onChange={(checked) => updateForm("contractorPaymentEnabled", checked)}
           />
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="panel-title">자동 분류 규칙</h2>
+            <p className="panel-subtitle">CSV 가져오기 때 키워드가 포함된 거래의 계정과목을 우선 지정</p>
+          </div>
+          <span className="status blue">{formatNumber(classificationRules.length)}개</span>
+        </div>
+        <div className="panel-body form-grid">
+          <div className="field">
+            <label>규칙명</label>
+            <input value={ruleForm.name} onChange={(event) => updateRuleForm("name", event.target.value)} placeholder="예: AWS 비용" />
+          </div>
+          <div className="field">
+            <label>키워드</label>
+            <input value={ruleForm.keyword} onChange={(event) => updateRuleForm("keyword", event.target.value)} placeholder="예: aws" />
+          </div>
+          <div className="field">
+            <label>자료 유형</label>
+            <select value={ruleForm.sourceType} onChange={(event) => updateRuleForm("sourceType", event.target.value)}>
+              <option value="">전체</option>
+              {sourceOptions.map((option) => (
+                <option key={option} value={option}>
+                  {SOURCE_TYPE_LABELS[option]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label>계정과목</label>
+            <select value={ruleForm.accountCode} onChange={(event) => updateRuleForm("accountCode", event.target.value)}>
+              {accounts.map((account) => (
+                <option key={account.id} value={account.code}>
+                  {account.code} {account.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label>우선순위</label>
+            <input inputMode="numeric" value={ruleForm.priority} onChange={(event) => updateRuleForm("priority", event.target.value)} />
+          </div>
+          <div className="field">
+            <label>작업</label>
+            <button className="primary-button" onClick={() => void createRule()} disabled={savingRule || !ruleForm.keyword.trim()}>
+              {savingRule ? <Loader2 size={17} className="spin" /> : <CheckCircle2 size={17} />}
+              규칙 추가
+            </button>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>상태</th>
+                <th>규칙</th>
+                <th>키워드</th>
+                <th>자료 유형</th>
+                <th>계정과목</th>
+                <th className="amount">우선순위</th>
+                <th>작업</th>
+              </tr>
+            </thead>
+            <tbody>
+              {classificationRules.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="empty-cell">아직 자동 분류 규칙이 없습니다.</td>
+                </tr>
+              ) : (
+                classificationRules.map((rule) => (
+                  <tr key={rule.id}>
+                    <td>
+                      <span className={`status ${rule.isActive ? "green" : "amber"}`}>{rule.isActive ? "사용" : "중지"}</span>
+                    </td>
+                    <td>{rule.name}</td>
+                    <td>{rule.keyword}</td>
+                    <td>{rule.sourceType ? SOURCE_TYPE_LABELS[rule.sourceType] : "전체"}</td>
+                    <td>
+                      {rule.accountCode} {rule.accountName ?? accounts.find((account) => account.code === rule.accountCode)?.name ?? ""}
+                    </td>
+                    <td className="amount">{formatNumber(rule.priority)}</td>
+                    <td>
+                      <div className="toolbar">
+                        <button className="ghost-button" onClick={() => void toggleRule(rule)}>
+                          {rule.isActive ? "중지" : "사용"}
+                        </button>
+                        <button className="ghost-button" onClick={() => void deleteRule(rule.id)}>삭제</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
 

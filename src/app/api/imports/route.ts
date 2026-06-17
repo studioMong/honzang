@@ -3,9 +3,9 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
-import { normalizeCsvRow, summarizeTransactions } from "@/lib/accounting";
+import { applyClassificationRules, normalizeCsvRow, summarizeTransactions } from "@/lib/accounting";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
-import { serializeTransaction } from "@/lib/server/serializers";
+import { serializeAccount, serializeClassificationRule, serializeTransaction } from "@/lib/server/serializers";
 import type { CsvColumnMapping, ParsedCsvRow, SourceType } from "@/types";
 
 const mappingSchema = z.object({
@@ -93,19 +93,34 @@ export async function POST(request: Request) {
     });
   }
 
+  const accounts = await db.account.findMany({ where: { companyId: company.id } });
+  const accountByCode = new Map(accounts.map((account) => [account.code, account]));
+  const appAccounts = accounts.flatMap((account) => {
+    const serialized = serializeAccount(account);
+    return serialized ? [serialized] : [];
+  });
+  const classificationRules = await db.classificationRule.findMany({
+    where: {
+      companyId: company.id,
+      isActive: true
+    },
+    orderBy: [{ priority: "asc" }, { updatedAt: "desc" }]
+  });
+  const appRules = classificationRules.map((rule) => serializeClassificationRule(rule, accountByCode));
+  const classified = normalized.map((transaction) => applyClassificationRules(transaction, appRules, appAccounts));
+
   const importBatch = await db.importBatch.create({
     data: {
       companyId: company.id,
       sourceType: payload.sourceType,
       originalFileName: payload.originalFileName,
       originalFileHash,
-      rowCount: normalized.length,
+      rowCount: classified.length,
       mapping: payload.mapping
     }
   });
 
-  const accounts = await db.account.findMany({ where: { companyId: company.id } });
-  const accountByCode = new Map(accounts.map((account) => [account.code, account.id]));
+  const accountIdByCode = new Map(accounts.map((account) => [account.code, account.id]));
   const templateName = `${SOURCE_TYPE_LABELS[payload.sourceType]} 기본 템플릿`;
   const headerSignature = payload.headers.join("|");
   const existingTemplate = await db.csvTemplate.findFirst({
@@ -137,7 +152,7 @@ export async function POST(request: Request) {
   }
 
   await db.$transaction(
-    normalized.map((transaction, index) =>
+    classified.map((transaction, index) =>
       db.transaction.create({
         data: {
           companyId: company.id,
@@ -155,7 +170,7 @@ export async function POST(request: Request) {
           balance: transaction.balance,
           approvalNumber: transaction.approvalNumber,
           rawPayload: transaction.rawPayload,
-          suggestedAccountId: transaction.suggestedAccount ? accountByCode.get(transaction.suggestedAccount.code) : null,
+          suggestedAccountId: transaction.suggestedAccount ? accountIdByCode.get(transaction.suggestedAccount.code) : null,
           evidenceStatus: transaction.evidenceStatus
         }
       })

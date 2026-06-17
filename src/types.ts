@@ -134,6 +134,17 @@ export type CsvTemplate = {
   mapping: CsvColumnMapping;
 };
 
+export type AppClassificationRule = {
+  id: string;
+  name: string;
+  keyword: string;
+  accountCode: string;
+  accountName?: string | null;
+  sourceType?: SourceType | null;
+  priority: number;
+  isActive: boolean;
+};
+
 export type ParsedCsvRow = Record<string, string | number | null | undefined>;
 
 export type ImportPreview = {

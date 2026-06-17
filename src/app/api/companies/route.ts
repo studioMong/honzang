@@ -4,6 +4,7 @@ import { DEFAULT_ACCOUNTS } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
 import { sampleCompany } from "@/lib/sample-data";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
+import { serializeClassificationRule } from "@/lib/server/serializers";
 
 const companySchema = z.object({
   name: z.string().min(1).max(100),
@@ -25,6 +26,7 @@ export async function GET() {
       company: sampleCompany,
       accounts: DEFAULT_ACCOUNTS,
       csvTemplates: [],
+      classificationRules: [],
       mode: "sample"
     });
   }
@@ -38,8 +40,19 @@ export async function GET() {
     where: { companyId: company.id },
     orderBy: [{ sourceType: "asc" }, { updatedAt: "desc" }]
   });
+  const classificationRules = await db.classificationRule.findMany({
+    where: { companyId: company.id },
+    orderBy: [{ isActive: "desc" }, { priority: "asc" }, { updatedAt: "desc" }]
+  });
+  const accountByCode = new Map(accounts.map((account) => [account.code, account]));
 
-  return NextResponse.json({ company, accounts, csvTemplates, mode: "database" });
+  return NextResponse.json({
+    company,
+    accounts,
+    csvTemplates,
+    classificationRules: classificationRules.map((rule) => serializeClassificationRule(rule, accountByCode)),
+    mode: "database"
+  });
 }
 
 export async function PATCH(request: Request) {

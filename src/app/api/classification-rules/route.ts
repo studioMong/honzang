@@ -1,0 +1,163 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { DEFAULT_COMPANY_ID } from "@/lib/defaults";
+import { getPrisma } from "@/lib/db";
+import { ensureDefaultCompany } from "@/lib/server/bootstrap";
+import { serializeClassificationRule } from "@/lib/server/serializers";
+
+const sourceTypeSchema = z.enum(["BANK", "CARD", "HOMETAX_SALES", "HOMETAX_PURCHASES", "CASH_RECEIPT", "PG", "MANUAL"]);
+
+const ruleSchema = z.object({
+  companyId: z.string().default(DEFAULT_COMPANY_ID),
+  name: z.string().min(1).max(80),
+  keyword: z.string().min(1).max(120),
+  accountCode: z.string().min(1).max(20),
+  sourceType: sourceTypeSchema.optional().nullable(),
+  priority: z.coerce.number().int().min(1).max(999).default(100),
+  isActive: z.boolean().default(true)
+});
+
+const patchSchema = ruleSchema.partial().extend({
+  id: z.string().min(1),
+  companyId: z.string().default(DEFAULT_COMPANY_ID)
+});
+
+const deleteSchema = z.object({
+  id: z.string().min(1),
+  companyId: z.string().default(DEFAULT_COMPANY_ID)
+});
+
+export async function GET() {
+  const db = getPrisma();
+  if (!db) {
+    return NextResponse.json({ classificationRules: [], mode: "sample" });
+  }
+
+  const company = await ensureDefaultCompany(db);
+  const [rules, accounts] = await Promise.all([
+    db.classificationRule.findMany({
+      where: { companyId: company.id },
+      orderBy: [{ isActive: "desc" }, { priority: "asc" }, { updatedAt: "desc" }]
+    }),
+    db.account.findMany({ where: { companyId: company.id } })
+  ]);
+  const accountByCode = new Map(accounts.map((account) => [account.code, account]));
+
+  return NextResponse.json({
+    classificationRules: rules.map((rule) => serializeClassificationRule(rule, accountByCode)),
+    mode: "database"
+  });
+}
+
+export async function POST(request: Request) {
+  const parsed = ruleSchema.safeParse(await request.json());
+  if (!parsed.success) {
+    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const payload = parsed.data;
+  const db = getPrisma();
+  if (!db) {
+    return NextResponse.json({
+      ok: true,
+      classificationRule: {
+        id: `rule-preview-${Date.now()}`,
+        ...payload,
+        accountName: null
+      },
+      mode: "sample"
+    });
+  }
+
+  const company = await ensureDefaultCompany(db);
+  const account = await db.account.findFirst({
+    where: {
+      companyId: company.id,
+      code: payload.accountCode,
+      isActive: true
+    }
+  });
+
+  if (!account) {
+    return NextResponse.json({ ok: false, message: "계정과목을 찾을 수 없습니다." }, { status: 404 });
+  }
+
+  const created = await db.classificationRule.create({
+    data: {
+      companyId: company.id,
+      name: payload.name,
+      sourceType: payload.sourceType ?? null,
+      condition: { keyword: payload.keyword },
+      action: { accountCode: payload.accountCode },
+      priority: payload.priority,
+      isActive: payload.isActive
+    }
+  });
+
+  return NextResponse.json({
+    ok: true,
+    classificationRule: serializeClassificationRule(created, new Map([[account.code, account]])),
+    mode: "database"
+  });
+}
+
+export async function PATCH(request: Request) {
+  const parsed = patchSchema.safeParse(await request.json());
+  if (!parsed.success) {
+    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const payload = parsed.data;
+  const db = getPrisma();
+  if (!db) {
+    return NextResponse.json({ ok: true, mode: "sample" });
+  }
+
+  const company = await ensureDefaultCompany(db);
+  const data: Record<string, unknown> = {};
+  if (payload.name !== undefined) data.name = payload.name;
+  if (payload.sourceType !== undefined) data.sourceType = payload.sourceType;
+  if (payload.keyword !== undefined) data.condition = { keyword: payload.keyword };
+  if (payload.accountCode !== undefined) data.action = { accountCode: payload.accountCode };
+  if (payload.priority !== undefined) data.priority = payload.priority;
+  if (payload.isActive !== undefined) data.isActive = payload.isActive;
+
+  const updated = await db.classificationRule.update({
+    where: {
+      id: payload.id,
+      companyId: company.id
+    },
+    data
+  });
+  const accounts = await db.account.findMany({ where: { companyId: company.id } });
+  const accountByCode = new Map(accounts.map((account) => [account.code, account]));
+
+  return NextResponse.json({
+    ok: true,
+    classificationRule: serializeClassificationRule(updated, accountByCode),
+    mode: "database"
+  });
+}
+
+export async function DELETE(request: Request) {
+  const parsed = deleteSchema.safeParse(await request.json());
+  if (!parsed.success) {
+    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const payload = parsed.data;
+  const db = getPrisma();
+  if (!db) {
+    return NextResponse.json({ ok: true, mode: "sample" });
+  }
+
+  const company = await ensureDefaultCompany(db);
+  await db.classificationRule.delete({
+    where: {
+      id: payload.id,
+      companyId: company.id
+    }
+  });
+
+  return NextResponse.json({ ok: true, mode: "database" });
+}

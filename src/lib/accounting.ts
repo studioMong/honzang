@@ -1,4 +1,4 @@
-import type { AppAccount, AppTransaction, JournalDraft, ParsedCsvRow, CsvColumnMapping, SourceType } from "@/types";
+import type { AppAccount, AppClassificationRule, AppTransaction, JournalDraft, ParsedCsvRow, CsvColumnMapping, SourceType } from "@/types";
 import { DEFAULT_ACCOUNTS } from "@/lib/defaults";
 
 const keywordAccountRules: Array<{ keywords: string[]; code: string; reason?: string }> = [
@@ -111,6 +111,32 @@ export function normalizeCsvRow(
     reviewReasons,
     approvalNumber: mapping.approvalNumber ? String(get(mapping.approvalNumber) ?? "") : null,
     rawPayload: row
+  };
+}
+
+export function applyClassificationRules<T extends Pick<AppTransaction, "sourceType" | "description" | "counterparty" | "suggestedAccount"> & { reviewReasons?: string[] }>(
+  transaction: T,
+  rules: AppClassificationRule[],
+  accounts: AppAccount[]
+): T {
+  const text = `${transaction.description} ${transaction.counterparty ?? ""}`.toLowerCase();
+  const rule = rules
+    .filter((item) => item.isActive)
+    .sort((left, right) => left.priority - right.priority)
+    .find((item) => {
+      if (item.sourceType && item.sourceType !== transaction.sourceType) return false;
+      return text.includes(item.keyword.toLowerCase());
+    });
+
+  if (!rule) return transaction;
+
+  const account = accounts.find((item) => item.code === rule.accountCode);
+  if (!account) return transaction;
+
+  return {
+    ...transaction,
+    suggestedAccount: account,
+    reviewReasons: [...new Set([...(transaction.reviewReasons ?? []), `분류 규칙 적용: ${rule.name}`])]
   };
 }
 
