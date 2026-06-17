@@ -46,6 +46,7 @@ try {
     body.checks.some((check) => check.key === "accessCode") &&
     Number.isInteger(body.summary?.blockers)
   );
+  await expectBlockedClosingPeriod();
   await expectText("/", (body) =>
     ["혼자장부", "최근 월 신고 준비", "오늘 할 일", "1인법인 신고 준비"].every((text) => body.includes(text))
   );
@@ -106,6 +107,29 @@ async function expectText(path, predicate) {
   }
   if (!predicate(body)) {
     throw new Error(`${path} returned unexpected body.`);
+  }
+}
+
+async function expectBlockedClosingPeriod() {
+  const response = await fetch(`${baseUrl}/api/closing-periods`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      period: "2026-06",
+      summaryPayload: {
+        report: {
+          filingReadinessRows: [{ 점검: "증빙", 톤: "red" }]
+        }
+      }
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 409) {
+    throw new Error(`/api/closing-periods should block red filing readiness rows, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "FILING_READINESS_BLOCKED" || !Array.isArray(body.blockers) || body.blockers[0]?.check !== "증빙") {
+    throw new Error(`/api/closing-periods returned unexpected blocker payload: ${text}`);
   }
 }
 

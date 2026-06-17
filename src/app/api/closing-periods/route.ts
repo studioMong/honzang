@@ -42,6 +42,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: "마감 기간 형식이 올바르지 않습니다." }, { status: 400 });
   }
 
+  const readinessBlockers = getClosingReadinessBlockers(parsed.data.summaryPayload);
+  if (readinessBlockers.length > 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "FILING_READINESS_BLOCKED",
+        message: `마감 잠금 전 차단 항목을 먼저 해결해야 합니다: ${readinessBlockers.map((blocker) => blocker.check).join(", ")}`,
+        blockers: readinessBlockers
+      },
+      { status: 409 }
+    );
+  }
+
   const db = getPrisma();
   if (!db) {
     return NextResponse.json({
@@ -135,4 +148,27 @@ export async function DELETE(request: Request) {
   });
 
   return NextResponse.json({ ok: true, mode: "database", period: parsed.data.period });
+}
+
+function getClosingReadinessBlockers(summaryPayload: unknown) {
+  return getFilingReadinessRows(summaryPayload).flatMap((row) => {
+    if (!isRecord(row)) return [];
+    const check = typeof row.점검 === "string" ? row.점검 : "";
+    const tone = row.톤;
+    if (tone !== "red" || check === "월 마감") return [];
+    return [{ check: check || "미확인 차단 항목" }];
+  });
+}
+
+function getFilingReadinessRows(summaryPayload: unknown): unknown[] {
+  if (!isRecord(summaryPayload)) return [];
+  if (Array.isArray(summaryPayload.filingReadinessRows)) return summaryPayload.filingReadinessRows;
+  if (isRecord(summaryPayload.report) && Array.isArray(summaryPayload.report.filingReadinessRows)) {
+    return summaryPayload.report.filingReadinessRows;
+  }
+  return [];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

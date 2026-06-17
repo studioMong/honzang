@@ -2100,6 +2100,8 @@ function ReportsPanel({
   const readinessWarnings = filingReadinessRows.filter((row) => row.톤 === "amber").length;
   const readinessStatus = readinessBlockers > 0 ? "차단" : readinessWarnings > 0 ? "확인 필요" : "준비 가능";
   const readinessTone = readinessBlockers > 0 ? "red" : readinessWarnings > 0 ? "amber" : "green";
+  const closingBlockerRows = buildClosingBlockerRows(filingReadinessRows);
+  const isClosingBlocked = closingBlockerRows.length > 0;
   const periodLabel = formatPeriodLabel(selectedPeriod);
   const periodRange = getReportPeriodRange(selectedPeriod, filteredTransactions);
   const filingScheduleRows = buildFilingScheduleRows(company, periodRange, reportSummary, withholdingRows, ledgerRows);
@@ -2231,6 +2233,10 @@ function ReportsPanel({
 
   async function closeSelectedPeriod() {
     if (!canClosePeriod || isPeriodClosed) return;
+    if (isClosingBlocked) {
+      window.alert(`마감 잠금 전 차단 항목을 먼저 해결해야 합니다: ${closingBlockerRows.map((row) => row.점검).join(", ")}`);
+      return;
+    }
     if (!window.confirm(`${periodLabel} 장부를 마감 잠금 처리할까요? 잠금 후에는 해당 월의 거래, 증빙, 분개, 리포트 변경이 차단됩니다.`)) return;
 
     setClosingPeriodAction("close");
@@ -2318,15 +2324,17 @@ function ReportsPanel({
             <p className="panel-subtitle">
               {isPeriodClosed
                 ? `${formatDate(selectedClosingPeriod?.closedAt ?? "")} 마감됨 · 해당 월 변경 잠금`
-                : canClosePeriod
+                : canClosePeriod && isClosingBlocked
+                  ? `${formatNumber(closingBlockerRows.length)}개 차단 항목 해결 후 마감 잠금 가능`
+                  : canClosePeriod
                   ? "월별 신고자료가 확정되면 마감 잠금으로 변경을 차단"
                   : "월별 기간을 선택하면 마감 잠금을 사용할 수 있습니다."}
             </p>
           </div>
           <div className="toolbar">
             <span className="status blue">{periodLabel}</span>
-            <span className={`status ${isPeriodClosed ? "green" : canClosePeriod ? "amber" : "blue"}`}>
-              {isPeriodClosed ? "마감 잠금" : canClosePeriod ? "마감 가능" : "전체 기간"}
+            <span className={`status ${isPeriodClosed ? "green" : canClosePeriod && isClosingBlocked ? "red" : canClosePeriod ? "amber" : "blue"}`}>
+              {isPeriodClosed ? "마감 잠금" : canClosePeriod && isClosingBlocked ? "마감 차단" : canClosePeriod ? "마감 가능" : "전체 기간"}
             </span>
             <button className="secondary-button" onClick={printReport}>
               <Printer size={16} />
@@ -2339,7 +2347,12 @@ function ReportsPanel({
                   마감 해제
                 </button>
               ) : (
-                <button className="secondary-button" onClick={() => void closeSelectedPeriod()} disabled={closingPeriodAction !== null}>
+                <button
+                  className="secondary-button"
+                  onClick={() => void closeSelectedPeriod()}
+                  disabled={closingPeriodAction !== null || isClosingBlocked}
+                  title={isClosingBlocked ? "최종 신고 점검의 차단 항목을 먼저 해결하세요." : "월 마감 잠금"}
+                >
                   {closingPeriodAction === "close" ? <Loader2 size={16} className="spin" /> : <FileCheck2 size={16} />}
                   마감 잠금
                 </button>
@@ -6551,6 +6564,10 @@ function buildFilingReadinessRows({
       "다음 작업": !canClosePeriod ? "신고 월을 선택해 마감 여부 확인" : isPeriodClosed ? "잠금 후 변경 차단됨" : "스냅샷 저장 후 마감 잠금"
     }
   ];
+}
+
+function buildClosingBlockerRows(rows: FilingReadinessRow[]) {
+  return rows.filter((row) => row.톤 === "red" && row.점검 !== "월 마감");
 }
 
 function buildDataSourceRows(transactions: AppTransaction[]) {
