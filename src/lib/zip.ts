@@ -16,8 +16,8 @@ export function createZipBytes(files: ZipFile[]) {
   const { time, date } = toDosDateTime(new Date());
   let offset = 0;
 
-  files.forEach((file) => {
-    const nameBytes = encoder.encode(normalizeZipPath(file.path));
+  files.forEach((file, index) => {
+    const nameBytes = encoder.encode(normalizeZipPath(file.path, `file-${index + 1}`));
     const data = typeof file.content === "string" ? encoder.encode(file.content) : file.content;
     const checksum = crc32(data);
     const localHeader = createLocalHeader({ nameBytes, dataLength: data.length, checksum, time, date });
@@ -156,6 +156,11 @@ function toDosDateTime(date: Date) {
   };
 }
 
-function normalizeZipPath(path: string) {
-  return path.replaceAll("\\", "/").replace(/^\/+/, "");
+export function normalizeZipPath(path: string, fallback = "file") {
+  const segments = path
+    .replaceAll("\\", "/")
+    .split("/")
+    .map((segment) => segment.trim().replace(/[<>:"|?*\u0000-\u001F]/g, "_"))
+    .filter((segment) => segment && segment !== "." && segment !== "..");
+  return segments.join("/") || fallback;
 }

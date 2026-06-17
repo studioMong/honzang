@@ -6,6 +6,7 @@ import { applyClassificationRules, applyVendorDefaults, generateJournalDraft, in
 import { DEFAULT_ACCOUNTS } from "../src/lib/defaults";
 import { sanitizeCsvCellValue } from "../src/lib/export-safety";
 import { parseStrictDate } from "../src/lib/server/date-validation";
+import { normalizeZipPath } from "../src/lib/zip";
 import { buildEvidenceAmountReviewItems, resolveTransactionEvidenceStatus, type EvidenceAmountReviewTransaction } from "../src/lib/server/evidence-amount-reviews";
 import type { AppClassificationRule, AppTransaction, ParsedCsvRow, SourceType } from "../src/types";
 
@@ -89,6 +90,10 @@ assert.equal(sanitizeCsvCellValue("=IMPORTXML(\"https://example.com\")"), "'=IMP
 assert.equal(sanitizeCsvCellValue("  +1+1"), "'  +1+1", "CSV exports should neutralize formula-like text after leading spaces");
 assert.equal(sanitizeCsvCellValue(-1234), "-1234", "CSV exports should preserve numeric negative amounts");
 assert.equal(sanitizeCsvCellValue("정상 거래처"), "정상 거래처", "CSV exports should preserve ordinary text");
+assert.equal(normalizeZipPath("../evil.csv"), "evil.csv", "ZIP exports should remove parent traversal segments");
+assert.equal(normalizeZipPath("evidences/../../invoice.pdf"), "evidences/invoice.pdf", "ZIP exports should keep safe folders without traversal");
+assert.equal(normalizeZipPath("/absolute/path.txt"), "absolute/path.txt", "ZIP exports should be relative");
+assert.equal(normalizeZipPath(""), "file", "ZIP exports should use a fallback for empty paths");
 
 function parseSampleCsv(filePath: string) {
   const csv = readFileSync(resolve(filePath), "utf8");
