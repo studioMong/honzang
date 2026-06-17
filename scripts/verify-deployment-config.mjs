@@ -9,6 +9,7 @@ const nextConfig = readText("next.config.ts");
 const dockerignore = readText(".dockerignore");
 const readme = readText("README.md");
 const railwayCutoverDoc = readText("docs/railway-cutover.md");
+const railwayAuditScript = readText("scripts/audit-railway-deployment.mjs");
 const proxy = readText("src/proxy.ts");
 
 assert.equal(packageJson.scripts?.build, "prisma generate && next build && node scripts/prepare-standalone.mjs", "package build script should create the standalone server");
@@ -52,6 +53,9 @@ assert.match(railwayCutoverDoc, /\/api\/version/, "Railway cutover checklist sho
 assert.match(railwayCutoverDoc, /\/api\/health/, "Railway cutover checklist should include health endpoint verification");
 assert.match(railwayCutoverDoc, /\/manifest\.webmanifest/, "Railway cutover checklist should include PWA manifest verification");
 assert.match(railwayCutoverDoc, /VERIFY_DB_WORKFLOW_BASE_URL/, "Railway cutover checklist should include DB workflow guidance");
+assert.match(railwayAuditScript, /docs\/railway-cutover\.md/, "Railway audit should point operators to the cutover checklist");
+assert.match(railwayAuditScript, /Public Networking/, "Railway audit should mention public domain diagnostics");
+assert.match(railwayAuditScript, /Variables/, "Railway audit should mention environment variable diagnostics");
 
 console.log("Deployment config verification passed.");
 
