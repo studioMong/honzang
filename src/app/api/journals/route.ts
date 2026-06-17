@@ -252,6 +252,13 @@ export async function PATCH(request: Request) {
     where: {
       id: parsed.data.id,
       companyId: company.id
+    },
+    include: {
+      transaction: {
+        select: {
+          transactionDate: true
+        }
+      }
     }
   });
 
@@ -260,6 +267,32 @@ export async function PATCH(request: Request) {
   }
   const closedPeriod = await findClosedPeriodForDate(db, company.id, existing.entryDate);
   if (closedPeriod) return closedPeriodResponse(closedPeriod.period);
+  const closedTransactionPeriod = await findClosedPeriodForDate(db, company.id, existing.transaction?.transactionDate);
+  if (closedTransactionPeriod) return closedPeriodResponse(closedTransactionPeriod.period);
+
+  if (parsed.data.status === "APPROVED" && existing.status !== "APPROVED" && existing.transactionId) {
+    const approvedJournal = await db.journalEntry.findFirst({
+      where: {
+        companyId: company.id,
+        transactionId: existing.transactionId,
+        status: "APPROVED",
+        id: { not: existing.id }
+      },
+      select: { id: true }
+    });
+
+    if (approvedJournal) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "APPROVED_JOURNAL_DUPLICATE_BLOCKED",
+          message: "이미 승인된 분개가 있는 거래는 다른 분개를 추가 승인할 수 없습니다. 기존 승인 분개를 먼저 취소하세요.",
+          approvedJournalId: approvedJournal.id
+        },
+        { status: 409 }
+      );
+    }
+  }
 
   const journalEntry = await db.journalEntry.update({
     where: { id: parsed.data.id },

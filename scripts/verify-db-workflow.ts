@@ -37,7 +37,7 @@ try {
   assert.ok(alternateVerificationAccountId, "company accounts should include a second account for approved journal account guard verification");
 
   const bankTransactions = await importSample(companyId, "BANK", "public/samples/bank-transactions.csv", 1, "primary");
-  await importSample(companyId, "BANK", "public/samples/bank-transactions.csv", 1, "alternate");
+  const alternateBankTransactions = await importSample(companyId, "BANK", "public/samples/bank-transactions.csv", 1, "alternate");
   const importedTransactions = [
     ...bankTransactions,
     ...(await importSample(companyId, "CARD", "public/samples/card-transactions.csv", 1, "primary"))
@@ -66,6 +66,27 @@ try {
   const patchedTransaction = transactionPatchList.transactions?.find((transaction) => transaction.id === importedTransactions[0]?.id);
   assert.equal(patchedTransaction?.confirmedAccount?.id, verificationAccount.id, "evidence-only transaction patch should preserve confirmed account");
   assert.equal(patchedTransaction?.evidenceStatus, "MISSING", "evidence-only transaction patch should update evidence status");
+
+  const crossPeriodTransaction = alternateBankTransactions[0];
+  assert.ok(crossPeriodTransaction?.id, "workflow should import an alternate transaction for linked period lock verification");
+  const crossPeriodDraft = generateJournalDraft(crossPeriodTransaction);
+  assert.ok(isBalanced(crossPeriodDraft), "cross-period linked journal draft should be balanced");
+  const crossPeriodJournalPayload = await requestJson<{ ok?: boolean; mode?: string; journalEntry?: AppJournalEntry }>("/api/journals", {
+    method: "POST",
+    body: {
+      companyId,
+      transactionId: crossPeriodDraft.transactionId,
+      entryDate: "2026-07-01",
+      memo: `${marker} linked transaction lock verification`,
+      status: "APPROVED",
+      lines: crossPeriodDraft.lines
+    }
+  });
+  assert.equal(crossPeriodJournalPayload.ok, true, "cross-period linked journal should be created before closing the transaction period");
+  assert.equal(crossPeriodJournalPayload.mode, "database", "cross-period linked journal should use database mode");
+  const crossPeriodJournalId = crossPeriodJournalPayload.journalEntry?.id;
+  assert.ok(crossPeriodJournalId, "cross-period linked journal should return an id");
+  cleanup.journalEntryIds.push(crossPeriodJournalId);
 
   const evidencePayload = await requestJson<{
     ok?: boolean;
@@ -307,6 +328,17 @@ try {
   });
   assert.equal(lockedTransactionPayload.ok, false, "locked period transaction create should fail");
   assert.equal(lockedTransactionPayload.code, "PERIOD_CLOSED", "locked period transaction create should return PERIOD_CLOSED");
+
+  const lockedLinkedJournalPayload = await requestJson<{ ok?: boolean; code?: string; message?: string }>("/api/journals", {
+    method: "PATCH",
+    expectedStatus: 409,
+    body: {
+      id: crossPeriodJournalId,
+      status: "VOID"
+    }
+  });
+  assert.equal(lockedLinkedJournalPayload.ok, false, "journal status change linked to a locked transaction period should fail");
+  assert.equal(lockedLinkedJournalPayload.code, "PERIOD_CLOSED", "locked linked transaction journal status update should return PERIOD_CLOSED");
 
   const lockedReportDeletePayload = await requestJson<{ ok?: boolean; code?: string; message?: string }>("/api/reports", {
     method: "DELETE",
