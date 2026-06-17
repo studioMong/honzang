@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { parseStrictDate } from "@/lib/server/date-validation";
 
 export const MAX_EVIDENCE_FILE_SIZE = 750_000;
 export const MAX_EVIDENCE_FILE_DATA_URL_LENGTH = 1_500_000;
@@ -9,24 +10,7 @@ export type EvidenceFileValidationInput = {
   fileSize?: number | null;
 };
 
-export function parseStrictEvidenceDate(value: string | null | undefined) {
-  const text = String(value ?? "").trim();
-  if (!text) return null;
-
-  const separated = text.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
-  if (separated) {
-    const [, year, month, day] = separated;
-    return validDateParts(Number(year), Number(month), Number(day));
-  }
-
-  const compact = text.match(/^(\d{4})(\d{2})(\d{2})$/);
-  if (compact) {
-    const [, year, month, day] = compact;
-    return validDateParts(Number(year), Number(month), Number(day));
-  }
-
-  return null;
-}
+export const parseStrictEvidenceDate = parseStrictDate;
 
 export function normalizeEvidenceFileUrl(value: string | null | undefined) {
   return value?.trim() || null;
@@ -59,13 +43,6 @@ export function validateEvidenceFileUrl(value: string | null | undefined) {
   } catch {
     return "증빙 파일 URL 형식이 올바르지 않습니다.";
   }
-}
-
-function validDateParts(year: number, month: number, day: number) {
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  const date = new Date(Date.UTC(year, month - 1, day));
-  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 function parseBase64DataUrl(value: string) {

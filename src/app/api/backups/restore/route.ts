@@ -6,6 +6,7 @@ import { getPrisma } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { periodRangeFromMonth } from "@/lib/server/closing-periods";
+import { dateFromStrictDate, parseStrictDate, parseStrictDateTime } from "@/lib/server/date-validation";
 import {
   MAX_EVIDENCE_FILE_DATA_URL_LENGTH,
   MAX_EVIDENCE_FILE_SIZE,
@@ -264,6 +265,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: "혼자장부 백업 JSON 형식이 아닙니다.", errors: parsed.error.flatten() }, { status: 400 });
   }
 
+  const dateIssues = validateBackupDates(parsed.data);
+  if (dateIssues.length > 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_BACKUP_DATES",
+        message: "백업 날짜 데이터가 올바르지 않습니다.",
+        issues: dateIssues
+      },
+      { status: 400 }
+    );
+  }
+
   const evidenceIssues = validateBackupEvidences(parsed.data.evidences);
   if (evidenceIssues.length > 0) {
     return NextResponse.json(
@@ -452,7 +466,7 @@ async function restoreImportBatches(
         originalFileText: originalFile?.originalFileText ?? null,
         rowCount: batch.rowCount,
         mapping: Prisma.JsonNull,
-        importedAt: dateOrNow(batch.importedAt)
+        importedAt: dateTimeOrNow(batch.importedAt)
       }
     });
     importBatchIds.add(batch.id);
@@ -480,7 +494,7 @@ async function restoreTransactions(
         importBatchId: transaction.importBatchId && importBatchIds.has(transaction.importBatchId) ? transaction.importBatchId : null,
         sourceType: transaction.sourceType,
         sourceRowNumber: transaction.sourceRowNumber ?? null,
-        transactionDate: dateOrNow(transaction.transactionDate),
+        transactionDate: requiredDate(transaction.transactionDate),
         description: transaction.description,
         counterparty: emptyToNull(transaction.counterparty),
         direction: transaction.direction,
@@ -568,7 +582,7 @@ async function restoreJournalEntries(
         id: entry.id,
         companyId,
         transactionId: entry.transactionId ? transactionIdMap.get(entry.transactionId) ?? null : null,
-        entryDate: dateOrNow(entry.entryDate),
+        entryDate: requiredDate(entry.entryDate),
         memo: entry.memo,
         status: entry.status,
         lines: {
@@ -586,10 +600,10 @@ async function restoreTaxReports(tx: Prisma.TransactionClient, companyId: string
         id: report.id,
         companyId,
         reportType: report.reportType,
-        periodStart: dateOrNow(report.periodStart),
-        periodEnd: dateOrNow(report.periodEnd),
+        periodStart: requiredDate(report.periodStart),
+        periodEnd: requiredDate(report.periodEnd),
         calculatedPayload: report.calculatedPayload as Prisma.InputJsonValue,
-        createdAt: dateOrNow(report.createdAt ?? report.periodEnd)
+        createdAt: dateTimeOrNow(report.createdAt ?? report.periodEnd)
       }
     });
   }
@@ -604,11 +618,11 @@ async function restoreClosingPeriods(tx: Prisma.TransactionClient, companyId: st
         id: closingPeriod.id ?? undefined,
         companyId,
         period: closingPeriod.period,
-        periodStart: dateOrNow(closingPeriod.periodStart ?? range.start.toISOString()),
-        periodEnd: dateOrNow(closingPeriod.periodEnd ?? range.end.toISOString()),
+        periodStart: requiredDate(closingPeriod.periodStart ?? range.start.toISOString()),
+        periodEnd: requiredDate(closingPeriod.periodEnd ?? range.end.toISOString()),
         summaryPayload: closingPeriod.summaryPayload === undefined ? undefined : toJsonInput(closingPeriod.summaryPayload),
-        closedAt: dateOrNow(closingPeriod.closedAt ?? closingPeriod.periodEnd ?? range.end.toISOString()),
-        createdAt: dateOrNow(closingPeriod.createdAt ?? closingPeriod.closedAt ?? range.end.toISOString())
+        closedAt: dateTimeOrNow(closingPeriod.closedAt ?? closingPeriod.periodEnd ?? range.end.toISOString()),
+        createdAt: dateTimeOrNow(closingPeriod.createdAt ?? closingPeriod.closedAt ?? range.end.toISOString())
       }
     });
   }
@@ -696,7 +710,7 @@ async function restoreAuditEvents(tx: Prisma.TransactionClient, companyId: strin
         entityId: event.entityId ?? null,
         summary: event.summary,
         metadata: event.metadata === null || event.metadata === undefined ? undefined : (event.metadata as Prisma.InputJsonValue),
-        createdAt: dateOrNow(event.createdAt)
+        createdAt: dateTimeOrNow(event.createdAt)
       }
     });
   }
@@ -749,6 +763,51 @@ function validateBackupEvidences(evidences: WorkspaceBackup["evidences"]) {
   return issues;
 }
 
+function validateBackupDates(backup: WorkspaceBackup) {
+  const issues: string[] = [];
+
+  for (const batch of uniqueById(backup.importBatches)) {
+    optionalTimestamp(batch.importedAt, `가져오기 ${batch.id} importedAt`, issues);
+  }
+  for (const transaction of uniqueById(backup.transactions)) {
+    requiredDateField(transaction.transactionDate, `거래 ${transaction.id} transactionDate`, issues);
+  }
+  for (const entry of uniqueById(backup.journalEntries)) {
+    requiredDateField(entry.entryDate, `분개 ${entry.id} entryDate`, issues);
+  }
+  for (const report of uniqueById(backup.taxReports)) {
+    requiredDateField(report.periodStart, `리포트 ${report.id} periodStart`, issues);
+    requiredDateField(report.periodEnd, `리포트 ${report.id} periodEnd`, issues);
+    optionalTimestamp(report.createdAt, `리포트 ${report.id} createdAt`, issues);
+  }
+  for (const closingPeriod of uniqueByPeriod(backup.closingPeriods)) {
+    if (!periodRangeFromMonth(closingPeriod.period)) {
+      issues.push(`마감 ${closingPeriod.period}: period는 유효한 YYYY-MM 월이어야 합니다.`);
+    }
+    optionalDate(closingPeriod.periodStart, `마감 ${closingPeriod.period} periodStart`, issues);
+    optionalDate(closingPeriod.periodEnd, `마감 ${closingPeriod.period} periodEnd`, issues);
+    optionalTimestamp(closingPeriod.closedAt, `마감 ${closingPeriod.period} closedAt`, issues);
+    optionalTimestamp(closingPeriod.createdAt, `마감 ${closingPeriod.period} createdAt`, issues);
+  }
+  for (const event of uniqueById(backup.auditEvents)) {
+    optionalTimestamp(event.createdAt, `활동 로그 ${event.id} createdAt`, issues);
+  }
+
+  return issues;
+}
+
+function requiredDateField(value: string | null | undefined, label: string, issues: string[]) {
+  if (!parseStrictDate(value)) issues.push(`${label}는 유효한 날짜여야 합니다.`);
+}
+
+function optionalDate(value: string | null | undefined, label: string, issues: string[]) {
+  if (value && !parseStrictDate(value)) issues.push(`${label}는 유효한 날짜여야 합니다.`);
+}
+
+function optionalTimestamp(value: string | null | undefined, label: string, issues: string[]) {
+  if (value && !parseStrictDateTime(value)) issues.push(`${label}는 유효한 일시여야 합니다.`);
+}
+
 function uniqueByPeriod<T extends { period: string }>(items: T[]) {
   const byPeriod = new Map<string, T>();
   for (const item of items) {
@@ -775,15 +834,12 @@ function uniqueByImportBatchId<T extends { importBatchId: string }>(items: T[]) 
   return [...byBatchId.values()];
 }
 
-function dateOrNow(value?: string | null) {
-  const date = value ? new Date(value) : new Date();
-  return Number.isNaN(date.getTime()) ? new Date() : date;
+function requiredDate(value: string) {
+  return dateFromStrictDate(value) ?? new Date(value);
 }
 
-function dateOrNull(value?: string | null) {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
+function dateTimeOrNow(value?: string | null) {
+  return parseStrictDateTime(value) ?? new Date();
 }
 
 function emptyToNull(value?: string | null) {

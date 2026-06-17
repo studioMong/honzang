@@ -162,6 +162,7 @@ try {
   await waitForServer();
   await verifySettingsUi();
   await verifyDryRun();
+  await verifyInvalidDateBackup();
   await verifyInvalidEvidenceBackup();
   await verifyConfirmGuard();
   console.log(`Backup restore verification passed at ${baseUrl}`);
@@ -239,6 +240,28 @@ async function verifyInvalidEvidenceBackup() {
   assert.equal(body.code, "INVALID_BACKUP_EVIDENCE", "restore should return evidence validation code");
   assert.ok(Array.isArray(body.issues), "restore should return evidence validation issues");
   assert.ok(body.issues.length >= 3, "restore should report invalid date, file, and URL issues");
+}
+
+async function verifyInvalidDateBackup() {
+  const invalidBackup = structuredClone(backup);
+  invalidBackup.transactions = [
+    {
+      ...backup.transactions[0],
+      transactionDate: "2026-02-31"
+    }
+  ];
+  invalidBackup.auditEvents = [
+    {
+      ...backup.auditEvents[0],
+      createdAt: "2026-02-31T00:00:00.000Z"
+    }
+  ];
+
+  const body = await postJson("/api/backups/restore", { backup: invalidBackup, dryRun: true }, 400);
+  assert.equal(body.ok, false, "restore should reject invalid backup dates");
+  assert.equal(body.code, "INVALID_BACKUP_DATES", "restore should return date validation code");
+  assert.ok(Array.isArray(body.issues), "restore should return date validation issues");
+  assert.ok(body.issues.length >= 2, "restore should report invalid date and timestamp issues");
 }
 
 async function verifyConfirmGuard() {
