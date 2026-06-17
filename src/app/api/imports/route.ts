@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createHash } from "node:crypto";
+import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
@@ -7,7 +8,14 @@ import { applyClassificationRules, applyVendorDefaults, normalizeCsvRow, summari
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { closedPeriodResponse, findClosedPeriodForDates } from "@/lib/server/closing-periods";
-import { serializeAccount, serializeClassificationRule, serializeImportBatch, serializeTransaction, serializeVendor } from "@/lib/server/serializers";
+import {
+  serializeAccount,
+  serializeClassificationRule,
+  serializeCsvTemplate,
+  serializeImportBatch,
+  serializeTransaction,
+  serializeVendor
+} from "@/lib/server/serializers";
 import type { CsvColumnMapping, ParsedCsvRow, SourceType } from "@/types";
 
 const MAX_ORIGINAL_FILE_TEXT_LENGTH = 2_000_000;
@@ -252,6 +260,12 @@ export async function POST(request: Request) {
   });
 
   if (existingBatch) {
+    const csvTemplate = await saveCsvTemplate(db, {
+      companyId: company.id,
+      sourceType: payload.sourceType as SourceType,
+      headers: payload.headers,
+      mapping: payload.mapping as CsvColumnMapping
+    });
     const importBatch =
       !existingBatch.originalFileText && payload.originalFileText
         ? await db.importBatch.update({
@@ -279,6 +293,7 @@ export async function POST(request: Request) {
       duplicate: true,
       importBatchId: importBatch.id,
       importBatch: serializeImportBatch(importBatch),
+      csvTemplate: serializeCsvTemplate(csvTemplate),
       originalFileHash,
       transactions: serialized,
       summary: summarizeTransactions(serialized)
@@ -322,35 +337,12 @@ export async function POST(request: Request) {
   });
 
   const accountIdByCode = new Map(accounts.map((account) => [account.code, account.id]));
-  const templateName = `${SOURCE_TYPE_LABELS[payload.sourceType]} 기본 템플릿`;
-  const headerSignature = payload.headers.join("|");
-  const existingTemplate = await db.csvTemplate.findFirst({
-    where: {
-      companyId: company.id,
-      sourceType: payload.sourceType,
-      name: templateName
-    }
+  const csvTemplate = await saveCsvTemplate(db, {
+    companyId: company.id,
+    sourceType: payload.sourceType as SourceType,
+    headers: payload.headers,
+    mapping: payload.mapping as CsvColumnMapping
   });
-
-  if (existingTemplate) {
-    await db.csvTemplate.update({
-      where: { id: existingTemplate.id },
-      data: {
-        headerSignature,
-        mapping: payload.mapping
-      }
-    });
-  } else {
-    await db.csvTemplate.create({
-      data: {
-        companyId: company.id,
-        sourceType: payload.sourceType,
-        name: templateName,
-        headerSignature,
-        mapping: payload.mapping
-      }
-    });
-  }
 
   await db.$transaction(
     classified.map((transaction, index) =>
@@ -407,9 +399,50 @@ export async function POST(request: Request) {
     duplicate: false,
     importBatchId: importBatch.id,
     importBatch: serializeImportBatch(importBatch),
+    csvTemplate: serializeCsvTemplate(csvTemplate),
     originalFileHash,
     transactions: serialized,
     summary: summarizeTransactions(serialized)
+  });
+}
+
+async function saveCsvTemplate(
+  db: PrismaClient,
+  input: {
+    companyId: string;
+    sourceType: SourceType;
+    headers: string[];
+    mapping: CsvColumnMapping;
+  }
+) {
+  const templateName = `${SOURCE_TYPE_LABELS[input.sourceType]} 기본 템플릿`;
+  const headerSignature = input.headers.join("|");
+  const existingTemplate = await db.csvTemplate.findFirst({
+    where: {
+      companyId: input.companyId,
+      sourceType: input.sourceType,
+      name: templateName
+    }
+  });
+
+  if (existingTemplate) {
+    return db.csvTemplate.update({
+      where: { id: existingTemplate.id },
+      data: {
+        headerSignature,
+        mapping: input.mapping
+      }
+    });
+  }
+
+  return db.csvTemplate.create({
+    data: {
+      companyId: input.companyId,
+      sourceType: input.sourceType,
+      name: templateName,
+      headerSignature,
+      mapping: input.mapping
+    }
   });
 }
 

@@ -5,7 +5,7 @@ import { getPrisma } from "@/lib/db";
 import { sampleCompany } from "@/lib/sample-data";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
-import { serializeClassificationRule } from "@/lib/server/serializers";
+import { serializeClassificationRule, serializeCsvTemplate } from "@/lib/server/serializers";
 
 const companySchema = z.object({
   name: z.string().min(1).max(100),
@@ -53,7 +53,7 @@ export async function GET() {
   return NextResponse.json({
     company,
     accounts,
-    csvTemplates,
+    csvTemplates: csvTemplates.map(serializeCsvTemplate),
     classificationRules: classificationRules.map((rule) => serializeClassificationRule(rule, accountByCode)),
     mode: "database"
   });

@@ -1,4 +1,18 @@
-import type { Account, AuditEvent, ClassificationRule, ClosingPeriod, Evidence, ImportBatch, JournalEntry, JournalLine, ReviewItem, TaxReport, Transaction, Vendor } from "@prisma/client";
+import type {
+  Account,
+  AuditEvent,
+  ClassificationRule,
+  ClosingPeriod,
+  CsvTemplate as PrismaCsvTemplate,
+  Evidence,
+  ImportBatch,
+  JournalEntry,
+  JournalLine,
+  ReviewItem,
+  TaxReport,
+  Transaction,
+  Vendor
+} from "@prisma/client";
 import type {
   AppAccount,
   AppAuditEvent,
@@ -8,6 +22,7 @@ import type {
   AppImportBatch,
   AppJournalEntry,
   AppVendor,
+  CsvTemplate as AppCsvTemplate,
   ReviewItem as AppReviewItem,
   AppTaxReport,
   AppTransaction
@@ -62,6 +77,18 @@ export function serializeImportBatch(importBatch: ImportBatch): AppImportBatch {
     hasOriginalFile: Boolean(importBatch.originalFileText),
     rowCount: importBatch.rowCount,
     importedAt: importBatch.importedAt.toISOString()
+  };
+}
+
+export function serializeCsvTemplate(template: PrismaCsvTemplate): AppCsvTemplate {
+  return {
+    id: template.id,
+    name: template.name,
+    sourceType: template.sourceType,
+    headerSignature: template.headerSignature,
+    mapping: isRecord(template.mapping) ? (template.mapping as AppCsvTemplate["mapping"]) : {},
+    createdAt: template.createdAt.toISOString(),
+    updatedAt: template.updatedAt.toISOString()
   };
 }
 

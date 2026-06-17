@@ -141,6 +141,8 @@ export type CsvTemplate = {
   sourceType: SourceType;
   headerSignature?: string | null;
   mapping: CsvColumnMapping;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type AppClassificationRule = {

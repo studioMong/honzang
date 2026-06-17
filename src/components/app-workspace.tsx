@@ -56,6 +56,10 @@ export type ViewKey = "dashboard" | "imports" | "transactions" | "evidences" | "
 type StatusTone = "green" | "amber" | "red" | "blue";
 type JournalDraft = ReturnType<typeof generateJournalDraft>;
 type JournalDraftFilter = "ALL" | "READY" | "REVIEW" | "APPROVED";
+type MappingSourceState = {
+  type: "database" | "local" | "inferred" | "edited";
+  label: string;
+};
 
 type FilingReadinessRow = {
   순서: number;
@@ -573,6 +577,9 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
             onImportBatch={(importBatch) => {
               setImportBatches((current) => mergeImportBatches(current, importBatch));
             }}
+            onCsvTemplateSaved={(csvTemplate) => {
+              setCsvTemplates((current) => mergeCsvTemplates(current, csvTemplate));
+            }}
             onImportDeleted={(importBatchId) => {
               setImportBatches((current) => current.filter((batch) => batch.id !== importBatchId));
               void refresh();
@@ -867,6 +874,7 @@ function CsvImportPanel({
   classificationRules,
   onImported,
   onImportBatch,
+  onCsvTemplateSaved,
   onImportDeleted
 }: {
   companyId: string;
@@ -876,6 +884,7 @@ function CsvImportPanel({
   classificationRules: AppClassificationRule[];
   onImported: (transactions: AppTransaction[]) => void;
   onImportBatch: (importBatch: AppImportBatch) => void;
+  onCsvTemplateSaved: (csvTemplate: CsvTemplate) => void;
   onImportDeleted: (importBatchId: string) => void;
 }) {
   const [sourceType, setSourceType] = useState<SourceType>("BANK");
@@ -884,6 +893,7 @@ function CsvImportPanel({
   const [originalFileMeta, setOriginalFileMeta] = useState<{ mimeType: string; size: number } | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [mapping, setMapping] = useState<CsvColumnMapping>({});
+  const [mappingSource, setMappingSource] = useState<MappingSourceState | null>(null);
   const [saving, setSaving] = useState(false);
   const [deletingBatchId, setDeletingBatchId] = useState<string | null>(null);
   const [importMessage, setImportMessage] = useState<{ tone: "green" | "amber" | "red"; text: string } | null>(null);
@@ -894,6 +904,8 @@ function CsvImportPanel({
     (mapping.depositAmount && mapping.withdrawalAmount
       ? `${mapping.depositAmount} / ${mapping.withdrawalAmount}`
       : mapping.depositAmount ?? mapping.withdrawalAmount ?? "");
+  const sourceTemplateCount = csvTemplates.filter((template) => template.sourceType === sourceType).length;
+  const mappingSourceStatus = getMappingSourceStatus(mappingSource, preview, sourceTemplateCount);
   const mappingStatusItems = [
     {
       title: "CSV 파일",
@@ -914,8 +926,31 @@ function CsvImportPanel({
       title: "금액",
       value: amountMappingLabel || "필요",
       tone: amountMappingLabel ? "green" : "red"
+    },
+    {
+      title: "템플릿",
+      value: mappingSourceStatus.value,
+      tone: mappingSourceStatus.tone
     }
-  ] satisfies Array<{ title: string; value: string; tone: "green" | "amber" | "red" }>;
+  ] satisfies Array<{ title: string; value: string; tone: StatusTone }>;
+
+  function applyMappingForHeaders(nextSourceType: SourceType, headers: string[]) {
+    const savedMapping = getSavedMapping(nextSourceType, headers, csvTemplates);
+    if (savedMapping) {
+      setMapping(savedMapping.mapping);
+      setMappingSource(savedMapping.source);
+      return;
+    }
+
+    setMapping(inferMapping(headers, nextSourceType));
+    setMappingSource({ type: "inferred", label: "자동 추론" });
+  }
+
+  function changeSourceType(nextSourceType: SourceType) {
+    setSourceType(nextSourceType);
+    setImportMessage(null);
+    if (preview) applyMappingForHeaders(nextSourceType, preview.headers);
+  }
 
   async function parseFile(file: File) {
     setFileName(file.name);
@@ -950,7 +985,7 @@ function CsvImportPanel({
         const headers = result.meta.fields?.filter(Boolean) ?? [];
         const rows = result.data.filter((row) => Object.values(row).some((value) => String(value ?? "").trim()));
         setPreview({ headers, rows: rows.slice(0, 2000) });
-        setMapping(getSavedMapping(sourceType, headers, csvTemplates) ?? inferMapping(headers, sourceType));
+        applyMappingForHeaders(sourceType, headers);
       }
     });
   }
@@ -978,6 +1013,10 @@ function CsvImportPanel({
       if (payload.transactions?.length) {
         saveLocalMapping(sourceType, preview.headers, mapping);
         if (payload.importBatch) onImportBatch(payload.importBatch);
+        if (payload.csvTemplate) {
+          onCsvTemplateSaved(payload.csvTemplate);
+          setMappingSource({ type: "database", label: `${payload.csvTemplate.name} 저장` });
+        }
         setImportMessage({
           tone: payload.duplicate ? "amber" : "green",
           text: payload.duplicate ? "이미 가져온 파일입니다. 기존 거래를 다시 불러왔습니다." : `${formatNumber(payload.transactions.length)}건을 가져왔습니다.`
@@ -1052,7 +1091,7 @@ function CsvImportPanel({
         <div className="panel-header">
           <h2 className="panel-title">CSV 업로드</h2>
           <div className="toolbar">
-            <select value={sourceType} onChange={(event) => setSourceType(event.target.value as SourceType)} className="secondary-button">
+            <select value={sourceType} onChange={(event) => changeSourceType(event.target.value as SourceType)} className="secondary-button">
               {sourceOptions.map((option) => (
                 <option key={option} value={option}>
                   {SOURCE_TYPE_LABELS[option]}
@@ -1124,7 +1163,10 @@ function CsvImportPanel({
                 <label>{field.label}</label>
                 <select
                   value={mapping[field.key] ?? ""}
-                  onChange={(event) => setMapping((current) => ({ ...current, [field.key]: event.target.value || undefined }))}
+                  onChange={(event) => {
+                    setMapping((current) => ({ ...current, [field.key]: event.target.value || undefined }));
+                    if (preview) setMappingSource({ type: "edited", label: "직접 수정" });
+                  }}
                 >
                   <option value="">선택 안 함</option>
                   {preview?.headers.map((header) => (
@@ -4902,6 +4944,12 @@ function mergeImportBatches(current: AppImportBatch[], incoming: AppImportBatch)
   return [...byId.values()].sort((left, right) => right.importedAt.localeCompare(left.importedAt)).slice(0, 50);
 }
 
+function mergeCsvTemplates(current: CsvTemplate[], incoming: CsvTemplate) {
+  const byId = new Map(current.map((template) => [template.id, template]));
+  byId.set(incoming.id, incoming);
+  return [...byId.values()].sort((left, right) => (right.updatedAt ?? "").localeCompare(left.updatedAt ?? ""));
+}
+
 function daysBetween(left: Date, right: Date) {
   return Math.round((left.getTime() - right.getTime()) / 86_400_000);
 }
@@ -5157,14 +5205,42 @@ function groupExpensesByAccount(transactions: AppTransaction[]) {
 function getSavedMapping(sourceType: SourceType, headers: string[], templates: CsvTemplate[]) {
   const signature = headers.join("|");
   const dbTemplate = templates.find((template) => template.sourceType === sourceType && template.headerSignature === signature);
-  if (dbTemplate) return dbTemplate.mapping;
+  if (dbTemplate) {
+    return {
+      mapping: dbTemplate.mapping,
+      source: { type: "database", label: dbTemplate.name } satisfies MappingSourceState
+    };
+  }
 
   try {
     const raw = window.localStorage.getItem(`honzang:csv-template:${sourceType}:${signature}`);
-    return raw ? (JSON.parse(raw) as CsvColumnMapping) : null;
+    return raw
+      ? {
+          mapping: JSON.parse(raw) as CsvColumnMapping,
+          source: { type: "local", label: "브라우저 저장" } satisfies MappingSourceState
+        }
+      : null;
   } catch {
     return null;
   }
+}
+
+function getMappingSourceStatus(
+  mappingSource: MappingSourceState | null,
+  preview: ImportPreview | null,
+  sourceTemplateCount: number
+): { value: string; tone: StatusTone } {
+  if (!preview) {
+    return {
+      value: sourceTemplateCount > 0 ? `${formatNumber(sourceTemplateCount)}개 저장` : "파일 선택 후",
+      tone: sourceTemplateCount > 0 ? "blue" : "amber"
+    };
+  }
+  if (!mappingSource) return { value: "확인 필요", tone: "amber" };
+  if (mappingSource.type === "database") return { value: "DB 적용", tone: "green" };
+  if (mappingSource.type === "local") return { value: "로컬 적용", tone: "green" };
+  if (mappingSource.type === "edited") return { value: "직접 수정", tone: "blue" };
+  return { value: "자동 추론", tone: "amber" };
 }
 
 function saveLocalMapping(sourceType: SourceType, headers: string[], mapping: CsvColumnMapping) {

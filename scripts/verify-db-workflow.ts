@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import Papa from "papaparse";
 import { generateJournalDraft, inferMapping, summarizeTransactions } from "../src/lib/accounting";
 import { DEFAULT_COMPANY_ID } from "../src/lib/defaults";
-import type { AppJournalEntry, AppTransaction, ParsedCsvRow, SourceType } from "../src/types";
+import type { AppJournalEntry, AppTransaction, CsvColumnMapping, CsvTemplate, ParsedCsvRow, SourceType } from "../src/types";
 
 const baseUrl = (process.env.VERIFY_DB_WORKFLOW_BASE_URL ?? "http://127.0.0.1:3000").replace(/\/$/, "");
 const marker = `verify-db-workflow-${Date.now()}`;
@@ -224,6 +224,7 @@ async function importSample(companyId: string, sourceType: SourceType, filePath:
     duplicate?: boolean;
     importBatchId?: string;
     importBatch?: { hasOriginalFile?: boolean; originalFileName?: string };
+    csvTemplate?: CsvTemplate;
     transactions?: AppTransaction[];
   }>("/api/imports", {
     method: "POST",
@@ -245,7 +246,15 @@ async function importSample(companyId: string, sourceType: SourceType, filePath:
   assert.equal(payload.duplicate, false, `${sourceType} import should create a fresh batch`);
   assert.ok(payload.importBatchId, `${sourceType} import should return an import batch id`);
   assert.equal(payload.importBatch?.hasOriginalFile, true, `${sourceType} import should preserve original CSV`);
+  assert.equal(payload.csvTemplate?.sourceType, sourceType, `${sourceType} import should return saved CSV template`);
+  assert.equal(payload.csvTemplate?.headerSignature, headers.join("|"), `${sourceType} template should track the imported header signature`);
+  assert.deepEqual(payload.csvTemplate?.mapping, mapping, `${sourceType} template should preserve the submitted mapping`);
   assert.equal(payload.transactions?.length, rowCount, `${sourceType} import should return imported transactions`);
+  const companyAfterImport = await requestJson<{ csvTemplates?: CsvTemplate[] }>("/api/companies");
+  assert.ok(
+    companyAfterImport.csvTemplates?.some((template) => isSameCsvTemplate(template, sourceType, headers, mapping)),
+    `${sourceType} saved CSV template should be listed from company settings`
+  );
   const originalFilePayload = await requestJson<{
     ok?: boolean;
     originalFileName?: string;
@@ -256,6 +265,10 @@ async function importSample(companyId: string, sourceType: SourceType, filePath:
   assert.ok(originalFilePayload.originalFileText?.includes(headers[0] ?? ""), `${sourceType} original CSV should include header`);
   cleanup.importBatchIds.push(payload.importBatchId);
   return payload.transactions ?? [];
+}
+
+function isSameCsvTemplate(template: CsvTemplate, sourceType: SourceType, headers: string[], mapping: CsvColumnMapping) {
+  return template.sourceType === sourceType && template.headerSignature === headers.join("|") && JSON.stringify(template.mapping) === JSON.stringify(mapping);
 }
 
 function uniqueRow(row: ParsedCsvRow, descriptionColumn: string | undefined, dateColumn: string | undefined, index: number) {
