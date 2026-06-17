@@ -5,7 +5,8 @@ import { getPrisma } from "@/lib/db";
 import { sampleTransactions } from "@/lib/sample-data";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
-import { serializeReviewItem, serializeTransaction } from "@/lib/server/serializers";
+import { buildEvidenceAmountReviewItems } from "@/lib/server/evidence-amount-reviews";
+import { serializeEvidence, serializeReviewItem, serializeTransaction } from "@/lib/server/serializers";
 import type { ReviewItem } from "@/types";
 
 const reviewStatusSchema = z.object({
@@ -33,10 +34,22 @@ export async function GET() {
   const company = await ensureDefaultCompany(db);
   const transactions = await db.transaction.findMany({
     where: { companyId: company.id },
-    include: transactionInclude,
+    include: {
+      ...transactionInclude,
+      evidences: true
+    },
     orderBy: [{ transactionDate: "desc" }, { createdAt: "desc" }]
   });
-  const candidates = buildReviewItems(transactions.map(serializeTransaction));
+  const serializedTransactions = transactions.map(serializeTransaction);
+  const candidates = [
+    ...buildReviewItems(serializedTransactions),
+    ...buildEvidenceAmountReviewItems(
+      transactions.map((transaction, index) => ({
+        ...serializedTransactions[index],
+        evidences: transaction.evidences.map(serializeEvidence)
+      }))
+    )
+  ];
 
   const existing = await db.reviewItem.findMany({
     where: {
@@ -47,6 +60,7 @@ export async function GET() {
   });
   const activeKeys = new Set(candidates.map(reviewCandidateKey));
   const existingKeys = new Set(existing.map((item) => persistedReviewKey(item.targetId, item.reason)));
+  const candidateByKey = new Map(candidates.map((candidate) => [reviewCandidateKey(candidate), candidate]));
 
   const createRows = candidates.flatMap((candidate) => {
     if (!candidate.transaction || existingKeys.has(reviewCandidateKey(candidate))) return [];
@@ -66,6 +80,23 @@ export async function GET() {
 
   if (createRows.length > 0) {
     await db.reviewItem.createMany({ data: createRows });
+  }
+
+  const updateRows = existing.flatMap((item) => {
+    const candidate = candidateByKey.get(persistedReviewKey(item.targetId, item.reason));
+    if (!candidate) return [];
+    const recommendation = candidate.recommendation ?? null;
+    if (item.severity === candidate.severity && item.recommendation === recommendation) return [];
+    return [{ id: item.id, severity: candidate.severity, recommendation }];
+  });
+  for (const row of updateRows) {
+    await db.reviewItem.update({
+      where: { id: row.id },
+      data: {
+        severity: row.severity,
+        recommendation: row.recommendation
+      }
+    });
   }
 
   const staleOpenIds = existing

@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import Papa from "papaparse";
 import { applyClassificationRules, applyVendorDefaults, generateJournalDraft, inferMapping, normalizeCsvRow, summarizeTransactions } from "../src/lib/accounting";
 import { DEFAULT_ACCOUNTS } from "../src/lib/defaults";
+import { buildEvidenceAmountReviewItems, type EvidenceAmountReviewTransaction } from "../src/lib/server/evidence-amount-reviews";
 import type { AppClassificationRule, AppTransaction, ParsedCsvRow, SourceType } from "../src/types";
 
 type SampleCase = {
@@ -223,6 +224,41 @@ assert.equal(businessIncomeDraft.lines.find((line) => line.accountCode === "502"
 assert.equal(businessIncomeDraft.lines.find((line) => line.accountCode === "253")?.creditAmount, 11_262, "business-income withholding should create withholding payable");
 assert.ok(businessIncomeDraft.warnings.some((warning) => warning.includes("3.3%")), "business-income withholding should keep review warning");
 console.log("Verified contractor withholding journal draft.");
+
+const evidenceMismatchTransaction: EvidenceAmountReviewTransaction = {
+  ...contractorBase,
+  id: "contractor-evidence-amount-review",
+  evidenceStatus: "MATCHED",
+  evidences: [
+    {
+      id: "contractor-evidence-short",
+      supplyAmount: 272_727,
+      vatAmount: 27_273,
+      totalAmount: 300_000
+    }
+  ]
+};
+const evidenceAmountReviews = buildEvidenceAmountReviewItems([evidenceMismatchTransaction]);
+assert.equal(evidenceAmountReviews.length, 1, "evidence amount mismatch should create a review item");
+assert.equal(evidenceAmountReviews[0]?.severity, "DANGER", "large evidence amount mismatch should be dangerous");
+assert.match(evidenceAmountReviews[0]?.reason ?? "", /연결 증빙 합계/, "evidence amount review should explain the mismatch");
+assert.match(evidenceAmountReviews[0]?.recommendation ?? "", /30,000원/, "evidence amount review should include the amount difference");
+
+const evidenceMatchedReviews = buildEvidenceAmountReviewItems([
+  {
+    ...evidenceMismatchTransaction,
+    evidences: [
+      {
+        id: "contractor-evidence-matched",
+        supplyAmount: 300_000,
+        vatAmount: 30_000,
+        totalAmount: 330_000
+      }
+    ]
+  }
+]);
+assert.equal(evidenceMatchedReviews.length, 0, "matching evidence amount should not create a review item");
+console.log("Verified evidence amount review generation.");
 
 console.log("Sample CSV verification passed.");
 
