@@ -34,10 +34,11 @@ import type {
   EvidenceStatus,
   ImportPreview,
   ParsedCsvRow,
+  ReviewItem,
   SourceType
 } from "@/types";
 import { DEFAULT_ACCOUNTS, DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/defaults";
-import { applyClassificationRules, generateJournalDraft, inferMapping, normalizeCsvRow, parseMoney, summarizeTransactions } from "@/lib/accounting";
+import { applyClassificationRules, buildReviewItems, generateJournalDraft, inferMapping, normalizeCsvRow, parseMoney, summarizeTransactions } from "@/lib/accounting";
 import { formatDate, formatDateTime, formatKRW, formatNumber } from "@/lib/format";
 import { sampleCompany, sampleEvidences, sampleJournalEntries, sampleTaxReports, sampleTransactions } from "@/lib/sample-data";
 
@@ -90,11 +91,21 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
   const [evidences, setEvidences] = useState<AppEvidence[]>(sampleEvidences);
   const [journalEntries, setJournalEntries] = useState<AppJournalEntry[]>(sampleJournalEntries);
   const [taxReports, setTaxReports] = useState<AppTaxReport[]>(sampleTaxReports);
+  const [reviewItems, setReviewItems] = useState<ReviewItem[]>(buildReviewItems(sampleTransactions));
+  const [reviewStatusOverrides, setReviewStatusOverrides] = useState<Record<string, ReviewItem["status"]>>({});
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<"sample" | "database">("sample");
 
   const summary = useMemo(() => summarizeTransactions(transactions), [transactions]);
-  const reviewItems = useMemo(() => buildReviewItems(transactions), [transactions]);
+  const computedReviewItems = useMemo(() => buildReviewItems(transactions), [transactions]);
+  const visibleReviewItems = useMemo(
+    () =>
+      mode === "sample"
+        ? computedReviewItems.map((item) => ({ ...item, status: reviewStatusOverrides[item.id] ?? item.status }))
+        : reviewItems,
+    [computedReviewItems, mode, reviewItems, reviewStatusOverrides]
+  );
+  const openReviewItems = useMemo(() => visibleReviewItems.filter((item) => item.status === "OPEN"), [visibleReviewItems]);
 
   async function refresh() {
     setLoading(true);
@@ -107,28 +118,33 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       const evidenceResponse = await fetch("/api/evidences", { cache: "no-store" });
       const journalResponse = await fetch("/api/journals", { cache: "no-store" });
       const reportResponse = await fetch("/api/reports", { cache: "no-store" });
+      const reviewResponse = await fetch("/api/reviews", { cache: "no-store" });
       const companyPayload = await companyResponse.json();
       const transactionPayload = await transactionResponse.json();
       const importPayload = await importResponse.json();
       const evidencePayload = await evidenceResponse.json();
       const journalPayload = await journalResponse.json();
       const reportPayload = await reportResponse.json();
+      const reviewPayload = await reviewResponse.json();
       const isDatabaseMode =
         companyPayload.mode === "database" ||
         transactionPayload.mode === "database" ||
         importPayload.mode === "database" ||
         evidencePayload.mode === "database" ||
         journalPayload.mode === "database" ||
-        reportPayload.mode === "database";
+        reportPayload.mode === "database" ||
+        reviewPayload.mode === "database";
+      const nextTransactions = isDatabaseMode ? transactionPayload.transactions ?? [] : transactionPayload.transactions?.length ? transactionPayload.transactions : sampleTransactions;
       setCompany(companyPayload.company ?? sampleCompany);
       setAccounts(companyPayload.accounts ?? DEFAULT_ACCOUNTS);
       setCsvTemplates(companyPayload.csvTemplates ?? []);
       setClassificationRules(companyPayload.classificationRules ?? []);
       setImportBatches(importPayload.importBatches ?? []);
-      setTransactions(isDatabaseMode ? transactionPayload.transactions ?? [] : transactionPayload.transactions?.length ? transactionPayload.transactions : sampleTransactions);
+      setTransactions(nextTransactions);
       setEvidences(isDatabaseMode ? evidencePayload.evidences ?? [] : evidencePayload.evidences?.length ? evidencePayload.evidences : sampleEvidences);
       setJournalEntries(journalPayload.journalEntries ?? []);
       setTaxReports(reportPayload.taxReports ?? []);
+      setReviewItems(reviewPayload.reviewItems ?? buildReviewItems(nextTransactions));
       setMode(isDatabaseMode ? "database" : "sample");
     } catch {
       setCompany(sampleCompany);
@@ -140,6 +156,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       setEvidences(sampleEvidences);
       setJournalEntries(sampleJournalEntries);
       setTaxReports(sampleTaxReports);
+      setReviewItems(buildReviewItems(sampleTransactions));
       setMode("sample");
     } finally {
       setLoading(false);
@@ -178,8 +195,34 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, ...patch })
       });
+      if (mode === "database") void refresh();
     } catch {
       setMode("sample");
+    }
+  }
+
+  async function updateReviewStatus(id: string, status: ReviewItem["status"]) {
+    if (mode === "sample") {
+      setReviewStatusOverrides((current) => ({ ...current, [id]: status }));
+      return;
+    }
+
+    const previous = reviewItems;
+    setReviewItems((current) => current.map((item) => (item.id === id ? { ...item, status } : item)));
+    try {
+      const response = await fetch("/api/reviews", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status })
+      });
+      const payload = await response.json();
+      if (payload.reviewItem?.reason) {
+        setReviewItems((current) => current.map((item) => (item.id === id ? payload.reviewItem : item)));
+      } else if (!response.ok) {
+        setReviewItems(previous);
+      }
+    } catch {
+      setReviewItems(previous);
     }
   }
 
@@ -237,7 +280,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
         </header>
 
         {activeView === "dashboard" && (
-          <Dashboard company={company} summary={summary} reviewCount={reviewItems.length} transactions={transactions} onMove={setActiveView} />
+          <Dashboard company={company} summary={summary} reviewCount={openReviewItems.length} transactions={transactions} onMove={setActiveView} />
         )}
         {activeView === "imports" && (
           <CsvImportPanel
@@ -249,6 +292,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
             onImported={(imported) => {
               setTransactions((current) => mergeTransactions(current, imported));
               setActiveView("transactions");
+              if (mode === "database") void refresh();
             }}
             onImportBatch={(importBatch) => {
               setImportBatches((current) => mergeImportBatches(current, importBatch));
@@ -263,7 +307,10 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
           <TransactionsPanel
             transactions={transactions}
             accounts={accounts}
-            onCreated={(transaction) => setTransactions((current) => mergeTransactions(current, [transaction]))}
+            onCreated={(transaction) => {
+              setTransactions((current) => mergeTransactions(current, [transaction]));
+              if (mode === "database") void refresh();
+            }}
             onUpdate={updateTransaction}
           />
         )}
@@ -281,6 +328,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
                   )
                 );
               }
+              if (mode === "database") void refresh();
             }}
           />
         )}
@@ -294,7 +342,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
             }}
           />
         )}
-        {activeView === "reviews" && <ReviewsPanel items={reviewItems} />}
+        {activeView === "reviews" && <ReviewsPanel items={visibleReviewItems} onStatusChange={updateReviewStatus} />}
         {activeView === "reports" && (
           <ReportsPanel
             company={company}
@@ -1163,12 +1211,19 @@ function JournalDraftsPanel({
   );
 }
 
-function ReviewsPanel({ items }: { items: ReturnType<typeof buildReviewItems> }) {
+function ReviewsPanel({
+  items,
+  onStatusChange
+}: {
+  items: ReviewItem[];
+  onStatusChange: (id: string, status: ReviewItem["status"]) => void;
+}) {
+  const openCount = items.filter((item) => item.status === "OPEN").length;
   return (
     <section className="panel">
       <div className="panel-header">
         <h2 className="panel-title">검토함</h2>
-        <span className="status amber">{formatNumber(items.length)}건</span>
+        <span className={openCount > 0 ? "status amber" : "status green"}>{formatNumber(openCount)}건 열림</span>
       </div>
       <div className="panel-body">
         {items.length === 0 ? (
@@ -1179,12 +1234,26 @@ function ReviewsPanel({ items }: { items: ReturnType<typeof buildReviewItems> })
               <article key={item.id} className="review-item" data-severity={item.severity}>
                 <div className="review-row">
                   <strong>{item.reason}</strong>
-                  <span className={item.severity === "DANGER" ? "status red" : item.severity === "WARNING" ? "status amber" : "status blue"}>
-                    {item.severity === "DANGER" ? "위험" : item.severity === "WARNING" ? "주의" : "확인"}
-                  </span>
+                  <div className="toolbar">
+                    <span className={item.severity === "DANGER" ? "status red" : item.severity === "WARNING" ? "status amber" : "status blue"}>
+                      {item.severity === "DANGER" ? "위험" : item.severity === "WARNING" ? "주의" : "확인"}
+                    </span>
+                    <span className={`status ${reviewStatusTone(item.status)}`}>{reviewStatusLabel(item.status)}</span>
+                  </div>
                 </div>
                 <div className="muted">
                   {item.transaction ? `${formatDate(item.transaction.transactionDate)} · ${item.transaction.description}` : "거래 없음"}
+                </div>
+                {item.recommendation && <div className="muted">{item.recommendation}</div>}
+                <div className="toolbar">
+                  {item.status === "OPEN" ? (
+                    <>
+                      <button className="ghost-button" onClick={() => onStatusChange(item.id, "RESOLVED")}>처리 완료</button>
+                      <button className="ghost-button" onClick={() => onStatusChange(item.id, "IGNORED")}>무시</button>
+                    </>
+                  ) : (
+                    <button className="ghost-button" onClick={() => onStatusChange(item.id, "OPEN")}>다시 열기</button>
+                  )}
                 </div>
               </article>
             ))}
@@ -1193,6 +1262,24 @@ function ReviewsPanel({ items }: { items: ReturnType<typeof buildReviewItems> })
       </div>
     </section>
   );
+}
+
+function reviewStatusLabel(status: ReviewItem["status"]) {
+  const labels: Record<ReviewItem["status"], string> = {
+    OPEN: "열림",
+    RESOLVED: "완료",
+    IGNORED: "무시"
+  };
+  return labels[status];
+}
+
+function reviewStatusTone(status: ReviewItem["status"]) {
+  const tones: Record<ReviewItem["status"], string> = {
+    OPEN: "amber",
+    RESOLVED: "green",
+    IGNORED: "blue"
+  };
+  return tones[status];
 }
 
 function ReportsPanel({
@@ -2333,21 +2420,6 @@ function evidenceBadge(status: EvidenceStatus) {
   };
   const item = map[status];
   return <span className={`status ${item.tone}`}>{item.label}</span>;
-}
-
-function buildReviewItems(transactions: AppTransaction[]) {
-  return transactions.flatMap((transaction) => {
-    const reasons = [...(transaction.reviewReasons ?? [])];
-    if (transaction.withdrawalAmount > 0 && transaction.evidenceStatus === "MISSING") {
-      reasons.push("증빙 없는 비용");
-    }
-    return [...new Set(reasons)].map((reason, index) => ({
-      id: `${transaction.id}-${index}`,
-      reason,
-      severity: reason.includes("원천세") || reason.includes("대표자") ? ("DANGER" as const) : reason.includes("증빙") ? ("WARNING" as const) : ("INFO" as const),
-      transaction
-    }));
-  });
 }
 
 function buildPeriodOptions(transactions: AppTransaction[]) {

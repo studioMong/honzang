@@ -1,5 +1,14 @@
-import type { Account, ClassificationRule, Evidence, ImportBatch, JournalEntry, JournalLine, TaxReport, Transaction } from "@prisma/client";
-import type { AppAccount, AppClassificationRule, AppEvidence, AppImportBatch, AppJournalEntry, AppTaxReport, AppTransaction } from "@/types";
+import type { Account, ClassificationRule, Evidence, ImportBatch, JournalEntry, JournalLine, ReviewItem, TaxReport, Transaction } from "@prisma/client";
+import type {
+  AppAccount,
+  AppClassificationRule,
+  AppEvidence,
+  AppImportBatch,
+  AppJournalEntry,
+  ReviewItem as AppReviewItem,
+  AppTaxReport,
+  AppTransaction
+} from "@/types";
 
 type TransactionWithAccounts = Transaction & {
   suggestedAccount?: Account | null;
@@ -88,6 +97,17 @@ export function serializeEvidence(evidence: Evidence & { transaction?: Transacti
     fileUrl: evidence.fileUrl,
     transactionId: evidence.transactionId,
     transaction: evidence.transaction ? serializeTransaction(evidence.transaction) : null
+  };
+}
+
+export function serializeReviewItem(reviewItem: ReviewItem & { transaction?: TransactionWithAccounts | null }): AppReviewItem {
+  return {
+    id: reviewItem.id,
+    severity: reviewItem.severity,
+    reason: reviewItem.reason,
+    recommendation: reviewItem.recommendation,
+    status: reviewItem.status,
+    transaction: reviewItem.transaction ? serializeTransaction(reviewItem.transaction) : null
   };
 }
 

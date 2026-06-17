@@ -1,4 +1,4 @@
-import type { AppAccount, AppClassificationRule, AppTransaction, JournalDraft, ParsedCsvRow, CsvColumnMapping, SourceType } from "@/types";
+import type { AppAccount, AppClassificationRule, AppTransaction, JournalDraft, ParsedCsvRow, CsvColumnMapping, ReviewItem, SourceType } from "@/types";
 import { DEFAULT_ACCOUNTS } from "@/lib/defaults";
 
 const keywordAccountRules: Array<{ keywords: string[]; code: string; reason?: string }> = [
@@ -168,6 +168,66 @@ export function collectReviewReasons(input: {
   }
 
   return [...new Set(reasons)];
+}
+
+export function reviewSeverityForReason(reason: string): ReviewItem["severity"] {
+  if (reason.includes("원천세") || reason.includes("대표자") || reason.includes("가지급금") || reason.includes("차입금")) return "DANGER";
+  if (reason.includes("증빙") || reason.includes("인보이스") || reason.includes("접대비")) return "WARNING";
+  return "INFO";
+}
+
+export function reviewRecommendationForReason(reason: string) {
+  if (reason.includes("대표자") || reason.includes("가지급금") || reason.includes("차입금")) {
+    return "대표자차입금/가지급금 여부와 실제 자금 흐름을 확인하세요.";
+  }
+  if (reason.includes("원천세")) {
+    return "세금계산서 수취 거래인지, 3.3% 원천세 신고 대상인지 확인하세요.";
+  }
+  if (reason.includes("해외 SaaS") || reason.includes("인보이스")) {
+    return "해외 인보이스, 업무 관련성 메모, 부가세 처리 여부를 보관하세요.";
+  }
+  if (reason.includes("증빙")) {
+    return "세금계산서, 카드전표, 현금영수증, 인보이스 중 해당 증빙을 연결하세요.";
+  }
+  if (reason.includes("접대비")) {
+    return "접대 목적, 상대방, 적격증빙, 한도 검토가 필요합니다.";
+  }
+  return "거래 성격과 신고 반영 여부를 확인하세요.";
+}
+
+export function buildReviewItems(transactions: AppTransaction[]): ReviewItem[] {
+  return transactions.flatMap((transaction) => {
+    const account = transaction.confirmedAccount ?? transaction.suggestedAccount ?? null;
+    const reasons = [...(transaction.reviewReasons ?? [])];
+    collectReviewReasons({
+      description: transaction.description,
+      counterparty: transaction.counterparty,
+      depositAmount: transaction.depositAmount,
+      withdrawalAmount: transaction.withdrawalAmount,
+      evidenceStatus: transaction.evidenceStatus,
+      suggestedAccount: account
+    })
+      .filter((reason) => !reasons.some((existing) => reviewReasonCategory(existing) === reviewReasonCategory(reason)))
+      .forEach((reason) => reasons.push(reason));
+
+    return [...new Set(reasons)].map((reason, index) => ({
+      id: `${transaction.id}-${index}`,
+      severity: reviewSeverityForReason(reason),
+      reason,
+      recommendation: reviewRecommendationForReason(reason),
+      status: "OPEN",
+      transaction
+    }));
+  });
+}
+
+function reviewReasonCategory(reason: string) {
+  if (reason.includes("대표자") || reason.includes("가지급금") || reason.includes("차입금")) return "OWNER";
+  if (reason.includes("원천세") || reason.includes("외주비") || reason.includes("사업소득") || reason.includes("기타소득")) return "WITHHOLDING";
+  if (reason.includes("해외 SaaS") || reason.includes("인보이스")) return "SAAS";
+  if (reason.includes("접대비")) return "ENTERTAINMENT";
+  if (reason.includes("증빙")) return "EVIDENCE";
+  return reason;
 }
 
 function transactionAccount(transaction: AppTransaction) {
