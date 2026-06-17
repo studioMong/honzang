@@ -60,6 +60,7 @@ Railway는 GitHub 저장소를 연결한 뒤 다음 설정을 사용합니다.
 Railway 공개 URL이 최신 Next 서버와 Postgres를 바라보는지는 아래 명령으로 확인합니다.
 
 ```bash
+npm run verify:deployment-config
 npm run verify:railway
 ```
 
