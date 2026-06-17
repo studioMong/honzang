@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import Papa from "papaparse";
-import { inferMapping, normalizeCsvRow, summarizeTransactions } from "../src/lib/accounting";
-import type { AppTransaction, ParsedCsvRow, SourceType } from "../src/types";
+import { applyClassificationRules, inferMapping, normalizeCsvRow, summarizeTransactions } from "../src/lib/accounting";
+import { DEFAULT_ACCOUNTS } from "../src/lib/defaults";
+import type { AppClassificationRule, AppTransaction, ParsedCsvRow, SourceType } from "../src/types";
 
 type SampleCase = {
   sourceType: SourceType;
@@ -125,5 +126,37 @@ for (const caseItem of sampleCases) {
 
   console.log(`Verified ${caseItem.sourceType} ${caseItem.filePath} (${transactions.length} rows)`);
 }
+
+const cardSample = sampleCases.find((caseItem) => caseItem.sourceType === "CARD");
+assert.ok(cardSample, "CARD sample case should exist");
+const { headers: cardHeaders, rows: cardRows } = parseSampleCsv(cardSample.filePath);
+const cardMapping = requireMapping(cardSample, cardHeaders);
+const openAiRow = cardRows.find((row) => String(row["가맹점"] ?? "").toLowerCase().includes("openai"));
+assert.ok(openAiRow, "CARD sample should include OpenAI row");
+
+const customRules: AppClassificationRule[] = [
+  {
+    id: "rule-openai-education",
+    name: "OpenAI 교육비",
+    keyword: "openai",
+    accountCode: "508",
+    accountName: "소모품비",
+    sourceType: "CARD",
+    priority: 1,
+    isActive: true
+  }
+];
+const classified = applyClassificationRules(
+  {
+    id: "card-openai-rule",
+    ...normalizeCsvRow(openAiRow, cardMapping, "CARD", 0)
+  },
+  customRules,
+  DEFAULT_ACCOUNTS
+);
+
+assert.equal(classified.suggestedAccount?.code, "508", "custom classification rule should override default account");
+assert.ok(classified.reviewReasons?.some((reason) => reason.includes("OpenAI 교육비")), "custom classification rule reason should be recorded");
+console.log("Verified custom classification rule override.");
 
 console.log("Sample CSV verification passed.");
