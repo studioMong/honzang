@@ -88,6 +88,51 @@ const sampleCsvLinks: Record<SourceType, { label: string; href: string }> = {
   MANUAL: { label: "수기 샘플", href: "/samples/bank-transactions.csv" }
 };
 
+const csvPreparationGuides: Record<SourceType, { required: string[]; optional: string[]; masking: string; source: string }> = {
+  BANK: {
+    required: ["거래일", "적요/내용", "입금/출금 또는 금액"],
+    optional: ["거래처", "잔액", "계좌 메모"],
+    masking: "계좌번호, 상대방명 일부",
+    source: "은행 입출금내역 CSV"
+  },
+  CARD: {
+    required: ["사용일", "가맹점/내용", "이용금액"],
+    optional: ["공급가액", "부가세", "승인번호"],
+    masking: "카드번호, 승인번호 일부",
+    source: "카드사 이용내역 CSV"
+  },
+  HOMETAX_SALES: {
+    required: ["작성일", "거래처", "공급가액", "부가세"],
+    optional: ["품목", "합계", "사업자번호"],
+    masking: "거래처명, 사업자번호 일부",
+    source: "홈택스 전자세금계산서 매출"
+  },
+  HOMETAX_PURCHASES: {
+    required: ["작성일", "거래처", "공급가액", "부가세"],
+    optional: ["품목", "합계", "사업자번호"],
+    masking: "거래처명, 사업자번호 일부",
+    source: "홈택스 전자세금계산서 매입"
+  },
+  CASH_RECEIPT: {
+    required: ["거래일/작성일", "거래처", "합계 또는 금액"],
+    optional: ["공급가액", "부가세", "승인번호"],
+    masking: "승인번호, 거래처 일부",
+    source: "홈택스 현금영수증/카드 매입"
+  },
+  PG: {
+    required: ["정산일", "거래처/플랫폼", "정산금액"],
+    optional: ["공급가액", "부가세", "수수료", "주문번호"],
+    masking: "주문번호, 구매자 정보",
+    source: "PG/마켓 정산 CSV"
+  },
+  MANUAL: {
+    required: ["거래일", "내용", "입금/출금"],
+    optional: ["거래처", "계정과목", "증빙 상태"],
+    masking: "거래처 일부",
+    source: "수기 입력 보조 CSV"
+  }
+};
+
 export function AppWorkspace({ initialView = "dashboard" }: { initialView?: ViewKey }) {
   const [activeView, setActiveView] = useState<ViewKey>(initialView);
   const [company, setCompany] = useState<AppCompany>(sampleCompany);
@@ -776,6 +821,8 @@ function CsvImportPanel({
         </div>
       </section>
 
+      <CsvGuidePanel />
+
       <section className="panel">
         <div className="panel-header">
           <h2 className="panel-title">최근 업로드</h2>
@@ -829,6 +876,52 @@ function CsvImportPanel({
         </div>
       </section>
     </div>
+  );
+}
+
+function CsvGuidePanel() {
+  return (
+    <section className="panel">
+      <div className="panel-header">
+        <div>
+          <h2 className="panel-title">자료별 준비 기준</h2>
+          <p className="panel-subtitle">컬럼명은 달라도 업로드 후 매핑할 수 있습니다. 실제 파일의 컬럼 구조는 유지합니다.</p>
+        </div>
+      </div>
+      <div className="table-wrap">
+        <table className="guide-table">
+          <thead>
+            <tr>
+              <th>자료</th>
+              <th>받을 곳</th>
+              <th>필수 컬럼</th>
+              <th>있으면 좋은 컬럼</th>
+              <th>마스킹 가능</th>
+              <th>샘플</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sourceOptions.map((sourceType) => {
+              const guide = csvPreparationGuides[sourceType];
+              return (
+                <tr key={sourceType}>
+                  <td>{SOURCE_TYPE_LABELS[sourceType]}</td>
+                  <td>{guide.source}</td>
+                  <td>{guide.required.join(", ")}</td>
+                  <td>{guide.optional.join(", ")}</td>
+                  <td>{guide.masking}</td>
+                  <td>
+                    <a className="ghost-button" href={sampleCsvLinks[sourceType].href} download>
+                      샘플
+                    </a>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
