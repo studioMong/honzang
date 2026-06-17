@@ -648,6 +648,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
             companyId={company.id || DEFAULT_COMPANY_ID}
             transactions={transactions}
             evidences={evidences}
+            reviewItems={visibleReviewItems}
             journalEntries={journalEntries}
             taxReports={taxReports}
             closingPeriods={closingPeriods}
@@ -722,6 +723,7 @@ function Dashboard({
   const dashboardCashFlowRows = buildCashFlowRows(dashboardTransactions);
   const dashboardCashFlowTotals = buildCashFlowTotals(dashboardCashFlowRows);
   const dashboardBankBalanceRows = buildBankBalanceCheckRows(dashboardTransactions, dashboardCashFlowTotals);
+  const evidenceAmountMismatchCount = countEvidenceAmountMismatchReviews(reviewItems);
   const dashboardReadinessRows = buildFilingReadinessRows({
     setupItems,
     transactions: dashboardTransactions,
@@ -779,7 +781,7 @@ function Dashboard({
         <Kpi label="비용" value={formatKRW(summary.expense)} foot="공급가액 추정" icon={<WalletCards size={16} />} />
         <Kpi label="손익" value={formatKRW(summary.profit)} foot={summary.profit >= 0 ? "흑자" : "적자"} icon={<BarChart3 size={16} />} />
         <Kpi label="부가세 예상" value={formatKRW(summary.vatPayable)} foot="양수 납부 · 음수 환급" icon={<FileSpreadsheet size={16} />} />
-        <Kpi label="검토" value={`${reviewItems.length}건`} foot={`위험 ${summary.riskCount}건`} icon={<AlertTriangle size={16} />} />
+        <Kpi label="검토" value={`${reviewItems.length}건`} foot={`위험 ${summary.riskCount}건 · 불일치 ${evidenceAmountMismatchCount}건`} icon={<AlertTriangle size={16} />} />
       </section>
 
       <section className="panel">
@@ -2127,6 +2129,7 @@ function ReportsPanel({
   companyId,
   transactions,
   evidences,
+  reviewItems,
   journalEntries,
   taxReports,
   closingPeriods,
@@ -2138,6 +2141,7 @@ function ReportsPanel({
   companyId: string;
   transactions: AppTransaction[];
   evidences: AppEvidence[];
+  reviewItems: ReviewItem[];
   journalEntries: AppJournalEntry[];
   taxReports: AppTaxReport[];
   closingPeriods: AppClosingPeriod[];
@@ -2157,12 +2161,14 @@ function ReportsPanel({
   const isPeriodClosed = Boolean(selectedClosingPeriod);
   const filteredTransactions = useMemo(() => filterTransactionsByPeriod(transactions, selectedPeriod), [selectedPeriod, transactions]);
   const filteredEvidences = useMemo(() => filterEvidencesByPeriod(evidences, selectedPeriod), [evidences, selectedPeriod]);
+  const filteredReviewItems = useMemo(() => filterReviewItemsByPeriod(reviewItems, selectedPeriod), [reviewItems, selectedPeriod]);
   const filteredJournalEntries = useMemo(() => filterJournalEntriesByPeriod(journalEntries, selectedPeriod), [journalEntries, selectedPeriod]);
   const approvedJournalEntries = useMemo(() => filteredJournalEntries.filter((entry) => entry.status === "APPROVED"), [filteredJournalEntries]);
   const reportSummary = useMemo(() => summarizeTransactions(filteredTransactions), [filteredTransactions]);
   const setupItems = buildCompanySetupItems(company);
   const expenseByAccount = groupExpensesByAccount(filteredTransactions);
-  const reviews = buildReviewItems(filteredTransactions);
+  const reviews = useMemo(() => filteredReviewItems.filter((item) => item.status === "OPEN"), [filteredReviewItems]);
+  const evidenceAmountMismatchCount = countEvidenceAmountMismatchReviews(reviews);
   const ledgerRows = buildLedgerRows(approvedJournalEntries);
   const withholdingRows = buildWithholdingRows(filteredTransactions);
   const financialStatementRows = buildFinancialStatementRows(ledgerRows);
@@ -2279,6 +2285,7 @@ function ReportsPanel({
             submissionGuideRows,
             dataSourceRows,
             filingPackageRows,
+            reviewItems: buildReviewCsv(reviews),
             withholdingRows,
             journalIntegrityRows,
             corporateTaxRows,
@@ -2351,6 +2358,7 @@ function ReportsPanel({
               submissionGuideRows,
               dataSourceRows,
               filingPackageRows,
+              reviewItems: buildReviewCsv(reviews),
               withholdingRows,
               journalIntegrityRows,
               corporateTaxRows,
@@ -3088,7 +3096,8 @@ function ReportsPanel({
         <Kpi label="매출 부가세" value={formatKRW(reportSummary.vatOutput)} foot="예수금" icon={<ReceiptText size={16} />} />
         <Kpi label="매입 부가세" value={formatKRW(reportSummary.vatInput)} foot="대급금" icon={<FileSpreadsheet size={16} />} />
         <Kpi label="예상 납부" value={formatKRW(reportSummary.vatPayable)} foot="확정 전" icon={<CheckCircle2 size={16} />} />
-        <Kpi label="증빙 누락" value={formatKRW(reportSummary.missingEvidenceAmount)} foot={`${reportSummary.reviewCount}건 검토`} icon={<AlertTriangle size={16} />} />
+        <Kpi label="증빙 누락" value={formatKRW(reportSummary.missingEvidenceAmount)} foot={`${formatNumber(reviews.length)}건 검토`} icon={<AlertTriangle size={16} />} />
+        <Kpi label="증빙 불일치" value={`${formatNumber(evidenceAmountMismatchCount)}건`} foot="거래-증빙 금액 차이" icon={<AlertTriangle size={16} />} />
       </section>
 
       <div className="split">
@@ -3172,6 +3181,7 @@ function ReportsPanel({
             <div className="review-list">
               <ChecklistItem tone="green" title="거래 분류" value={`${formatNumber(filteredTransactions.filter((tx) => tx.confirmedAccount || tx.suggestedAccount).length)}건`} />
               <ChecklistItem tone={reportSummary.missingEvidenceAmount > 0 ? "red" : "green"} title="증빙 확인" value={formatKRW(reportSummary.missingEvidenceAmount)} />
+              <ChecklistItem tone={evidenceAmountMismatchCount > 0 ? "red" : "green"} title="증빙 금액" value={`${formatNumber(evidenceAmountMismatchCount)}건 불일치`} />
               <ChecklistItem tone={reportSummary.vatPayable > 0 ? "amber" : "green"} title="부가세" value={formatKRW(reportSummary.vatPayable)} />
               <ChecklistItem tone={reportSummary.riskCount > 0 ? "amber" : "green"} title="원천세/대표자" value={`${reportSummary.riskCount}건`} />
             </div>
@@ -4655,6 +4665,7 @@ function buildDashboardActionItems({
   const items: DashboardAction[] = [];
   const missingSetupItems = setupItems.filter((item) => item.tone === "red");
   const latestPeriod = getLatestTransactionPeriod(transactions);
+  const evidenceAmountMismatchCount = countEvidenceAmountMismatchReviews(reviewItems);
 
   if (missingSetupItems.length > 0) {
     items.push({
@@ -4728,9 +4739,12 @@ function buildDashboardActionItems({
   if (reviewItems.length > 0) {
     items.push({
       title: "검토함 처리",
-      detail: "대표자 거래, 원천세 후보, 고액 비용 등 신고 전 확인 항목입니다.",
+      detail:
+        evidenceAmountMismatchCount > 0
+          ? `증빙 금액 불일치 ${formatNumber(evidenceAmountMismatchCount)}건을 포함한 신고 전 확인 항목입니다.`
+          : "대표자 거래, 원천세 후보, 고액 비용 등 신고 전 확인 항목입니다.",
       status: `${formatNumber(reviewItems.length)}건`,
-      tone: summary.riskCount > 0 ? "red" : "amber",
+      tone: summary.riskCount > 0 || evidenceAmountMismatchCount > 0 ? "red" : "amber",
       target: "reviews",
       actionLabel: "검토"
     });
@@ -5127,6 +5141,11 @@ function filterEvidencesByPeriod(evidences: AppEvidence[], period: string) {
   return evidences.filter((evidence) => evidence.issueDate?.startsWith(period) ?? false);
 }
 
+function filterReviewItemsByPeriod(reviewItems: ReviewItem[], period: string) {
+  if (period === "ALL") return reviewItems;
+  return reviewItems.filter((item) => item.transaction?.transactionDate.startsWith(period) ?? false);
+}
+
 function filterJournalEntriesByPeriod(journalEntries: AppJournalEntry[], period: string) {
   if (period === "ALL") return journalEntries;
   return journalEntries.filter((entry) => entry.entryDate.startsWith(period));
@@ -5170,6 +5189,7 @@ function buildTaxReportPayload({
   submissionGuideRows,
   dataSourceRows,
   filingPackageRows,
+  reviewItems,
   withholdingRows,
   journalIntegrityRows,
   corporateTaxRows,
@@ -5188,6 +5208,7 @@ function buildTaxReportPayload({
   submissionGuideRows: ReturnType<typeof buildFilingSubmissionGuideRows>;
   dataSourceRows: ReturnType<typeof buildDataSourceRows>;
   filingPackageRows: ReturnType<typeof buildFilingPackageRows>;
+  reviewItems: ReturnType<typeof buildReviewCsv>;
   withholdingRows: ReturnType<typeof buildWithholdingRows>;
   journalIntegrityRows: JournalIntegrityRow[];
   corporateTaxRows: ReturnType<typeof buildCorporateTaxRows>;
@@ -5207,6 +5228,7 @@ function buildTaxReportPayload({
     submissionGuideRows,
     dataSourceRows,
     filingPackageRows,
+    reviewItems,
     withholdingRows,
     journalIntegrityRows,
     corporateTaxRows,
@@ -5270,6 +5292,7 @@ function parseDetailedTaxReportPayload(payload: unknown) {
     submissionGuideRows: parseStringNumberRecordRows(record.submissionGuideRows) as ReturnType<typeof buildFilingSubmissionGuideRows>,
     dataSourceRows: parseStringNumberRecordRows(record.dataSourceRows) as ReturnType<typeof buildDataSourceRows>,
     filingPackageRows: parseStringNumberRecordRows(record.filingPackageRows) as ReturnType<typeof buildFilingPackageRows>,
+    reviewItems: parseStringNumberRecordRows(record.reviewItems) as ReturnType<typeof buildReviewCsv>,
     withholdingRows: parseStringNumberRecordRows(record.withholdingRows) as ReturnType<typeof buildWithholdingRows>,
     journalIntegrityRows: parseStringNumberRecordRows(record.journalIntegrityRows) as JournalIntegrityRow[],
     corporateTaxRows: parseStringNumberRecordRows(record.corporateTaxRows) as ReturnType<typeof buildCorporateTaxRows>,
@@ -5283,6 +5306,7 @@ function parseDetailedTaxReportPayload(payload: unknown) {
 }
 
 function buildTaxReportDetailRows(taxReport: AppTaxReport, payload: ReturnType<typeof parseDetailedTaxReportPayload>) {
+  const evidenceAmountMismatchCount = countEvidenceAmountMismatchReviewRows(payload.reviewItems);
   return [
     { 항목: "기간", 값: `${formatDate(taxReport.periodStart)} - ${formatDate(taxReport.periodEnd)}`, 확인: payload.periodLabel || taxReportTypeLabel(taxReport.reportType) },
     { 항목: "거래", 값: `${formatNumber(payload.transactionCount)}건`, 확인: "저장 당시 기간 필터 기준" },
@@ -5291,7 +5315,8 @@ function buildTaxReportDetailRows(taxReport: AppTaxReport, payload: ReturnType<t
     { 항목: "비용 공급가액", 값: formatKRW(payload.summary.expense), 확인: "비용 계정 출금 기준" },
     { 항목: "손익", 값: formatKRW(payload.summary.profit), 확인: payload.summary.profit >= 0 ? "이익" : "손실" },
     { 항목: "예상 부가세", 값: formatKRW(payload.summary.vatPayable), 확인: "확정 전 신고 준비 금액" },
-    { 항목: "증빙 누락", 값: formatKRW(payload.summary.missingEvidenceAmount), 확인: `${formatNumber(payload.summary.reviewCount)}건 검토` },
+    { 항목: "증빙 누락", 값: formatKRW(payload.summary.missingEvidenceAmount), 확인: `${formatNumber(payload.reviewItems.length)}건 검토` },
+    { 항목: "증빙 금액 불일치", 값: `${formatNumber(evidenceAmountMismatchCount)}건`, 확인: "거래금액과 연결 증빙 합계 대조" },
     { 항목: "현금흐름 순증감", 값: formatKRW(buildCashFlowTotals(payload.cashFlowRows).net), 확인: "저장 당시 거래 CSV 입출금 기준" },
     { 항목: "통장 잔액 대조", 값: formatReportAmount(summarizeBankBalanceRows(payload.bankBalanceRows).difference), 확인: summarizeBankBalanceRows(payload.bankBalanceRows).detail },
     { 항목: "재무제표 초안", 값: `${formatNumber(payload.financialStatementRows.length)}행`, 확인: "저장 당시 승인 분개 기준" },
@@ -5967,6 +5992,7 @@ function buildFilingWorkbookSheets(payload: ReturnType<typeof buildFilingPackage
 }
 
 function buildFilingSummaryRows(payload: ReturnType<typeof buildFilingPackagePayload>) {
+  const evidenceAmountMismatchCount = countEvidenceAmountMismatchReviewRows(payload.tables.reviewItems);
   return [
     { 항목: "앱", 값: payload.app },
     { 항목: "생성일시", 값: payload.generatedAt },
@@ -5991,7 +6017,8 @@ function buildFilingSummaryRows(payload: ReturnType<typeof buildFilingPackagePay
     { 항목: "매입 부가세", 값: payload.summary.vatInput },
     { 항목: "예상 납부/환급 부가세", 값: payload.summary.vatPayable },
     { 항목: "증빙 누락 비용", 값: payload.summary.missingEvidenceAmount },
-    { 항목: "검토 필요 건수", 값: payload.summary.reviewCount },
+    { 항목: "증빙 금액 불일치", 값: evidenceAmountMismatchCount },
+    { 항목: "검토 필요 건수", 값: payload.tables.reviewItems.length },
     { 항목: "위험 거래 건수", 값: payload.summary.riskCount }
   ];
 }
@@ -6220,6 +6247,20 @@ function buildReviewCsv(items: ReturnType<typeof buildReviewItems>) {
     거래처: item.transaction?.counterparty ?? "",
     금액: item.transaction?.withdrawalAmount || item.transaction?.depositAmount || 0
   }));
+}
+
+const EVIDENCE_AMOUNT_MISMATCH_REVIEW_REASON = "연결 증빙 합계가 거래금액과 일치하지 않습니다.";
+
+function countEvidenceAmountMismatchReviews(items: Array<Pick<ReviewItem, "reason">>) {
+  return items.filter((item) => isEvidenceAmountMismatchReason(item.reason)).length;
+}
+
+function countEvidenceAmountMismatchReviewRows(rows: Array<Record<string, unknown>>) {
+  return rows.filter((row) => isEvidenceAmountMismatchReason(row.사유)).length;
+}
+
+function isEvidenceAmountMismatchReason(reason: unknown) {
+  return typeof reason === "string" && reason.includes(EVIDENCE_AMOUNT_MISMATCH_REVIEW_REASON);
 }
 
 function buildEvidenceCsv(evidences: AppEvidence[]) {
