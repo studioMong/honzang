@@ -2440,12 +2440,32 @@ function SettingsPanel({
       setBackupMessage({ tone: "amber", text: "백업 복원은 Postgres DB 모드에서만 실행할 수 있습니다." });
       return;
     }
-    if (!window.confirm("현재 DB의 회사 데이터, 거래, 증빙, 분개, 리포트, 규칙을 백업 파일 내용으로 교체할까요?")) return;
 
     setRestoringBackup(true);
     setBackupMessage(null);
     try {
       const backup = JSON.parse(await file.text());
+      const dryRunResponse = await fetch("/api/backups/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ backup, dryRun: true })
+      });
+      const dryRunPayload = await dryRunResponse.json();
+      if (!dryRunResponse.ok) {
+        setBackupMessage({ tone: "red", text: dryRunPayload.message ?? "백업 JSON 형식이 올바르지 않습니다." });
+        return;
+      }
+
+      const dryRunCounts = dryRunPayload.restoredCounts ?? {};
+      const restoreText = [
+        "백업 검사 완료",
+        `거래 ${formatNumber(dryRunCounts.transactions ?? 0)}건`,
+        `증빙 ${formatNumber(dryRunCounts.evidences ?? 0)}건`,
+        `분개 ${formatNumber(dryRunCounts.journalEntries ?? 0)}개`,
+        "현재 DB의 회사 데이터, 거래, 증빙, 분개, 리포트, 규칙을 백업 파일 내용으로 교체할까요?"
+      ].join("\n");
+      if (!window.confirm(restoreText)) return;
+
       const response = await fetch("/api/backups/restore", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

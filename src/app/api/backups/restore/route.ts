@@ -202,15 +202,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: "백업 JSON 요청 본문을 읽을 수 없습니다." }, { status: 400 });
   }
 
-  if (!isRecord(body) || body.confirmReplace !== true) {
-    return NextResponse.json({ ok: false, message: "복원하려면 confirmReplace 값을 true로 보내야 합니다." }, { status: 400 });
+  if (!isRecord(body)) {
+    return NextResponse.json({ ok: false, message: "백업 복원 요청 형식이 아닙니다." }, { status: 400 });
   }
 
-  const candidate = isRecord(body) && "backup" in body ? body.backup : body;
+  const candidate = "backup" in body ? body.backup : body;
   const parsed = workspaceBackupSchema.safeParse(candidate);
 
   if (!parsed.success) {
     return NextResponse.json({ ok: false, message: "혼자장부 백업 JSON 형식이 아닙니다.", errors: parsed.error.flatten() }, { status: 400 });
+  }
+
+  if (body.dryRun === true) {
+    return NextResponse.json({
+      ok: true,
+      dryRun: true,
+      mode: getPrisma() ? "database" : "sample",
+      restoredCounts: buildRestoreCounts(parsed.data)
+    });
+  }
+
+  if (body.confirmReplace !== true) {
+    return NextResponse.json({ ok: false, message: "복원하려면 confirmReplace 값을 true로 보내야 합니다." }, { status: 400 });
   }
 
   const db = getPrisma();
@@ -256,18 +269,7 @@ async function restoreWorkspace(db: RestoreDb, backup: WorkspaceBackup) {
 
     return {
       company: restoredCompany,
-      restoredCounts: {
-        accounts: accountByCode.size,
-        csvTemplates: backup.csvTemplates.length,
-        importBatches: backup.importBatches.length,
-        transactions: backup.transactions.length,
-        evidences: backup.evidences.length,
-        journalEntries: backup.journalEntries.length,
-        taxReports: backup.taxReports.length,
-        vendors: backup.vendors.length,
-        classificationRules: backup.classificationRules.length,
-        reviewItems: backup.reviewItems.filter((item) => item.transaction?.id && transactionIdMap.has(item.transaction.id)).length
-      }
+      restoredCounts: { ...buildRestoreCounts(backup), accounts: accountByCode.size }
     };
   });
 }
@@ -582,6 +584,23 @@ function uniqueByCode<T extends { code: string }>(items: T[]) {
     byCode.set(item.code, item);
   }
   return [...byCode.values()];
+}
+
+function buildRestoreCounts(backup: WorkspaceBackup) {
+  const transactionIds = new Set(uniqueById(backup.transactions).map((transaction) => transaction.id));
+
+  return {
+    accounts: uniqueByCode([...DEFAULT_ACCOUNTS, ...backup.accounts]).length,
+    csvTemplates: uniqueById(backup.csvTemplates).length,
+    importBatches: uniqueById(backup.importBatches).length,
+    transactions: uniqueById(backup.transactions).length,
+    evidences: uniqueById(backup.evidences).length,
+    journalEntries: uniqueById(backup.journalEntries).length,
+    taxReports: uniqueById(backup.taxReports).length,
+    vendors: uniqueById(backup.vendors).length,
+    classificationRules: uniqueById(backup.classificationRules).length,
+    reviewItems: uniqueById(backup.reviewItems).filter((item) => item.transaction?.id && transactionIds.has(item.transaction.id)).length
+  };
 }
 
 function uniqueById<T extends { id?: string | null }>(items: T[]) {
