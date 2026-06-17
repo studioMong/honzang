@@ -27,21 +27,29 @@ export function parseMoney(value: unknown): number {
 }
 
 export function parseDate(value: unknown): string {
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
-  if (typeof value !== "string") return new Date().toISOString().slice(0, 10);
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? "" : value.toISOString().slice(0, 10);
+  if (typeof value !== "string") return "";
   const trimmed = value.trim();
-  const dotted = trimmed.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})/);
+  if (!trimmed) return "";
+
+  const dotted = trimmed.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})(?:[T\s].*)?$/);
   if (dotted) {
     const [, year, month, day] = dotted;
-    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    return validDateParts(Number(year), Number(month), Number(day)) ?? trimmed;
   }
-  const compact = trimmed.match(/^(\d{4})(\d{2})(\d{2})/);
+  const compact = trimmed.match(/^(\d{4})(\d{2})(\d{2})$/);
   if (compact) {
     const [, year, month, day] = compact;
-    return `${year}-${month}-${day}`;
+    return validDateParts(Number(year), Number(month), Number(day)) ?? trimmed;
   }
-  const parsed = new Date(trimmed);
-  return Number.isNaN(parsed.getTime()) ? new Date().toISOString().slice(0, 10) : parsed.toISOString().slice(0, 10);
+  return trimmed;
+}
+
+function validDateParts(year: number, month: number, day: number) {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 export function inferMapping(headers: string[], sourceType: SourceType): CsvColumnMapping {

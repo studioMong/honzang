@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import Papa from "papaparse";
-import { applyClassificationRules, applyVendorDefaults, generateJournalDraft, inferMapping, normalizeCsvRow, parseMoney, summarizeTransactions } from "../src/lib/accounting";
+import { applyClassificationRules, applyVendorDefaults, generateJournalDraft, inferMapping, normalizeCsvRow, parseDate, parseMoney, summarizeTransactions } from "../src/lib/accounting";
 import { DEFAULT_ACCOUNTS } from "../src/lib/defaults";
 import { buildEvidenceAmountReviewItems, resolveTransactionEvidenceStatus, type EvidenceAmountReviewTransaction } from "../src/lib/server/evidence-amount-reviews";
 import type { AppClassificationRule, AppTransaction, ParsedCsvRow, SourceType } from "../src/types";
@@ -72,6 +72,10 @@ const sampleCases: SampleCase[] = [
 assert.equal(parseMoney("(1,234원)"), 1_234, "parenthesized money should parse as an absolute amount");
 assert.equal(parseMoney("1,234-"), 1_234, "trailing negative money should parse as an absolute amount");
 assert.equal(parseMoney("-1,234"), 1_234, "leading negative money should parse as an absolute amount");
+assert.equal(parseDate("2026.6.7"), "2026-06-07", "dotted dates should normalize");
+assert.equal(parseDate("20260607"), "2026-06-07", "compact dates should normalize");
+assert.equal(parseDate("2026-02-31"), "2026-02-31", "invalid calendar dates should not become today's date");
+assert.equal(parseDate("날짜아님"), "날짜아님", "invalid date text should be preserved for preview and validation");
 
 function parseSampleCsv(filePath: string) {
   const csv = readFileSync(resolve(filePath), "utf8");
