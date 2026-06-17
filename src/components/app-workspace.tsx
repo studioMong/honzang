@@ -1527,6 +1527,7 @@ function ReportsPanel({
   const periodLabel = formatPeriodLabel(selectedPeriod);
   const periodRange = getReportPeriodRange(selectedPeriod, filteredTransactions);
   const filingScheduleRows = buildFilingScheduleRows(company, periodRange, reportSummary, withholdingRows, ledgerRows);
+  const vatPrepRows = buildVatCsv(reportSummary, filteredTransactions);
   const visibleTaxReports = taxReports.slice(0, 6);
   const selectedTaxReport = taxReports.find((taxReport) => taxReport.id === selectedTaxReportId) ?? null;
   const selectedPayload = selectedTaxReport ? parseDetailedTaxReportPayload(selectedTaxReport.calculatedPayload) : null;
@@ -1771,6 +1772,50 @@ function ReportsPanel({
                     <span className={`status ${row.톤}`}>{row.상태}</span>
                   </td>
                   <td>{row["다음 작업"]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="panel-title">부가세 입력 전 정리표</h2>
+            <p className="panel-subtitle">홈택스 입력 전 공급가액, 세액, 공제 보류 후보 확인</p>
+          </div>
+          <div className="toolbar">
+            <span className="status blue">{formatNumber(vatPrepRows.length)}행</span>
+            <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("vat-report", selectedPeriod), vatPrepRows)}>
+              <Download size={16} />
+              부가세
+            </button>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>구분</th>
+                <th>입력/확인 위치</th>
+                <th className="amount">공급가액</th>
+                <th className="amount">세액</th>
+                <th className="amount">건수</th>
+                <th>거래/근거</th>
+                <th>검토</th>
+              </tr>
+            </thead>
+            <tbody>
+              {vatPrepRows.map((row, index) => (
+                <tr key={`${row.구분}-${row["거래/근거"]}-${index}`}>
+                  <td>{row.구분}</td>
+                  <td>{row["신고서 입력/확인 위치"]}</td>
+                  <td className="amount">{formatReportAmount(row.공급가액)}</td>
+                  <td className="amount">{formatReportAmount(row.세액)}</td>
+                  <td className="amount">{formatNumber(Number(row.건수) || 0)}</td>
+                  <td>{row["거래/근거"]}</td>
+                  <td>{row.검토}</td>
                 </tr>
               ))}
             </tbody>
@@ -2059,7 +2104,7 @@ function ReportsPanel({
                 <Download size={16} />
                 거래
               </button>
-              <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("vat-report", selectedPeriod), buildVatCsv(reportSummary, filteredTransactions))}>
+              <button className="secondary-button" onClick={() => downloadCsv(buildReportFileName("vat-report", selectedPeriod), vatPrepRows)}>
                 <Download size={16} />
                 부가세
               </button>
@@ -4065,6 +4110,11 @@ function buildVatPrepRow(
     "거래/근거": basis,
     검토: review
   };
+}
+
+function formatReportAmount(value: string | number) {
+  if (typeof value === "number") return formatKRW(value);
+  return value || "-";
 }
 
 function isVatRevenueTransaction(transaction: AppTransaction) {
