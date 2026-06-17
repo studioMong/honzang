@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
 import Papa from "papaparse";
 import {
@@ -383,6 +383,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
             onSaved={setCompany}
             onVendorsChanged={setVendors}
             onRulesChanged={setClassificationRules}
+            onRestored={refresh}
           />
         )}
       </main>
@@ -2217,7 +2218,8 @@ function SettingsPanel({
   reviewItems,
   onSaved,
   onVendorsChanged,
-  onRulesChanged
+  onRulesChanged,
+  onRestored
 }: {
   mode: "sample" | "database";
   company: AppCompany;
@@ -2234,7 +2236,9 @@ function SettingsPanel({
   onSaved: (company: AppCompany) => void;
   onVendorsChanged: (vendors: AppVendor[]) => void;
   onRulesChanged: (rules: AppClassificationRule[]) => void;
+  onRestored: () => Promise<void>;
 }) {
+  const restoreInputRef = useRef<HTMLInputElement | null>(null);
   const [form, setForm] = useState<AppCompany>(company);
   const [vendorForm, setVendorForm] = useState({
     name: "",
@@ -2254,6 +2258,8 @@ function SettingsPanel({
   const [savingVendor, setSavingVendor] = useState(false);
   const [savingRule, setSavingRule] = useState(false);
   const [exportingBackup, setExportingBackup] = useState(false);
+  const [restoringBackup, setRestoringBackup] = useState(false);
+  const [backupMessage, setBackupMessage] = useState<{ tone: "green" | "red" | "amber"; text: string } | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const setupItems = buildCompanySetupItems(form);
   const missingCount = setupItems.filter((item) => item.tone === "red").length;
@@ -2425,6 +2431,42 @@ function SettingsPanel({
       downloadWorkspaceBackupArchive(buildWorkspaceBackupFileName("zip"), backupPayload, evidences, importSourceFiles);
     } finally {
       setExportingBackup(false);
+    }
+  }
+
+  async function restoreWorkspaceBackup(file?: File | null) {
+    if (!file) return;
+    if (mode !== "database") {
+      setBackupMessage({ tone: "amber", text: "백업 복원은 Postgres DB 모드에서만 실행할 수 있습니다." });
+      return;
+    }
+    if (!window.confirm("현재 DB의 회사 데이터, 거래, 증빙, 분개, 리포트, 규칙을 백업 파일 내용으로 교체할까요?")) return;
+
+    setRestoringBackup(true);
+    setBackupMessage(null);
+    try {
+      const backup = JSON.parse(await file.text());
+      const response = await fetch("/api/backups/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ backup, confirmReplace: true })
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        setBackupMessage({ tone: "red", text: payload.message ?? "백업 복원에 실패했습니다." });
+        return;
+      }
+
+      const counts = payload.restoredCounts ?? {};
+      setBackupMessage({
+        tone: "green",
+        text: `복원 완료: 거래 ${formatNumber(counts.transactions ?? 0)}건, 증빙 ${formatNumber(counts.evidences ?? 0)}건, 분개 ${formatNumber(counts.journalEntries ?? 0)}개`
+      });
+      await onRestored();
+    } catch {
+      setBackupMessage({ tone: "red", text: "백업 JSON을 읽거나 복원할 수 없습니다." });
+    } finally {
+      setRestoringBackup(false);
     }
   }
 
@@ -2751,6 +2793,22 @@ function SettingsPanel({
               {exportingBackup ? <Loader2 size={16} className="spin" /> : <Download size={16} />}
               백업 ZIP
             </button>
+            <button className="secondary-button" onClick={() => restoreInputRef.current?.click()} disabled={mode !== "database" || restoringBackup}>
+              {restoringBackup ? <Loader2 size={16} className="spin" /> : <Upload size={16} />}
+              백업 복원
+            </button>
+            <input
+              ref={restoreInputRef}
+              className="hidden-file-input"
+              type="file"
+              accept="application/json,.json"
+              disabled={mode !== "database" || restoringBackup}
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0];
+                event.currentTarget.value = "";
+                void restoreWorkspaceBackup(file);
+              }}
+            />
           </div>
         </div>
         <div className="panel-body">
@@ -2761,6 +2819,7 @@ function SettingsPanel({
             <ChecklistItem tone="green" title="리포트" value={`${formatNumber(taxReports.length)}개`} />
             <ChecklistItem tone="green" title="원본 CSV" value={`${formatNumber(importBatches.filter((batch) => batch.hasOriginalFile).length)}개`} />
           </div>
+          {backupMessage && <div className={`import-message status ${backupMessage.tone}`}>{backupMessage.text}</div>}
         </div>
       </section>
     </div>

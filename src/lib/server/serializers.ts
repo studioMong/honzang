@@ -70,6 +70,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function serializeTransaction(transaction: TransactionWithAccounts): AppTransaction {
   return {
     id: transaction.id,
+    importBatchId: transaction.importBatchId,
+    sourceRowNumber: transaction.sourceRowNumber,
     sourceType: transaction.sourceType,
     transactionDate: transaction.transactionDate.toISOString().slice(0, 10),
     description: transaction.description,
@@ -80,6 +82,7 @@ export function serializeTransaction(transaction: TransactionWithAccounts): AppT
     supplyAmount: transaction.supplyAmount === null ? null : Number(transaction.supplyAmount),
     vatAmount: transaction.vatAmount === null ? null : Number(transaction.vatAmount),
     balance: transaction.balance === null ? null : Number(transaction.balance),
+    approvalNumber: transaction.approvalNumber,
     suggestedAccount: serializeAccount(transaction.suggestedAccount),
     confirmedAccount: serializeAccount(transaction.confirmedAccount),
     evidenceStatus: transaction.evidenceStatus,

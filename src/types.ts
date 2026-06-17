@@ -42,6 +42,8 @@ export type AppAccount = {
 
 export type AppTransaction = {
   id: string;
+  importBatchId?: string | null;
+  sourceRowNumber?: number | null;
   sourceType: SourceType;
   transactionDate: string;
   description: string;
@@ -52,6 +54,7 @@ export type AppTransaction = {
   supplyAmount?: number | null;
   vatAmount?: number | null;
   balance?: number | null;
+  approvalNumber?: string | null;
   suggestedAccount?: AppAccount | null;
   confirmedAccount?: AppAccount | null;
   evidenceStatus: EvidenceStatus;

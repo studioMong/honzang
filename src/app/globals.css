@@ -209,6 +209,10 @@ a {
   color: var(--muted);
 }
 
+.hidden-file-input {
+  display: none;
+}
+
 .content {
   display: grid;
   gap: 16px;

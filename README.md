@@ -94,7 +94,7 @@ RAILWAY_EXPECTED_COMMIT=$(git rev-parse HEAD) npm run verify:railway
 - 신고 일정과 신고 준비 순서 안내
 - 승인 분개 기준 계정별 원장과 재무제표 초안
 - 신고 준비자료 XLSX 통합 문서와 JSON/CSV/DB 보관 증빙 ZIP 패키지 다운로드
-- 전체 워크스페이스 백업 JSON/ZIP 다운로드
+- 전체 워크스페이스 백업 JSON/ZIP 다운로드와 백업 JSON 복원
 
 ## CSV 샘플 제공 방식
 
