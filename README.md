@@ -40,6 +40,8 @@ Railway는 GitHub 저장소를 연결한 뒤 다음 설정을 사용합니다.
 - Start: `npm run start`
 - Healthcheck: `/api/health`
 
+루트에 정적 `index.html`을 두면 Railway가 정적 사이트로 감지할 수 있으므로, 참고용 HTML 문서는 `attachments/` 아래에 보관합니다.
+
 ## MVP 범위
 
 - 회사 기본 설정
