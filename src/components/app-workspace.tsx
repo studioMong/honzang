@@ -1884,7 +1884,11 @@ function JournalDraftsPanel({
       })
     });
     const payload = await response.json();
-    return (payload.journalEntry ?? null) as AppJournalEntry | null;
+    if (!response.ok || !payload.journalEntry?.lines) {
+      window.alert(payload.message ?? "분개 승인에 실패했습니다.");
+      return null;
+    }
+    return payload.journalEntry as AppJournalEntry;
   }
 
   async function approveDraft(draft: JournalDraft) {
@@ -1909,7 +1913,11 @@ function JournalDraftsPanel({
         body: JSON.stringify({ id: approvedEntry.id, status: "VOID" })
       });
       const payload = await response.json();
-      onChanged(payload.journalEntry?.lines ? payload.journalEntry : { ...approvedEntry, status: "VOID" });
+      if (!response.ok || !payload.journalEntry?.lines) {
+        window.alert(payload.message ?? "분개 승인 취소에 실패했습니다.");
+        return;
+      }
+      onChanged(payload.journalEntry);
     } finally {
       setSavingId(null);
     }
@@ -1921,7 +1929,8 @@ function JournalDraftsPanel({
       for (const draft of readyDrafts) {
         setSavingId(draft.transactionId);
         const entry = await saveDraft(draft);
-        if (entry) onChanged(entry);
+        if (!entry) break;
+        onChanged(entry);
       }
     } finally {
       setSavingId(null);
