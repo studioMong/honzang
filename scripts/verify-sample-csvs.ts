@@ -209,6 +209,21 @@ assert.equal(taxInvoiceContractorDraft.lines.find((line) => line.accountCode ===
 assert.equal(taxInvoiceContractorDraft.lines.find((line) => line.accountCode === "135")?.debitAmount, 30_000, "contractor tax invoice should create input VAT");
 console.log("Verified contractor journal draft VAT handling.");
 
+const businessIncomeContractor = applyVendorDefaults(contractorBase, [
+  {
+    id: "vendor-kim-design",
+    name: "김디자인",
+    defaultAccount: contractorAccount,
+    withholdingType: "BUSINESS_INCOME"
+  }
+]);
+const businessIncomeDraft = generateJournalDraft(businessIncomeContractor);
+assertBalancedDraft(businessIncomeDraft, "contractor business-income withholding draft");
+assert.equal(businessIncomeDraft.lines.find((line) => line.accountCode === "502")?.debitAmount, 341_262, "business-income withholding should gross up expense");
+assert.equal(businessIncomeDraft.lines.find((line) => line.accountCode === "253")?.creditAmount, 11_262, "business-income withholding should create withholding payable");
+assert.ok(businessIncomeDraft.warnings.some((warning) => warning.includes("3.3%")), "business-income withholding should keep review warning");
+console.log("Verified contractor withholding journal draft.");
+
 console.log("Sample CSV verification passed.");
 
 function assertBalancedDraft(draft: ReturnType<typeof generateJournalDraft>, label: string) {

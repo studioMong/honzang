@@ -158,7 +158,7 @@ export function applyVendorDefaults<T extends Pick<AppTransaction, "counterparty
     reasons.push(`거래처 기본 계정 적용: ${vendor.name}`);
   }
   if (vendor.withholdingType && vendor.withholdingType !== "NONE") {
-    reasons.push(`거래처 원천세 유형 확인: ${vendor.withholdingType}`);
+    reasons.push(`거래처 원천세 유형 확인: ${withholdingTypeReviewLabel(vendor.withholdingType)}`);
   }
 
   return {
@@ -260,6 +260,16 @@ function reviewReasonCategory(reason: string) {
 
 function normalizeVendorText(value?: string | null) {
   return (value ?? "").toLowerCase().replace(/\s+/g, "").trim();
+}
+
+function withholdingTypeReviewLabel(type: string) {
+  const labels: Record<string, string> = {
+    TAX_INVOICE: "세금계산서 수취",
+    BUSINESS_INCOME: "사업소득 3.3%",
+    OTHER_INCOME: "기타소득",
+    PAYROLL: "급여"
+  };
+  return labels[type] ?? type;
 }
 
 function transactionAccount(transaction: AppTransaction) {
@@ -378,11 +388,16 @@ export function generateJournalDraft(transaction: AppTransaction): JournalDraft 
     }
   } else if (transaction.withdrawalAmount > 0) {
     if (account.type === "EXPENSE") {
+      const withholdingRate = withholdingRateForJournalDraft(warnings);
+      const canCreateWithholdingLine = account.taxCategory === "WITHHOLDING_REVIEW" && !hasExplicitVatBreakdown && withholdingRate > 0;
+      const withholdingGrossAmount = canCreateWithholdingLine ? Math.round(transaction.withdrawalAmount / (1 - withholdingRate)) : 0;
+      const withholdingAmount = canCreateWithholdingLine ? Math.max(0, withholdingGrossAmount - transaction.withdrawalAmount) : 0;
       const canCreateInputVatLine =
+        !canCreateWithholdingLine &&
         vatAmount > 0 &&
         !hasForeignSaasSignal(transaction) &&
         (account.taxCategory === "VAT_INPUT" || (account.taxCategory === "WITHHOLDING_REVIEW" && hasExplicitVatBreakdown));
-      const expenseDebitAmount = canCreateInputVatLine ? supplyAmount : transaction.withdrawalAmount;
+      const expenseDebitAmount = canCreateWithholdingLine ? withholdingGrossAmount : canCreateInputVatLine ? supplyAmount : transaction.withdrawalAmount;
 
       lines.push({
         accountCode: account.code,
@@ -405,6 +420,17 @@ export function generateJournalDraft(transaction: AppTransaction): JournalDraft 
         creditAmount: transaction.withdrawalAmount,
         memo: "지출"
       });
+
+      if (canCreateWithholdingLine && withholdingAmount > 0) {
+        lines.push({
+          accountCode: "253",
+          accountName: "예수금",
+          debitAmount: 0,
+          creditAmount: withholdingAmount,
+          memo: "사업소득 3.3% 원천세 추정"
+        });
+        warnings.push("사업소득 3.3% 원천세 예수금은 지급액 기준 추정치이므로 신고 전 확인해야 합니다.");
+      }
     } else {
       lines.push({
         accountCode: account.code,
@@ -442,4 +468,9 @@ export function generateJournalDraft(transaction: AppTransaction): JournalDraft 
     })),
     warnings: [...new Set(warnings)]
   };
+}
+
+function withholdingRateForJournalDraft(warnings: string[]) {
+  const hasBusinessIncomeSignal = warnings.some((warning) => warning.includes("BUSINESS_INCOME") || warning.includes("사업소득 3.3%"));
+  return hasBusinessIncomeSignal ? 0.033 : 0;
 }
