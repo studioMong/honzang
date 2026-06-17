@@ -275,6 +275,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
   const [reviewItems, setReviewItems] = useState<ReviewItem[]>(buildReviewItems(sampleTransactions));
   const [reviewStatusOverrides, setReviewStatusOverrides] = useState<Record<string, ReviewItem["status"]>>({});
   const [loading, setLoading] = useState(false);
+  const [workspaceMessage, setWorkspaceMessage] = useState<PanelMessage | null>(null);
   const [mode, setMode] = useState<"sample" | "database">("sample");
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isStandaloneMode, setIsStandaloneMode] = useState(false);
@@ -294,44 +295,44 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
   async function refresh() {
     setLoading(true);
     try {
-      const [companyResponse, transactionResponse] = await Promise.all([
-        fetch("/api/companies", { cache: "no-store" }),
-        fetch("/api/transactions", { cache: "no-store" })
-      ]);
-      const importResponse = await fetch("/api/imports", { cache: "no-store" });
-      const evidenceResponse = await fetch("/api/evidences", { cache: "no-store" });
-      const journalResponse = await fetch("/api/journals", { cache: "no-store" });
-      const reportResponse = await fetch("/api/reports", { cache: "no-store" });
-      const reviewResponse = await fetch("/api/reviews", { cache: "no-store" });
-      const vendorResponse = await fetch("/api/vendors", { cache: "no-store" });
-      const auditResponse = await fetch("/api/audit-events", { cache: "no-store" });
-      const closingPeriodResponse = await fetch("/api/closing-periods", { cache: "no-store" });
-      const responses = [
-        companyResponse,
-        transactionResponse,
-        importResponse,
-        evidenceResponse,
-        journalResponse,
-        reportResponse,
-        reviewResponse,
-        vendorResponse,
-        auditResponse,
-        closingPeriodResponse
-      ];
-      if (responses.some((response) => response.status === 401)) {
+      const endpoints = [
+        { label: "회사", path: "/api/companies" },
+        { label: "거래", path: "/api/transactions" },
+        { label: "가져오기", path: "/api/imports" },
+        { label: "증빙", path: "/api/evidences" },
+        { label: "분개", path: "/api/journals" },
+        { label: "리포트", path: "/api/reports" },
+        { label: "검토", path: "/api/reviews" },
+        { label: "거래처", path: "/api/vendors" },
+        { label: "활동 로그", path: "/api/audit-events" },
+        { label: "월 마감", path: "/api/closing-periods" }
+      ] as const;
+      const responses = await Promise.all(
+        endpoints.map(async (endpoint) => ({
+          endpoint,
+          response: await fetch(endpoint.path, { cache: "no-store" })
+        }))
+      );
+      if (responses.some(({ response }) => response.status === 401)) {
         redirectToAccess();
         return;
       }
-      const companyPayload = await companyResponse.json();
-      const transactionPayload = await transactionResponse.json();
-      const importPayload = await importResponse.json();
-      const evidencePayload = await evidenceResponse.json();
-      const journalPayload = await journalResponse.json();
-      const reportPayload = await reportResponse.json();
-      const reviewPayload = await reviewResponse.json();
-      const vendorPayload = await vendorResponse.json();
-      const auditPayload = await auditResponse.json();
-      const closingPeriodPayload = await closingPeriodResponse.json();
+      const failedResponses = responses.filter(({ response }) => !response.ok);
+      if (failedResponses.length > 0) {
+        throw new Error(failedResponses.map(({ endpoint, response }) => `${endpoint.label} ${response.status}`).join(", "));
+      }
+      const [
+        companyPayload,
+        transactionPayload,
+        importPayload,
+        evidencePayload,
+        journalPayload,
+        reportPayload,
+        reviewPayload,
+        vendorPayload,
+        auditPayload,
+        closingPeriodPayload
+      ] = await Promise.all(responses.map(({ response }) => response.json()));
       const isDatabaseMode =
         companyPayload.mode === "database" ||
         transactionPayload.mode === "database" ||
@@ -358,7 +359,8 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       setClosingPeriods(closingPeriodPayload.closingPeriods ?? []);
       setReviewItems(reviewPayload.reviewItems ?? buildReviewItems(nextTransactions));
       setMode(isDatabaseMode ? "database" : "sample");
-    } catch {
+      setWorkspaceMessage(null);
+    } catch (error) {
       setCompany(sampleCompany);
       setAccounts(DEFAULT_ACCOUNTS);
       setCsvTemplates([]);
@@ -373,6 +375,14 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       setClosingPeriods([]);
       setReviewItems(buildReviewItems(sampleTransactions));
       setMode("sample");
+      setWorkspaceMessage({
+        tone: "red",
+        text: "데이터 로딩에 실패해 샘플 데이터로 전환했습니다.",
+        details: [
+          error instanceof Error && error.message ? `실패 항목: ${error.message}` : "API 응답을 확인할 수 없습니다.",
+          "Railway Postgres 연결, 접근코드 세션, API 배포 상태를 확인하세요."
+        ]
+      });
     } finally {
       setLoading(false);
     }
@@ -568,6 +578,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
             </button>
           </div>
         </header>
+        {workspaceMessage && <PanelMessageView message={workspaceMessage} />}
 
         {activeView === "dashboard" && (
           <Dashboard
