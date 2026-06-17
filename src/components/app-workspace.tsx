@@ -52,6 +52,17 @@ import { createZipBlob, type ZipFile } from "@/lib/zip";
 
 export type ViewKey = "dashboard" | "imports" | "transactions" | "evidences" | "journals" | "reviews" | "reports" | "settings";
 
+type StatusTone = "green" | "amber" | "red" | "blue";
+
+type FilingReadinessRow = {
+  순서: number;
+  점검: string;
+  상태: string;
+  톤: StatusTone;
+  근거: string;
+  "다음 작업": string;
+};
+
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
@@ -536,6 +547,25 @@ function Dashboard({
   const recent = transactions.slice(0, 6);
   const setupItems = buildCompanySetupItems(company);
   const readyCount = setupItems.filter((item) => item.tone !== "red").length;
+  const latestPeriod = getLatestTransactionPeriod(transactions);
+  const dashboardTransactions = latestPeriod ? filterTransactionsByPeriod(transactions, latestPeriod) : [];
+  const dashboardJournalEntries = latestPeriod ? filterJournalEntriesByPeriod(journalEntries, latestPeriod) : [];
+  const dashboardApprovedJournalEntries = dashboardJournalEntries.filter((entry) => entry.status === "APPROVED");
+  const dashboardReadinessRows = buildFilingReadinessRows({
+    transactions: dashboardTransactions,
+    summary: summarizeTransactions(dashboardTransactions),
+    dataSourceRows: buildDataSourceRows(dashboardTransactions),
+    withholdingRows: buildWithholdingRows(dashboardTransactions),
+    journalEntries: dashboardJournalEntries,
+    ledgerRows: buildLedgerRows(dashboardApprovedJournalEntries),
+    isPeriodClosed: Boolean(latestPeriod && closingPeriods.some((period) => period.period === latestPeriod)),
+    canClosePeriod: Boolean(latestPeriod)
+  });
+  const readinessBlockers = dashboardReadinessRows.filter((row) => row.톤 === "red").length;
+  const readinessWarnings = dashboardReadinessRows.filter((row) => row.톤 === "amber").length;
+  const readinessDone = dashboardReadinessRows.filter((row) => row.톤 === "green").length;
+  const readinessPercent = Math.round((readinessDone / Math.max(1, dashboardReadinessRows.length)) * 100);
+  const readinessStatus = readinessBlockers > 0 ? "차단" : readinessWarnings > 0 ? "확인 필요" : "준비 가능";
   const actionItems = buildDashboardActionItems({
     company,
     summary,
@@ -571,6 +601,27 @@ function Dashboard({
           <div className="action-list">
             {actionItems.map((item) => (
               <DashboardActionItem key={item.title} item={item} onMove={onMove} />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="panel-title">최근 월 신고 준비</h2>
+            <p className="panel-subtitle">{latestPeriod ? `${formatPeriodLabel(latestPeriod)} 기준` : "거래 업로드 후 월별 점검 생성"}</p>
+          </div>
+          <button className="ghost-button" onClick={() => onMove("reports")}>리포트</button>
+        </div>
+        <div className="panel-body setup-grid">
+          <div className="setup-score">
+            <strong>{readinessPercent}%</strong>
+            <span>{readinessStatus}</span>
+          </div>
+          <div className="review-list">
+            {dashboardReadinessRows.map((row) => (
+              <ChecklistItem key={row.점검} tone={row.톤} title={`${row.순서}. ${row.점검}`} value={row.상태} />
             ))}
           </div>
         </div>
@@ -3901,7 +3952,7 @@ function Kpi({ label, value, foot, icon }: { label: string; value: string; foot:
   );
 }
 
-function ChecklistItem({ title, value, tone }: { title: string; value: string; tone: "green" | "amber" | "red" }) {
+function ChecklistItem({ title, value, tone }: { title: string; value: string; tone: StatusTone }) {
   return (
     <div className="review-item">
       <div className="review-row">
@@ -5032,7 +5083,7 @@ function buildFilingReadinessRows({
   ledgerRows: ReturnType<typeof buildLedgerRows>;
   isPeriodClosed: boolean;
   canClosePeriod: boolean;
-}) {
+}): FilingReadinessRow[] {
   const totalTransactions = transactions.length;
   const bankSourceMissing = dataSourceRows.some((row) => row.자료 === SOURCE_TYPE_LABELS.BANK && row.상태 === "확인 필요");
   const supportingSourceMissingCount = dataSourceRows.filter((row) => row.자료 !== SOURCE_TYPE_LABELS.BANK && row.상태 === "확인 필요").length;
@@ -5040,7 +5091,7 @@ function buildFilingReadinessRows({
   const missingEvidenceCount = transactions.filter((transaction) => transaction.withdrawalAmount > 0 && ["UNCHECKED", "MISSING"].includes(transaction.evidenceStatus)).length;
   const approvedJournalCount = journalEntries.filter((entry) => entry.status === "APPROVED").length;
   const draftJournalCount = journalEntries.filter((entry) => entry.status === "DRAFT").length;
-  const sourceTone = totalTransactions === 0 || bankSourceMissing ? "red" : supportingSourceMissingCount > 0 ? "amber" : "green";
+  const sourceTone: StatusTone = totalTransactions === 0 || bankSourceMissing ? "red" : supportingSourceMissingCount > 0 ? "amber" : "green";
 
   return [
     {

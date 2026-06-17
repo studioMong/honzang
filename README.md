@@ -99,6 +99,7 @@ RAILWAY_EXPECTED_COMMIT=$(git rev-parse HEAD) npm run verify:railway
 - 검토함
 - 검토 항목 처리 상태 관리
 - 주요 작업 활동 로그
+- 대시보드 최근 월 신고 준비율
 - 월별 손익, 부가세 신고 입력 전 정리표, 위험거래 리포트
 - 신고 차단/확인 항목을 순서대로 보여주는 최종 신고 점검
 - 신고 일정과 신고 준비 순서 안내
