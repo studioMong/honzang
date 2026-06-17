@@ -8,6 +8,14 @@ const baseUrl = `http://127.0.0.1:${port}`;
 const startupTimeoutMs = Number(process.env.SMOKE_TIMEOUT_MS ?? 20_000);
 const serverPath = ".next/standalone/server.js";
 const oversizedJsonText = "x".repeat(500_001);
+const sampleCsvChecks = [
+  ["/samples/bank-transactions.csv", "거래일"],
+  ["/samples/card-transactions.csv", "승인번호"],
+  ["/samples/hometax-sales.csv", "공급가액"],
+  ["/samples/hometax-purchases.csv", "공급가액"],
+  ["/samples/cash-receipts.csv", "승인번호"],
+  ["/samples/pg-settlements.csv", "정산금액"]
+];
 
 if (!existsSync(serverPath)) {
   console.error(`${serverPath} not found. Run npm run build before npm run smoke:prod.`);
@@ -50,6 +58,9 @@ try {
     body.checks.some((check) => check.key === "accessCode") &&
     Number.isInteger(body.summary?.blockers)
   );
+  for (const [path, expectedHeader] of sampleCsvChecks) {
+    await expectText(path, (body) => body.includes(expectedHeader));
+  }
   await expectInvalidClosingPeriod();
   await expectInvalidClosingPayload();
   await expectMissingClosingReadiness();
