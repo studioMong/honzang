@@ -8,7 +8,9 @@ import {
   BarChart3,
   CheckCircle2,
   Download,
+  FileCheck2,
   FileSpreadsheet,
+  GitBranch,
   LayoutDashboard,
   ListChecks,
   Loader2,
@@ -21,6 +23,7 @@ import {
 import type {
   AppAccount,
   AppCompany,
+  AppEvidence,
   AppTransaction,
   CsvColumnMapping,
   CsvTemplate,
@@ -30,16 +33,18 @@ import type {
   SourceType
 } from "@/types";
 import { DEFAULT_ACCOUNTS, DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/defaults";
-import { normalizeCsvRow, summarizeTransactions } from "@/lib/accounting";
+import { generateJournalDraft, normalizeCsvRow, summarizeTransactions } from "@/lib/accounting";
 import { formatDate, formatKRW, formatNumber } from "@/lib/format";
-import { sampleCompany, sampleTransactions } from "@/lib/sample-data";
+import { sampleCompany, sampleEvidences, sampleTransactions } from "@/lib/sample-data";
 
-export type ViewKey = "dashboard" | "imports" | "transactions" | "reviews" | "reports" | "settings";
+export type ViewKey = "dashboard" | "imports" | "transactions" | "evidences" | "journals" | "reviews" | "reports" | "settings";
 
 const views: Array<{ key: ViewKey; label: string; icon: React.ComponentType<{ size?: number }> }> = [
   { key: "dashboard", label: "대시보드", icon: LayoutDashboard },
   { key: "imports", label: "업로드", icon: Upload },
   { key: "transactions", label: "거래내역", icon: WalletCards },
+  { key: "evidences", label: "증빙함", icon: FileCheck2 },
+  { key: "journals", label: "자동분개", icon: GitBranch },
   { key: "reviews", label: "검토함", icon: ListChecks },
   { key: "reports", label: "리포트", icon: BarChart3 },
   { key: "settings", label: "설정", icon: Settings }
@@ -66,6 +71,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
   const [accounts, setAccounts] = useState<AppAccount[]>(DEFAULT_ACCOUNTS);
   const [csvTemplates, setCsvTemplates] = useState<CsvTemplate[]>([]);
   const [transactions, setTransactions] = useState<AppTransaction[]>(sampleTransactions);
+  const [evidences, setEvidences] = useState<AppEvidence[]>(sampleEvidences);
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<"sample" | "database">("sample");
 
@@ -79,18 +85,22 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
         fetch("/api/companies", { cache: "no-store" }),
         fetch("/api/transactions", { cache: "no-store" })
       ]);
+      const evidenceResponse = await fetch("/api/evidences", { cache: "no-store" });
       const companyPayload = await companyResponse.json();
       const transactionPayload = await transactionResponse.json();
+      const evidencePayload = await evidenceResponse.json();
       setCompany(companyPayload.company ?? sampleCompany);
       setAccounts(companyPayload.accounts ?? DEFAULT_ACCOUNTS);
       setCsvTemplates(companyPayload.csvTemplates ?? []);
       setTransactions(transactionPayload.transactions?.length ? transactionPayload.transactions : sampleTransactions);
-      setMode(companyPayload.mode === "database" || transactionPayload.mode === "database" ? "database" : "sample");
+      setEvidences(evidencePayload.evidences?.length ? evidencePayload.evidences : sampleEvidences);
+      setMode(companyPayload.mode === "database" || transactionPayload.mode === "database" || evidencePayload.mode === "database" ? "database" : "sample");
     } catch {
       setCompany(sampleCompany);
       setAccounts(DEFAULT_ACCOUNTS);
       setCsvTemplates([]);
       setTransactions(sampleTransactions);
+      setEvidences(sampleEvidences);
       setMode("sample");
     } finally {
       setLoading(false);
@@ -198,6 +208,24 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
         {activeView === "transactions" && (
           <TransactionsPanel transactions={transactions} accounts={accounts} onUpdate={updateTransaction} />
         )}
+        {activeView === "evidences" && (
+          <EvidencesPanel
+            companyId={company.id || DEFAULT_COMPANY_ID}
+            evidences={evidences}
+            transactions={transactions}
+            onCreated={(evidence) => {
+              setEvidences((current) => [evidence, ...current]);
+              if (evidence.transactionId) {
+                setTransactions((current) =>
+                  current.map((transaction) =>
+                    transaction.id === evidence.transactionId ? { ...transaction, evidenceStatus: "MATCHED" } : transaction
+                  )
+                );
+              }
+            }}
+          />
+        )}
+        {activeView === "journals" && <JournalDraftsPanel transactions={transactions} />}
         {activeView === "reviews" && <ReviewsPanel items={reviewItems} />}
         {activeView === "reports" && <ReportsPanel summary={summary} transactions={transactions} />}
         {activeView === "settings" && <SettingsPanel company={company} accounts={accounts} onSaved={setCompany} />}
@@ -461,6 +489,249 @@ function TransactionsPanel({
         </table>
       </div>
     </section>
+  );
+}
+
+function EvidencesPanel({
+  companyId,
+  evidences,
+  transactions,
+  onCreated
+}: {
+  companyId: string;
+  evidences: AppEvidence[];
+  transactions: AppTransaction[];
+  onCreated: (evidence: AppEvidence) => void;
+}) {
+  const [form, setForm] = useState({
+    evidenceType: "전자세금계산서",
+    issueDate: new Date().toISOString().slice(0, 10),
+    counterparty: "",
+    businessRegistrationNumber: "",
+    supplyAmount: "",
+    vatAmount: "",
+    totalAmount: "",
+    fileName: "",
+    transactionId: ""
+  });
+  const [saving, setSaving] = useState(false);
+
+  function updateField(key: keyof typeof form, value: string) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function createEvidence() {
+    setSaving(true);
+    try {
+      const response = await fetch("/api/evidences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId,
+          evidenceType: form.evidenceType,
+          issueDate: form.issueDate,
+          counterparty: form.counterparty || null,
+          businessRegistrationNumber: form.businessRegistrationNumber || null,
+          supplyAmount: form.supplyAmount ? Number(form.supplyAmount) : null,
+          vatAmount: form.vatAmount ? Number(form.vatAmount) : null,
+          totalAmount: form.totalAmount ? Number(form.totalAmount) : null,
+          fileName: form.fileName || null,
+          transactionId: form.transactionId || null
+        })
+      });
+      const payload = await response.json();
+      if (payload.evidence) {
+        onCreated(payload.evidence);
+        setForm((current) => ({
+          ...current,
+          counterparty: "",
+          businessRegistrationNumber: "",
+          supplyAmount: "",
+          vatAmount: "",
+          totalAmount: "",
+          fileName: "",
+          transactionId: ""
+        }));
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="content">
+      <section className="panel">
+        <div className="panel-header">
+          <h2 className="panel-title">증빙 추가</h2>
+          <button className="primary-button" onClick={() => void createEvidence()} disabled={saving}>
+            {saving ? <Loader2 size={17} className="spin" /> : <CheckCircle2 size={17} />}
+            저장
+          </button>
+        </div>
+        <div className="panel-body form-grid">
+          <div className="field">
+            <label>증빙 유형</label>
+            <select value={form.evidenceType} onChange={(event) => updateField("evidenceType", event.target.value)}>
+              <option value="전자세금계산서">전자세금계산서</option>
+              <option value="계산서">계산서</option>
+              <option value="카드전표">카드전표</option>
+              <option value="현금영수증">현금영수증</option>
+              <option value="인보이스">인보이스</option>
+              <option value="기타영수증">기타영수증</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>발행일</label>
+            <input type="date" value={form.issueDate} onChange={(event) => updateField("issueDate", event.target.value)} />
+          </div>
+          <div className="field">
+            <label>거래처</label>
+            <input value={form.counterparty} onChange={(event) => updateField("counterparty", event.target.value)} />
+          </div>
+          <div className="field">
+            <label>사업자등록번호</label>
+            <input value={form.businessRegistrationNumber} onChange={(event) => updateField("businessRegistrationNumber", event.target.value)} />
+          </div>
+          <div className="field">
+            <label>공급가액</label>
+            <input inputMode="numeric" value={form.supplyAmount} onChange={(event) => updateField("supplyAmount", event.target.value)} />
+          </div>
+          <div className="field">
+            <label>부가세</label>
+            <input inputMode="numeric" value={form.vatAmount} onChange={(event) => updateField("vatAmount", event.target.value)} />
+          </div>
+          <div className="field">
+            <label>합계</label>
+            <input inputMode="numeric" value={form.totalAmount} onChange={(event) => updateField("totalAmount", event.target.value)} />
+          </div>
+          <div className="field">
+            <label>거래 매칭</label>
+            <select value={form.transactionId} onChange={(event) => updateField("transactionId", event.target.value)}>
+              <option value="">매칭 안 함</option>
+              {transactions.map((transaction) => (
+                <option key={transaction.id} value={transaction.id}>
+                  {transaction.transactionDate} · {transaction.description} · {formatKRW(transaction.depositAmount || transaction.withdrawalAmount)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label>파일명</label>
+            <input value={form.fileName} onChange={(event) => updateField("fileName", event.target.value)} placeholder="invoice.pdf" />
+          </div>
+          <label className="file-drop">
+            <input
+              type="file"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) updateField("fileName", file.name);
+              }}
+            />
+            <span>
+              <FileCheck2 size={28} />
+              <strong>{form.fileName || "증빙 파일 선택"}</strong>
+              <span>초기 버전은 파일명과 매칭 정보를 저장합니다</span>
+            </span>
+          </label>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <h2 className="panel-title">증빙 목록</h2>
+          <span className="status blue">{formatNumber(evidences.length)}건</span>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>발행일</th>
+                <th>유형</th>
+                <th>거래처</th>
+                <th>매칭 거래</th>
+                <th className="amount">공급가액</th>
+                <th className="amount">부가세</th>
+                <th className="amount">합계</th>
+                <th>파일</th>
+              </tr>
+            </thead>
+            <tbody>
+              {evidences.map((evidence) => (
+                <tr key={evidence.id}>
+                  <td>{evidence.issueDate ? formatDate(evidence.issueDate) : "-"}</td>
+                  <td>{evidence.evidenceType}</td>
+                  <td>{evidence.counterparty ?? "-"}</td>
+                  <td>{evidence.transaction?.description ?? "-"}</td>
+                  <td className="amount">{evidence.supplyAmount ? formatKRW(evidence.supplyAmount) : "-"}</td>
+                  <td className="amount">{evidence.vatAmount ? formatKRW(evidence.vatAmount) : "-"}</td>
+                  <td className="amount">{evidence.totalAmount ? formatKRW(evidence.totalAmount) : "-"}</td>
+                  <td>{evidence.fileName ?? "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function JournalDraftsPanel({ transactions }: { transactions: AppTransaction[] }) {
+  const drafts = transactions.map(generateJournalDraft);
+
+  return (
+    <div className="content">
+      <section className="panel">
+        <div className="panel-header">
+          <h2 className="panel-title">자동분개 초안</h2>
+          <span className="status blue">{formatNumber(drafts.length)}건</span>
+        </div>
+        <div className="panel-body review-list">
+          {drafts.map((draft) => (
+            <article key={draft.transactionId} className="journal-card">
+              <div className="review-row">
+                <div>
+                  <strong>{draft.memo}</strong>
+                  <div className="muted">{draft.entryDate} · 차변 {formatKRW(draft.lines.reduce((sum, line) => sum + line.debitAmount, 0))} · 대변 {formatKRW(draft.lines.reduce((sum, line) => sum + line.creditAmount, 0))}</div>
+                </div>
+                <span className={draft.warnings.length ? "status amber" : "status green"}>{draft.warnings.length ? "검토 필요" : "균형"}</span>
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>계정</th>
+                      <th className="amount">차변</th>
+                      <th className="amount">대변</th>
+                      <th>메모</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {draft.lines.map((line, index) => (
+                      <tr key={`${draft.transactionId}-${line.accountCode}-${index}`}>
+                        <td>
+                          {line.accountCode} {line.accountName}
+                        </td>
+                        <td className="amount">{line.debitAmount ? formatKRW(line.debitAmount) : "-"}</td>
+                        <td className="amount">{line.creditAmount ? formatKRW(line.creditAmount) : "-"}</td>
+                        <td>{line.memo ?? "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {draft.warnings.length > 0 && (
+                <div className="journal-warnings">
+                  {draft.warnings.map((warning) => (
+                    <span key={warning} className="status amber">{warning}</span>
+                  ))}
+                </div>
+              )}
+            </article>
+          ))}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -931,6 +1202,8 @@ function getViewTitle(view: ViewKey) {
     dashboard: "대시보드",
     imports: "자료 업로드",
     transactions: "거래내역",
+    evidences: "증빙함",
+    journals: "자동분개",
     reviews: "검토함",
     reports: "신고 준비 리포트",
     settings: "설정"

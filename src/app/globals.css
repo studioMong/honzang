@@ -471,6 +471,26 @@ th.amount {
   gap: 12px;
 }
 
+.journal-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.journal-card table {
+  min-width: 620px;
+  background: var(--surface);
+}
+
+.journal-warnings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .muted {
   color: var(--muted);
 }
@@ -495,7 +515,7 @@ th.amount {
   }
 
   .nav {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(8, minmax(0, 1fr));
   }
 
   .nav-button {

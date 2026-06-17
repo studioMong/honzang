@@ -57,6 +57,38 @@ export type AppTransaction = {
   reviewReasons?: string[];
 };
 
+export type AppEvidence = {
+  id: string;
+  evidenceType: string;
+  issueDate?: string | null;
+  counterparty?: string | null;
+  businessRegistrationNumber?: string | null;
+  supplyAmount?: number | null;
+  vatAmount?: number | null;
+  totalAmount?: number | null;
+  fileName?: string | null;
+  fileUrl?: string | null;
+  transactionId?: string | null;
+  transaction?: AppTransaction | null;
+};
+
+export type JournalDraftLine = {
+  accountCode: string;
+  accountName: string;
+  debitAmount: number;
+  creditAmount: number;
+  memo?: string;
+};
+
+export type JournalDraft = {
+  transactionId: string;
+  entryDate: string;
+  memo: string;
+  status: "DRAFT";
+  lines: JournalDraftLine[];
+  warnings: string[];
+};
+
 export type CsvColumnMapping = {
   transactionDate?: string;
   description?: string;

@@ -1,4 +1,4 @@
-import type { AppCompany, AppTransaction, ReviewItem, SummaryReport } from "@/types";
+import type { AppCompany, AppEvidence, AppTransaction, ReviewItem, SummaryReport } from "@/types";
 import { DEFAULT_ACCOUNTS, DEFAULT_COMPANY_ID } from "@/lib/defaults";
 
 const account = (code: string) => DEFAULT_ACCOUNTS.find((item) => item.code === code) ?? null;
@@ -117,6 +117,33 @@ export const sampleReviews: ReviewItem[] = [
     recommendation: "사업소득 원천세 대상인지, 세금계산서 수취 거래인지 구분하세요.",
     status: "OPEN",
     transaction: sampleTransactions[4]
+  }
+];
+
+export const sampleEvidences: AppEvidence[] = [
+  {
+    id: "ev-sample-1",
+    evidenceType: "전자세금계산서",
+    issueDate: "2026-06-03",
+    counterparty: "몽고객사",
+    supplyAmount: 1000000,
+    vatAmount: 100000,
+    totalAmount: 1100000,
+    fileName: "sales-tax-invoice-sample.pdf",
+    transactionId: "tx-sample-1",
+    transaction: sampleTransactions[0]
+  },
+  {
+    id: "ev-sample-2",
+    evidenceType: "카드전표",
+    issueDate: "2026-06-05",
+    counterparty: "네이버파이낸셜",
+    supplyAmount: 100000,
+    vatAmount: 10000,
+    totalAmount: 110000,
+    fileName: "naver-ads-card-slip.pdf",
+    transactionId: "tx-sample-2",
+    transaction: sampleTransactions[1]
   }
 ];
 

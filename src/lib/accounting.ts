@@ -1,4 +1,4 @@
-import type { AppAccount, AppTransaction, ParsedCsvRow, CsvColumnMapping, SourceType } from "@/types";
+import type { AppAccount, AppTransaction, JournalDraft, ParsedCsvRow, CsvColumnMapping, SourceType } from "@/types";
 import { DEFAULT_ACCOUNTS } from "@/lib/defaults";
 
 const keywordAccountRules: Array<{ keywords: string[]; code: string; reason?: string }> = [
@@ -143,5 +143,106 @@ export function summarizeTransactions(transactions: AppTransaction[]) {
     missingEvidenceAmount: Math.round(missingEvidenceAmount),
     reviewCount,
     riskCount: transactions.filter((tx) => tx.reviewReasons?.some((reason) => reason.includes("원천세") || reason.includes("대표자"))).length
+  };
+}
+
+export function generateJournalDraft(transaction: AppTransaction): JournalDraft {
+  const account = transaction.confirmedAccount ?? transaction.suggestedAccount ?? DEFAULT_ACCOUNTS.find((item) => item.code === "599");
+  const warnings = [...(transaction.reviewReasons ?? [])];
+  const lines: JournalDraft["lines"] = [];
+  const date = transaction.transactionDate;
+  const memo = transaction.description;
+
+  if (!account) {
+    return {
+      transactionId: transaction.id,
+      entryDate: date,
+      memo,
+      status: "DRAFT",
+      lines: [],
+      warnings: ["계정과목을 먼저 지정해야 분개 초안을 만들 수 있습니다."]
+    };
+  }
+
+  const supplyAmount = transaction.supplyAmount ?? Math.round((transaction.depositAmount || transaction.withdrawalAmount) / 1.1);
+  const vatAmount = transaction.vatAmount ?? Math.round((transaction.depositAmount || transaction.withdrawalAmount) - supplyAmount);
+
+  if (transaction.depositAmount > 0) {
+    lines.push({
+      accountCode: "101",
+      accountName: "보통예금",
+      debitAmount: transaction.depositAmount,
+      creditAmount: 0,
+      memo: transaction.counterparty ?? undefined
+    });
+
+    if (account.code === "401") {
+      lines.push({ accountCode: "401", accountName: "매출", debitAmount: 0, creditAmount: supplyAmount, memo });
+      lines.push({ accountCode: "255", accountName: "부가세예수금", debitAmount: 0, creditAmount: vatAmount, memo: "매출 부가세" });
+    } else {
+      lines.push({
+        accountCode: account.code,
+        accountName: account.name,
+        debitAmount: 0,
+        creditAmount: transaction.depositAmount,
+        memo
+      });
+    }
+  } else if (transaction.withdrawalAmount > 0) {
+    if (account.type === "EXPENSE") {
+      lines.push({
+        accountCode: account.code,
+        accountName: account.name,
+        debitAmount: supplyAmount,
+        creditAmount: 0,
+        memo
+      });
+
+      if (vatAmount > 0 && account.taxCategory === "VAT_INPUT") {
+        lines.push({ accountCode: "135", accountName: "부가세대급금", debitAmount: vatAmount, creditAmount: 0, memo: "매입 부가세" });
+      } else if (vatAmount > 0) {
+        warnings.push("부가세 공제 가능 여부를 확인해야 합니다.");
+      }
+
+      lines.push({
+        accountCode: "101",
+        accountName: "보통예금",
+        debitAmount: 0,
+        creditAmount: transaction.withdrawalAmount,
+        memo: "지출"
+      });
+    } else {
+      lines.push({
+        accountCode: account.code,
+        accountName: account.name,
+        debitAmount: transaction.withdrawalAmount,
+        creditAmount: 0,
+        memo
+      });
+      lines.push({
+        accountCode: "101",
+        accountName: "보통예금",
+        debitAmount: 0,
+        creditAmount: transaction.withdrawalAmount,
+        memo: "출금"
+      });
+    }
+  } else {
+    warnings.push("입금/출금 금액이 없어 분개 초안이 비어 있습니다.");
+  }
+
+  const debit = lines.reduce((sum, line) => sum + line.debitAmount, 0);
+  const credit = lines.reduce((sum, line) => sum + line.creditAmount, 0);
+  if (debit !== credit) {
+    warnings.push(`차변/대변 차액 ${Math.abs(debit - credit).toLocaleString("ko-KR")}원을 확인해야 합니다.`);
+  }
+
+  return {
+    transactionId: transaction.id,
+    entryDate: date,
+    memo,
+    status: "DRAFT",
+    lines,
+    warnings: [...new Set(warnings)]
   };
 }

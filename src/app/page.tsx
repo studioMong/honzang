@@ -1,7 +1,7 @@
 import { AppWorkspace } from "@/components/app-workspace";
 import type { ViewKey } from "@/components/app-workspace";
 
-const viewKeys = new Set(["dashboard", "imports", "transactions", "reviews", "reports", "settings"]);
+const viewKeys = new Set(["dashboard", "imports", "transactions", "evidences", "journals", "reviews", "reports", "settings"]);
 
 export default async function HomePage({
   searchParams

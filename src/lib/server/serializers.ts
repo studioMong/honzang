@@ -1,5 +1,5 @@
-import type { Account, Transaction } from "@prisma/client";
-import type { AppAccount, AppTransaction } from "@/types";
+import type { Account, Evidence, Transaction } from "@prisma/client";
+import type { AppAccount, AppEvidence, AppTransaction } from "@/types";
 
 type TransactionWithAccounts = Transaction & {
   suggestedAccount?: Account | null;
@@ -34,5 +34,22 @@ export function serializeTransaction(transaction: TransactionWithAccounts): AppT
     confirmedAccount: serializeAccount(transaction.confirmedAccount),
     evidenceStatus: transaction.evidenceStatus,
     memo: transaction.memo
+  };
+}
+
+export function serializeEvidence(evidence: Evidence & { transaction?: TransactionWithAccounts | null }): AppEvidence {
+  return {
+    id: evidence.id,
+    evidenceType: evidence.evidenceType,
+    issueDate: evidence.issueDate?.toISOString().slice(0, 10) ?? null,
+    counterparty: evidence.counterparty,
+    businessRegistrationNumber: evidence.businessRegistrationNumber,
+    supplyAmount: evidence.supplyAmount === null ? null : Number(evidence.supplyAmount),
+    vatAmount: evidence.vatAmount === null ? null : Number(evidence.vatAmount),
+    totalAmount: evidence.totalAmount === null ? null : Number(evidence.totalAmount),
+    fileName: evidence.fileName,
+    fileUrl: evidence.fileUrl,
+    transactionId: evidence.transactionId,
+    transaction: evidence.transaction ? serializeTransaction(evidence.transaction) : null
   };
 }
