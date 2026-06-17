@@ -168,6 +168,7 @@ try {
   await verifyInvalidCsvTemplateBackup();
   await verifyInvalidJsonPayloadBackup();
   await verifyInvalidTransactionAmountBackup();
+  await verifyInvalidTransactionTaxBackup();
   await verifyInvalidTransactionImportBatchBackup();
   await verifyInvalidTransactionAccountBackup();
   await verifyInvalidEvidenceBackup();
@@ -458,6 +459,23 @@ async function verifyInvalidTransactionAmountBackup() {
   assert.equal(body.code, "INVALID_BACKUP_TRANSACTIONS", "restore should return transaction validation code");
   assert.ok(Array.isArray(body.issues), "restore should return transaction validation issues");
   assert.ok(body.issues.some((issue) => issue.includes("입금과 출금")), "restore should report inconsistent transaction amounts");
+}
+
+async function verifyInvalidTransactionTaxBackup() {
+  const invalidBackup = structuredClone(backup);
+  invalidBackup.transactions = [
+    {
+      ...backup.transactions[0],
+      supplyAmount: 1000,
+      vatAmount: 100
+    }
+  ];
+
+  const body = await postJson("/api/backups/restore", { backup: invalidBackup, dryRun: true }, 400);
+  assert.equal(body.ok, false, "restore should reject invalid transaction tax backup data");
+  assert.equal(body.code, "INVALID_BACKUP_TRANSACTIONS", "restore should return transaction validation code");
+  assert.ok(Array.isArray(body.issues), "restore should return transaction validation issues");
+  assert.ok(body.issues.some((issue) => issue.includes("공급가액과 부가세")), "restore should report inconsistent transaction tax amounts");
 }
 
 async function verifyInvalidTransactionImportBatchBackup() {

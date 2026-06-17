@@ -53,9 +53,11 @@ try {
   await expectBlockedClosingPeriod();
   await expectInvalidCsvImportMapping();
   await expectInvalidCsvImportRows();
+  await expectInvalidCsvImportTaxAmounts();
   await expectInvalidCsvOriginalFile();
   await expectInvalidManualTransactionDate();
   await expectInvalidManualTransactionAmounts();
+  await expectInvalidManualTransactionTaxAmounts();
   await expectInvalidTransactionPatch();
   await expectInvalidJournalDate();
   await expectInvalidJournalLines();
@@ -276,6 +278,46 @@ async function expectInvalidCsvImportRows() {
   }
 }
 
+async function expectInvalidCsvImportTaxAmounts() {
+  const response = await fetch(`${baseUrl}/api/imports`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sourceType: "BANK",
+      originalFileName: "invalid-tax-rows.csv",
+      mapping: {
+        transactionDate: "거래일",
+        description: "적요",
+        depositAmount: "입금",
+        supplyAmount: "공급가액",
+        vatAmount: "부가세"
+      },
+      headers: ["거래일", "적요", "입금", "공급가액", "부가세"],
+      rows: [
+        {
+          거래일: "2026-06-17",
+          적요: "세액 오류",
+          입금: "1000",
+          공급가액: "1000",
+          부가세: "100"
+        }
+      ]
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/imports should reject transaction tax amounts larger than gross amount, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (
+    body.code !== "INVALID_CSV_ROWS" ||
+    !Array.isArray(body.issues) ||
+    !body.issues.some((issue) => issue.includes("공급가액과 부가세"))
+  ) {
+    throw new Error(`/api/imports returned unexpected tax amount validation payload: ${text}`);
+  }
+}
+
 async function expectInvalidCsvOriginalFile() {
   const response = await fetch(`${baseUrl}/api/imports`, {
     method: "POST",
@@ -349,6 +391,29 @@ async function expectInvalidManualTransactionAmounts() {
   const body = JSON.parse(text);
   if (body.code !== "INVALID_TRANSACTION_AMOUNTS") {
     throw new Error(`/api/transactions returned unexpected amount validation payload: ${text}`);
+  }
+}
+
+async function expectInvalidManualTransactionTaxAmounts() {
+  const response = await fetch(`${baseUrl}/api/transactions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      transactionDate: "2026-06-17",
+      description: "잘못된 세액 수기 거래",
+      depositAmount: 1000,
+      withdrawalAmount: 0,
+      supplyAmount: 1000,
+      vatAmount: 100
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/transactions should reject transaction tax amounts larger than gross amount, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_TRANSACTION_AMOUNTS") {
+    throw new Error(`/api/transactions returned unexpected tax amount validation payload: ${text}`);
   }
 }
 

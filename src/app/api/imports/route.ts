@@ -9,6 +9,7 @@ import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { closedPeriodResponse, findClosedPeriodForDates } from "@/lib/server/closing-periods";
 import { MAX_ORIGINAL_FILE_TEXT_SIZE, validateOriginalFileText } from "@/lib/server/source-file-validation";
+import { validateTransactionTaxAmounts } from "@/lib/server/transaction-validation";
 import {
   serializeAccount,
   serializeClassificationRule,
@@ -110,6 +111,8 @@ function validateImportRows(payload: ImportPayloadData) {
     const amount = parseMoney(getMappedCsvValue(sourceRow, mapping.amount));
     const depositAmount = parseMoney(getMappedCsvValue(sourceRow, mapping.depositAmount));
     const withdrawalAmount = parseMoney(getMappedCsvValue(sourceRow, mapping.withdrawalAmount));
+    const supplyAmount = mapping.supplyAmount ? parseMoney(getMappedCsvValue(sourceRow, mapping.supplyAmount)) : null;
+    const vatAmount = mapping.vatAmount ? parseMoney(getMappedCsvValue(sourceRow, mapping.vatAmount)) : null;
 
     if (!parseStrictImportDate(transactionDate)) {
       pushIssue(`${rowNumber}행 거래일 값이 비어 있거나 날짜 형식이 아닙니다.`);
@@ -122,6 +125,14 @@ function validateImportRows(payload: ImportPayloadData) {
     }
     if (depositAmount > 0 && withdrawalAmount > 0) {
       pushIssue(`${rowNumber}행 입금과 출금이 동시에 입력됐습니다.`);
+    }
+    const taxIssue = validateTransactionTaxAmounts({
+      grossAmount: amount > 0 ? amount : depositAmount > 0 ? depositAmount : withdrawalAmount,
+      supplyAmount,
+      vatAmount
+    });
+    if (taxIssue) {
+      pushIssue(`${rowNumber}행 ${taxIssue}`);
     }
   });
 
