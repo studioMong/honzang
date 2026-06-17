@@ -3584,6 +3584,7 @@ function SettingsPanel({
     closingPeriods,
     reviewItems
   });
+  const csvTemplateRows = buildCsvTemplateRows(csvTemplates);
   function buildCurrentBackupPayload(originalImportFiles: OriginalImportFile[] = []) {
     return buildWorkspaceBackupPayload({
       mode,
@@ -3944,6 +3945,56 @@ function SettingsPanel({
             checked={form.contractorPaymentEnabled}
             onChange={(checked) => updateForm("contractorPaymentEnabled", checked)}
           />
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="panel-title">CSV 매핑 템플릿</h2>
+            <p className="panel-subtitle">반복 업로드에 적용되는 자료 유형별 헤더와 컬럼 매핑 기준</p>
+          </div>
+          <div className="toolbar">
+            <span className="status blue">{formatNumber(csvTemplateRows.length)}개</span>
+            <button className="secondary-button" onClick={() => downloadCsv("honzang-csv-mapping-templates.csv", csvTemplateRows)}>
+              <Download size={16} />
+              템플릿 목록
+            </button>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>자료</th>
+                <th>템플릿</th>
+                <th>헤더</th>
+                <th>필수 매핑</th>
+                <th>금액 매핑</th>
+                <th>선택 매핑</th>
+                <th>수정</th>
+              </tr>
+            </thead>
+            <tbody>
+              {csvTemplateRows.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="empty-cell">저장된 CSV 매핑 템플릿이 없습니다. CSV를 한 번 가져오면 자동 저장됩니다.</td>
+                </tr>
+              ) : (
+                csvTemplateRows.map((row) => (
+                  <tr key={`${row.자료}-${row.템플릿}-${row.수정}`}>
+                    <td>{row.자료}</td>
+                    <td>{row.템플릿}</td>
+                    <td>{row.헤더}</td>
+                    <td>{row["필수 매핑"]}</td>
+                    <td>{row["금액 매핑"]}</td>
+                    <td>{row["선택 매핑"]}</td>
+                    <td>{row.수정}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -5384,6 +5435,38 @@ type OriginalImportFile = {
   originalFileSize?: number | null;
   originalFileText: string;
 };
+
+function buildCsvTemplateRows(csvTemplates: CsvTemplate[]) {
+  return csvTemplates.map((template) => {
+    const headers = template.headerSignature?.split("|").filter(Boolean) ?? [];
+    const mapping = template.mapping;
+    const requiredMapping = [`거래일:${mapping.transactionDate ?? "-"}`, `내용:${mapping.description ?? "-"}`].join(" · ");
+    const amountMapping =
+      mapping.amount
+        ? `금액:${mapping.amount}`
+        : mapping.depositAmount || mapping.withdrawalAmount
+          ? `입금:${mapping.depositAmount ?? "-"} · 출금:${mapping.withdrawalAmount ?? "-"}`
+          : "-";
+    const optionalMapping = [
+      mapping.counterparty ? `거래처:${mapping.counterparty}` : null,
+      mapping.supplyAmount ? `공급가:${mapping.supplyAmount}` : null,
+      mapping.vatAmount ? `부가세:${mapping.vatAmount}` : null,
+      mapping.balance ? `잔액:${mapping.balance}` : null,
+      mapping.approvalNumber ? `승인번호:${mapping.approvalNumber}` : null
+    ].filter((item): item is string => Boolean(item));
+
+    return {
+      자료: SOURCE_TYPE_LABELS[template.sourceType],
+      템플릿: template.name,
+      헤더: headers.length > 0 ? `${formatNumber(headers.length)}개 · ${headers.slice(0, 4).join(", ")}${headers.length > 4 ? "..." : ""}` : "-",
+      "전체 헤더": headers.join(", ") || "-",
+      "필수 매핑": requiredMapping,
+      "금액 매핑": amountMapping,
+      "선택 매핑": optionalMapping.join(", ") || "-",
+      수정: template.updatedAt ? formatDateTime(template.updatedAt) : "-"
+    };
+  });
+}
 
 function buildDataRetentionRows({
   importBatches,

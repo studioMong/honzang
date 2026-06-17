@@ -51,7 +51,7 @@ try {
     ["혼자장부", "최근 월 신고 준비", "오늘 할 일", "1인법인 신고 준비"].every((text) => body.includes(text))
   );
   await expectText("/?view=settings", (body) =>
-    ["운영 준비 점검", "배포 환경 상태 확인", "전체 백업", "데이터 보관/삭제 기준"].every((text) => body.includes(text))
+    ["운영 준비 점검", "배포 환경 상태 확인", "전체 백업", "데이터 보관/삭제 기준", "CSV 매핑 템플릿"].every((text) => body.includes(text))
   );
   await expectText("/?view=journals", (body) =>
     ["자동분개 초안", "바로 승인", "검토 필요", "정상 초안"].every((text) => body.includes(text))

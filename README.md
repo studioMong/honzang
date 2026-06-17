@@ -109,6 +109,7 @@ RAILWAY_AUDIT_SOFT=1 npm run audit:railway
 - CSV 업로드 배치 되돌리기
 - 원본 CSV DB 보관 및 업로드 이력 원본 다운로드
 - CSV 컬럼 매핑
+- CSV 매핑 템플릿 저장, 자동 적용 상태 확인, 템플릿 목록 다운로드
 - CSV 파일 해시 기반 중복 업로드 방지
 - 수기 거래 입력
 - 거래 자동 분류 초안
