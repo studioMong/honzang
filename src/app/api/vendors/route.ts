@@ -75,27 +75,30 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: "기본 계정과목을 찾을 수 없습니다." }, { status: 404 });
   }
 
-  const vendor = await db.vendor.create({
-    data: {
+  const vendor = await db.$transaction(async (tx) => {
+    const created = await tx.vendor.create({
+      data: {
+        companyId: company.id,
+        name: parsed.data.name,
+        businessRegistrationNumber: parsed.data.businessRegistrationNumber,
+        defaultAccountId: defaultAccount?.id ?? null,
+        withholdingType: parsed.data.withholdingType,
+        memo: parsed.data.memo
+      },
+      include: includeDefaultAccount
+    });
+    await recordAuditEvent(tx, {
       companyId: company.id,
-      name: parsed.data.name,
-      businessRegistrationNumber: parsed.data.businessRegistrationNumber,
-      defaultAccountId: defaultAccount?.id ?? null,
-      withholdingType: parsed.data.withholdingType,
-      memo: parsed.data.memo
-    },
-    include: includeDefaultAccount
-  });
-  await recordAuditEvent(db, {
-    companyId: company.id,
-    action: "VENDOR_CREATE",
-    entityType: "VENDOR",
-    entityId: vendor.id,
-    summary: `거래처 기본값을 추가했습니다: ${vendor.name}`,
-    metadata: {
-      withholdingType: vendor.withholdingType,
-      defaultAccountId: vendor.defaultAccountId
-    }
+      action: "VENDOR_CREATE",
+      entityType: "VENDOR",
+      entityId: created.id,
+      summary: `거래처 기본값을 추가했습니다: ${created.name}`,
+      metadata: {
+        withholdingType: created.withholdingType,
+        defaultAccountId: created.defaultAccountId
+      }
+    });
+    return created;
   });
 
   return NextResponse.json({ ok: true, vendor: serializeVendor(vendor), mode: "database" });
@@ -128,27 +131,30 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ ok: false, message: "기본 계정과목을 찾을 수 없습니다." }, { status: 404 });
   }
 
-  const vendor = await db.vendor.update({
-    where: { id: existing.id },
-    data: {
-      name: parsed.data.name,
-      businessRegistrationNumber: parsed.data.businessRegistrationNumber,
-      defaultAccountId: parsed.data.defaultAccountId === undefined ? undefined : defaultAccount?.id ?? null,
-      withholdingType: parsed.data.withholdingType,
-      memo: parsed.data.memo
-    },
-    include: includeDefaultAccount
-  });
-  await recordAuditEvent(db, {
-    companyId: company.id,
-    action: "VENDOR_UPDATE",
-    entityType: "VENDOR",
-    entityId: vendor.id,
-    summary: `거래처 기본값을 수정했습니다: ${vendor.name}`,
-    metadata: {
-      withholdingType: vendor.withholdingType,
-      defaultAccountId: vendor.defaultAccountId
-    }
+  const vendor = await db.$transaction(async (tx) => {
+    const updated = await tx.vendor.update({
+      where: { id: existing.id },
+      data: {
+        name: parsed.data.name,
+        businessRegistrationNumber: parsed.data.businessRegistrationNumber,
+        defaultAccountId: parsed.data.defaultAccountId === undefined ? undefined : defaultAccount?.id ?? null,
+        withholdingType: parsed.data.withholdingType,
+        memo: parsed.data.memo
+      },
+      include: includeDefaultAccount
+    });
+    await recordAuditEvent(tx, {
+      companyId: company.id,
+      action: "VENDOR_UPDATE",
+      entityType: "VENDOR",
+      entityId: updated.id,
+      summary: `거래처 기본값을 수정했습니다: ${updated.name}`,
+      metadata: {
+        withholdingType: updated.withholdingType,
+        defaultAccountId: updated.defaultAccountId
+      }
+    });
+    return updated;
   });
 
   return NextResponse.json({ ok: true, vendor: serializeVendor(vendor), mode: "database" });
@@ -176,17 +182,19 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ ok: false, message: "거래처를 찾을 수 없습니다." }, { status: 404 });
   }
 
-  await db.vendor.delete({ where: { id: existing.id } });
-  await recordAuditEvent(db, {
-    companyId: company.id,
-    action: "VENDOR_DELETE",
-    entityType: "VENDOR",
-    entityId: existing.id,
-    summary: `거래처 기본값을 삭제했습니다: ${existing.name}`,
-    metadata: {
-      withholdingType: existing.withholdingType,
-      defaultAccountId: existing.defaultAccountId
-    }
+  await db.$transaction(async (tx) => {
+    await tx.vendor.delete({ where: { id: existing.id } });
+    await recordAuditEvent(tx, {
+      companyId: company.id,
+      action: "VENDOR_DELETE",
+      entityType: "VENDOR",
+      entityId: existing.id,
+      summary: `거래처 기본값을 삭제했습니다: ${existing.name}`,
+      metadata: {
+        withholdingType: existing.withholdingType,
+        defaultAccountId: existing.defaultAccountId
+      }
+    });
   });
   return NextResponse.json({ ok: true, mode: "database", id: existing.id });
 }

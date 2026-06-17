@@ -83,29 +83,32 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: "계정과목을 찾을 수 없습니다." }, { status: 404 });
   }
 
-  const created = await db.classificationRule.create({
-    data: {
+  const created = await db.$transaction(async (tx) => {
+    const classificationRule = await tx.classificationRule.create({
+      data: {
+        companyId: company.id,
+        name: payload.name,
+        sourceType: payload.sourceType ?? null,
+        condition: { keyword: payload.keyword },
+        action: { accountCode: payload.accountCode },
+        priority: payload.priority,
+        isActive: payload.isActive
+      }
+    });
+    await recordAuditEvent(tx, {
       companyId: company.id,
-      name: payload.name,
-      sourceType: payload.sourceType ?? null,
-      condition: { keyword: payload.keyword },
-      action: { accountCode: payload.accountCode },
-      priority: payload.priority,
-      isActive: payload.isActive
-    }
-  });
-  await recordAuditEvent(db, {
-    companyId: company.id,
-    action: "CLASSIFICATION_RULE_CREATE",
-    entityType: "CLASSIFICATION_RULE",
-    entityId: created.id,
-    summary: `자동 분류 규칙을 추가했습니다: ${payload.name}`,
-    metadata: {
-      keyword: payload.keyword,
-      accountCode: payload.accountCode,
-      sourceType: payload.sourceType ?? null,
-      priority: payload.priority
-    }
+      action: "CLASSIFICATION_RULE_CREATE",
+      entityType: "CLASSIFICATION_RULE",
+      entityId: classificationRule.id,
+      summary: `자동 분류 규칙을 추가했습니다: ${payload.name}`,
+      metadata: {
+        keyword: payload.keyword,
+        accountCode: payload.accountCode,
+        sourceType: payload.sourceType ?? null,
+        priority: payload.priority
+      }
+    });
+    return classificationRule;
   });
 
   return NextResponse.json({
@@ -160,21 +163,24 @@ export async function PATCH(request: Request) {
   if (payload.priority !== undefined) data.priority = payload.priority;
   if (payload.isActive !== undefined) data.isActive = payload.isActive;
 
-  const updated = await db.classificationRule.update({
-    where: { id: existing.id },
-    data
-  });
-  await recordAuditEvent(db, {
-    companyId: company.id,
-    action: "CLASSIFICATION_RULE_UPDATE",
-    entityType: "CLASSIFICATION_RULE",
-    entityId: updated.id,
-    summary: `자동 분류 규칙을 수정했습니다: ${updated.name}`,
-    metadata: {
-      sourceType: updated.sourceType,
-      priority: updated.priority,
-      isActive: updated.isActive
-    }
+  const updated = await db.$transaction(async (tx) => {
+    const classificationRule = await tx.classificationRule.update({
+      where: { id: existing.id },
+      data
+    });
+    await recordAuditEvent(tx, {
+      companyId: company.id,
+      action: "CLASSIFICATION_RULE_UPDATE",
+      entityType: "CLASSIFICATION_RULE",
+      entityId: classificationRule.id,
+      summary: `자동 분류 규칙을 수정했습니다: ${classificationRule.name}`,
+      metadata: {
+        sourceType: classificationRule.sourceType,
+        priority: classificationRule.priority,
+        isActive: classificationRule.isActive
+      }
+    });
+    return classificationRule;
   });
   const accounts = await db.account.findMany({ where: { companyId: company.id } });
   const accountByCode = new Map(accounts.map((account) => [account.code, account]));
@@ -209,20 +215,22 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ ok: false, message: "자동 분류 규칙을 찾을 수 없습니다." }, { status: 404 });
   }
 
-  const deleted = await db.classificationRule.delete({
-    where: { id: existing.id }
-  });
-  await recordAuditEvent(db, {
-    companyId: company.id,
-    action: "CLASSIFICATION_RULE_DELETE",
-    entityType: "CLASSIFICATION_RULE",
-    entityId: payload.id,
-    summary: `자동 분류 규칙을 삭제했습니다: ${deleted.name}`,
-    metadata: {
-      sourceType: deleted.sourceType,
-      priority: deleted.priority,
-      isActive: deleted.isActive
-    }
+  await db.$transaction(async (tx) => {
+    const classificationRule = await tx.classificationRule.delete({
+      where: { id: existing.id }
+    });
+    await recordAuditEvent(tx, {
+      companyId: company.id,
+      action: "CLASSIFICATION_RULE_DELETE",
+      entityType: "CLASSIFICATION_RULE",
+      entityId: payload.id,
+      summary: `자동 분류 규칙을 삭제했습니다: ${classificationRule.name}`,
+      metadata: {
+        sourceType: classificationRule.sourceType,
+        priority: classificationRule.priority,
+        isActive: classificationRule.isActive
+      }
+    });
   });
 
   return NextResponse.json({ ok: true, mode: "database" });

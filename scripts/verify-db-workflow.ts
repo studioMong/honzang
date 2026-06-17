@@ -4,7 +4,18 @@ import { resolve } from "node:path";
 import Papa from "papaparse";
 import { generateJournalDraft, inferMapping, summarizeTransactions } from "../src/lib/accounting";
 import { DEFAULT_COMPANY_ID } from "../src/lib/defaults";
-import type { AppAccount, AppClassificationRule, AppJournalEntry, AppTransaction, CsvColumnMapping, CsvTemplate, ParsedCsvRow, ReviewItem, SourceType } from "../src/types";
+import type {
+  AppAccount,
+  AppClassificationRule,
+  AppJournalEntry,
+  AppTransaction,
+  AppVendor,
+  CsvColumnMapping,
+  CsvTemplate,
+  ParsedCsvRow,
+  ReviewItem,
+  SourceType
+} from "../src/types";
 
 const evidenceAmountMismatchReason = "연결 증빙 합계가 거래금액과 일치하지 않습니다.";
 
@@ -17,7 +28,8 @@ const cleanup = {
   journalEntryIds: [] as string[],
   taxReportIds: [] as string[],
   closingPeriods: [] as string[],
-  classificationRuleIds: [] as string[]
+  classificationRuleIds: [] as string[],
+  vendorIds: [] as string[]
 };
 
 if (baseUrl.includes("honzang-production.up.railway.app") && process.env.VERIFY_DB_WORKFLOW_ALLOW_PRODUCTION !== "1") {
@@ -100,6 +112,49 @@ try {
   });
   assert.equal(missingClassificationRuleDeletePayload.ok, false, "missing classification rule delete should fail");
   assert.match(missingClassificationRuleDeletePayload.message ?? "", /자동 분류 규칙/, "missing classification rule delete should report a missing rule");
+
+  const vendorPayload = await requestJson<{ ok?: boolean; mode?: string; vendor?: AppVendor }>("/api/vendors", {
+    method: "POST",
+    body: {
+      companyId,
+      name: `${marker} vendor`,
+      businessRegistrationNumber: `${Date.now()}`.slice(0, 10),
+      defaultAccountId: verificationAccount.id,
+      withholdingType: "BUSINESS_INCOME",
+      memo: `${marker} vendor memo`
+    }
+  });
+  assert.equal(vendorPayload.ok, true, "vendor create should succeed");
+  assert.equal(vendorPayload.mode, "database", "vendor create should use database mode");
+  assert.ok(vendorPayload.vendor?.id, "vendor create should return an id");
+  assert.equal(vendorPayload.vendor?.defaultAccount?.id, verificationAccount.id, "vendor create should preserve default account");
+  cleanup.vendorIds.push(vendorPayload.vendor.id);
+
+  const updatedVendorPayload = await requestJson<{ ok?: boolean; mode?: string; vendor?: AppVendor }>("/api/vendors", {
+    method: "PATCH",
+    body: {
+      companyId,
+      id: vendorPayload.vendor.id,
+      name: `${marker} vendor updated`,
+      defaultAccountId: alternateVerificationAccountId,
+      withholdingType: "OTHER_INCOME"
+    }
+  });
+  assert.equal(updatedVendorPayload.ok, true, "vendor patch should succeed");
+  assert.equal(updatedVendorPayload.mode, "database", "vendor patch should use database mode");
+  assert.equal(updatedVendorPayload.vendor?.name, `${marker} vendor updated`, "vendor patch should update name");
+  assert.equal(updatedVendorPayload.vendor?.defaultAccount?.id, alternateVerificationAccountId, "vendor patch should update default account");
+
+  const missingVendorDeletePayload = await requestJson<{ ok?: boolean; message?: string }>("/api/vendors", {
+    method: "DELETE",
+    expectedStatus: 404,
+    body: {
+      companyId,
+      id: `${marker}-missing-vendor`
+    }
+  });
+  assert.equal(missingVendorDeletePayload.ok, false, "missing vendor delete should fail");
+  assert.match(missingVendorDeletePayload.message ?? "", /거래처/, "missing vendor delete should report a missing vendor");
 
   await requestJson<{ ok?: boolean; mode?: string; transaction?: AppTransaction }>("/api/transactions", {
     method: "PATCH",
@@ -726,6 +781,14 @@ async function cleanupCreatedData() {
     await requestJson("/api/classification-rules", {
       method: "DELETE",
       body: { id: classificationRuleId },
+      allowFailure: true
+    });
+  }
+
+  for (const vendorId of cleanup.vendorIds.reverse()) {
+    await requestJson("/api/vendors", {
+      method: "DELETE",
+      body: { id: vendorId },
       allowFailure: true
     });
   }

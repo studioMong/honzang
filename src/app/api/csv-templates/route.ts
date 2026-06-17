@@ -32,18 +32,20 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ ok: false, message: "CSV 매핑 템플릿을 찾을 수 없습니다." }, { status: 404 });
   }
 
-  await db.csvTemplate.delete({ where: { id: existing.id } });
-  await recordAuditEvent(db, {
-    companyId: company.id,
-    action: "CSV_TEMPLATE_DELETE",
-    entityType: "CSV_TEMPLATE",
-    entityId: existing.id,
-    summary: `CSV 매핑 템플릿을 삭제했습니다: ${existing.name}`,
-    metadata: {
-      sourceType: existing.sourceType,
-      sourceTypeLabel: SOURCE_TYPE_LABELS[existing.sourceType],
-      headerSignature: existing.headerSignature
-    }
+  await db.$transaction(async (tx) => {
+    await tx.csvTemplate.delete({ where: { id: existing.id } });
+    await recordAuditEvent(tx, {
+      companyId: company.id,
+      action: "CSV_TEMPLATE_DELETE",
+      entityType: "CSV_TEMPLATE",
+      entityId: existing.id,
+      summary: `CSV 매핑 템플릿을 삭제했습니다: ${existing.name}`,
+      metadata: {
+        sourceType: existing.sourceType,
+        sourceTypeLabel: SOURCE_TYPE_LABELS[existing.sourceType],
+        headerSignature: existing.headerSignature
+      }
+    });
   });
 
   return NextResponse.json({ ok: true, mode: "database", id: existing.id });

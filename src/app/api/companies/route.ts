@@ -71,25 +71,28 @@ export async function PATCH(request: Request) {
   }
 
   const company = await ensureDefaultCompany(db);
-  const updated = await db.company.update({
-    where: { id: company.id },
-    data: parsed.data
-  });
-  await recordAuditEvent(db, {
-    companyId: company.id,
-    action: "COMPANY_UPDATE",
-    entityType: "COMPANY",
-    entityId: company.id,
-    summary: "회사 설정을 저장했습니다.",
-    metadata: {
-      name: updated.name,
-      vatType: updated.vatType,
-      fiscalYearEndMonth: updated.fiscalYearEndMonth,
-      billingModel: updated.billingModel,
-      perUseUnitPrice: updated.perUseUnitPrice,
-      monthlySubscriptionPrice: updated.monthlySubscriptionPrice,
-      annualSubscriptionPrice: updated.annualSubscriptionPrice
-    }
+  const updated = await db.$transaction(async (tx) => {
+    const companySettings = await tx.company.update({
+      where: { id: company.id },
+      data: parsed.data
+    });
+    await recordAuditEvent(tx, {
+      companyId: company.id,
+      action: "COMPANY_UPDATE",
+      entityType: "COMPANY",
+      entityId: company.id,
+      summary: "회사 설정을 저장했습니다.",
+      metadata: {
+        name: companySettings.name,
+        vatType: companySettings.vatType,
+        fiscalYearEndMonth: companySettings.fiscalYearEndMonth,
+        billingModel: companySettings.billingModel,
+        perUseUnitPrice: companySettings.perUseUnitPrice,
+        monthlySubscriptionPrice: companySettings.monthlySubscriptionPrice,
+        annualSubscriptionPrice: companySettings.annualSubscriptionPrice
+      }
+    });
+    return companySettings;
   });
 
   return NextResponse.json({ ok: true, company: updated, mode: "database" });
