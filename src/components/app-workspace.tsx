@@ -223,7 +223,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
         </header>
 
         {activeView === "dashboard" && (
-          <Dashboard summary={summary} reviewCount={reviewItems.length} transactions={transactions} onMove={setActiveView} />
+          <Dashboard company={company} summary={summary} reviewCount={reviewItems.length} transactions={transactions} onMove={setActiveView} />
         )}
         {activeView === "imports" && (
           <CsvImportPanel
@@ -282,17 +282,21 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
 }
 
 function Dashboard({
+  company,
   summary,
   reviewCount,
   transactions,
   onMove
 }: {
+  company: AppCompany;
   summary: ReturnType<typeof summarizeTransactions>;
   reviewCount: number;
   transactions: AppTransaction[];
   onMove: (view: ViewKey) => void;
 }) {
   const recent = transactions.slice(0, 6);
+  const setupItems = buildCompanySetupItems(company);
+  const readyCount = setupItems.filter((item) => item.tone !== "red").length;
   return (
     <div className="content">
       <section className="kpi-grid">
@@ -301,6 +305,27 @@ function Dashboard({
         <Kpi label="손익" value={formatKRW(summary.profit)} foot={summary.profit >= 0 ? "흑자" : "적자"} icon={<BarChart3 size={16} />} />
         <Kpi label="부가세 예상" value={formatKRW(summary.vatPayable)} foot="양수 납부 · 음수 환급" icon={<FileSpreadsheet size={16} />} />
         <Kpi label="검토" value={`${reviewCount}건`} foot={`위험 ${summary.riskCount}건`} icon={<AlertTriangle size={16} />} />
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="panel-title">1인법인 신고 준비</h2>
+            <p className="panel-subtitle">법인 기본값과 원천세 분기점</p>
+          </div>
+          <button className="ghost-button" onClick={() => onMove("settings")}>설정</button>
+        </div>
+        <div className="panel-body setup-grid">
+          <div className="setup-score">
+            <strong>{readyCount}/{setupItems.length}</strong>
+            <span>준비 항목</span>
+          </div>
+          <div className="setup-list">
+            {setupItems.map((item) => (
+              <SetupStatusItem key={item.title} item={item} />
+            ))}
+          </div>
+        </div>
       </section>
 
       <div className="split">
@@ -1372,6 +1397,8 @@ function SettingsPanel({
   const [form, setForm] = useState<AppCompany>(company);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const setupItems = buildCompanySetupItems(form);
+  const missingCount = setupItems.filter((item) => item.tone === "red").length;
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -1402,6 +1429,21 @@ function SettingsPanel({
 
   return (
     <div className="content">
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="panel-title">필수정보 상태</h2>
+            <p className="panel-subtitle">{missingCount > 0 ? `${missingCount}개 항목 입력 필요` : "기본 신고정보 확인 완료"}</p>
+          </div>
+          <span className={`status ${missingCount > 0 ? "red" : "green"}`}>{missingCount > 0 ? "입력 필요" : "준비됨"}</span>
+        </div>
+        <div className="panel-body setup-list">
+          {setupItems.map((item) => (
+            <SetupStatusItem key={item.title} item={item} />
+          ))}
+        </div>
+      </section>
+
       <section className="panel">
         <div className="panel-header">
           <h2 className="panel-title">회사 설정</h2>
@@ -1505,6 +1547,102 @@ function SettingsPanel({
           </table>
         </div>
       </section>
+    </div>
+  );
+}
+
+type CompanySetupItem = {
+  title: string;
+  detail: string;
+  tone: "green" | "amber" | "red";
+  status: string;
+};
+
+function buildCompanySetupItems(company: AppCompany): CompanySetupItem[] {
+  const missingBasics = [
+    hasText(company.name) ? null : "법인명",
+    hasText(company.businessRegistrationNumber) ? null : "사업자등록번호",
+    hasText(company.industry) ? null : "업종"
+  ].filter(Boolean) as string[];
+  const payrollTargets = [
+    company.representativeSalaryEnabled ? "대표자 급여" : null,
+    company.employeePayrollEnabled ? "직원 급여" : null,
+    company.contractorPaymentEnabled ? "외주 지급" : null
+  ].filter(Boolean) as string[];
+
+  return [
+    {
+      title: "법인 기본정보",
+      detail: missingBasics.length
+        ? `${missingBasics.join(", ")} 입력 필요`
+        : `${company.name} · ${formatBusinessRegistrationNumber(company.businessRegistrationNumber)} · ${company.industry}`,
+      tone: missingBasics.length ? "red" : "green",
+      status: missingBasics.length ? "입력 필요" : "완료"
+    },
+    {
+      title: "부가세 신고 기준",
+      detail: `${vatTypeLabel(company.vatType)} · 매출/매입세액 분리 기준`,
+      tone: company.vatType === "MIXED" ? "amber" : "green",
+      status: company.vatType === "MIXED" ? "겸영 검토" : "설정됨"
+    },
+    {
+      title: "법인세 결산",
+      detail: `${company.fiscalYearEndMonth}월 결산 · 해당 사업연도 기준`,
+      tone: "green",
+      status: "설정됨"
+    },
+    {
+      title: "원천세 대상",
+      detail: payrollTargets.length ? `${payrollTargets.join(", ")} 관리` : "급여/외주 지급 없음",
+      tone: payrollTargets.length ? "amber" : "green",
+      status: payrollTargets.length ? "관리 필요" : "미사용"
+    },
+    {
+      title: "매출 과금 방식",
+      detail: billingModelLabel(company.billingModel),
+      tone: "green",
+      status: "설정됨"
+    }
+  ];
+}
+
+function hasText(value?: string | null) {
+  return Boolean(value?.trim());
+}
+
+function formatBusinessRegistrationNumber(value?: string | null) {
+  if (!value) return "-";
+  const digits = value.replace(/\D/g, "");
+  if (digits.length !== 10) return value;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`;
+}
+
+function vatTypeLabel(value: string) {
+  const labels: Record<string, string> = {
+    GENERAL: "일반과세",
+    EXEMPT: "면세",
+    MIXED: "겸영"
+  };
+  return labels[value] ?? value;
+}
+
+function billingModelLabel(value: AppCompany["billingModel"]) {
+  const labels: Record<AppCompany["billingModel"], string> = {
+    INTERNAL_PER_USE: "내부 회당 정산",
+    SAAS_MONTHLY: "SaaS 월 구독",
+    SAAS_ANNUAL: "SaaS 연 구독"
+  };
+  return labels[value];
+}
+
+function SetupStatusItem({ item }: { item: CompanySetupItem }) {
+  return (
+    <div className="setup-item" data-tone={item.tone}>
+      <div>
+        <strong>{item.title}</strong>
+        <span>{item.detail}</span>
+      </div>
+      <span className={`status ${item.tone}`}>{item.status}</span>
     </div>
   );
 }
