@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import process from "node:process";
+import { findSecurityHeaderIssues } from "./lib/security-headers.mjs";
 
 const baseUrl = (process.env.RAILWAY_PUBLIC_URL ?? "https://honzang-production.up.railway.app").replace(/\/$/, "");
 const expectedCommit = process.env.RAILWAY_EXPECTED_COMMIT ?? null;
@@ -34,6 +35,9 @@ try {
   assert.equal(manifest.name, "혼자장부", "manifest should expose app name");
   assert.equal(manifest.display, "standalone", "manifest should expose standalone display mode");
 
+  await expectSecurityHeaders("/");
+  await expectSecurityHeaders("/api/version");
+
   console.log(`Railway verification passed at ${baseUrl}`);
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);
@@ -66,6 +70,12 @@ async function expectText(path) {
   return text;
 }
 
+async function expectSecurityHeaders(path) {
+  const response = await fetch(`${baseUrl}${path}`, { cache: "no-store" });
+  const issues = findSecurityHeaderIssues(response.headers);
+  assert.deepEqual(issues, [], `${path} should include production security headers`);
+}
+
 async function printDiagnostics() {
   console.error("Railway response diagnostics:");
 
@@ -87,6 +97,11 @@ async function printDiagnostics() {
 
       if (path.startsWith("/api/") && text && !contentType.includes("application/json")) {
         console.error(`  body preview: ${text.slice(0, 120)}`);
+      }
+
+      const securityHeaderIssues = findSecurityHeaderIssues(response.headers);
+      if (securityHeaderIssues.length > 0) {
+        console.error(`  security headers: ${securityHeaderIssues.join(", ")}`);
       }
     } catch (diagnosticError) {
       console.error(`- ${path}: diagnostics failed: ${diagnosticError instanceof Error ? diagnosticError.message : diagnosticError}`);

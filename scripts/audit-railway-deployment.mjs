@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import process from "node:process";
+import { findSecurityHeaderIssues } from "./lib/security-headers.mjs";
 
 const baseUrl = (process.env.RAILWAY_PUBLIC_URL ?? "https://honzang-production.up.railway.app").replace(/\/$/, "");
 const expectedCommit = process.env.RAILWAY_EXPECTED_COMMIT ?? currentGitCommit();
@@ -59,6 +60,7 @@ async function inspectPath(path, kind) {
       bytes: Buffer.byteLength(text, "utf8"),
       contentType,
       headers,
+      securityHeaderIssues: findSecurityHeaderIssues(response.headers),
       json,
       parseError,
       textPreview: text.slice(0, 240),
@@ -73,6 +75,7 @@ async function inspectPath(path, kind) {
       bytes: 0,
       contentType: "network-error",
       headers: {},
+      securityHeaderIssues: ["응답 헤더를 확인할 수 없습니다."],
       json: null,
       parseError: "",
       textPreview: error instanceof Error ? error.message : String(error),
@@ -198,6 +201,23 @@ function buildFindings() {
       title: "PWA manifest 응답",
       detail: `display=${manifest.json.display}`,
       action: "PWA manifest가 노출됩니다."
+    });
+  }
+
+  const securityHeaderIssues = [...new Set([...home.securityHeaderIssues, ...version.securityHeaderIssues])];
+  if (securityHeaderIssues.length > 0) {
+    items.push({
+      level: "fail",
+      title: "보안 헤더 누락",
+      detail: securityHeaderIssues.join(", "),
+      action: "최신 Next.js 앱의 next.config.ts 보안 헤더 설정이 공개 URL에 반영됐는지 확인하세요."
+    });
+  } else if (home.ok && version.ok) {
+    items.push({
+      level: "pass",
+      title: "보안 헤더 응답",
+      detail: "루트와 /api/version 응답에 기본 보안 헤더가 있습니다.",
+      action: "보안 헤더가 공개 URL에 반영되어 있습니다."
     });
   }
 

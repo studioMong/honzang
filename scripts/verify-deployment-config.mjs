@@ -10,6 +10,8 @@ const dockerignore = readText(".dockerignore");
 const readme = readText("README.md");
 const railwayCutoverDoc = readText("docs/railway-cutover.md");
 const railwayAuditScript = readText("scripts/audit-railway-deployment.mjs");
+const railwayVerifyScript = readText("scripts/verify-railway.mjs");
+const securityHeaders = readText("scripts/lib/security-headers.mjs");
 const accessControl = readText("src/lib/server/access-control.ts");
 const operationsReadiness = readText("src/app/api/operations/readiness/route.ts");
 const proxy = readText("src/proxy.ts");
@@ -50,6 +52,7 @@ assert.match(dockerignore, /^\.env\.\*$/m, ".dockerignore should exclude env fil
 assert.equal(existsSync("index.html"), false, "root index.html must not exist because Railway can mis-detect a static site");
 assert.ok(existsSync("scripts/audit-railway-deployment.mjs"), "Railway audit script should exist");
 assert.ok(existsSync("scripts/verify-access-control.mjs"), "Access-control verification script should exist");
+assert.ok(existsSync("scripts/lib/security-headers.mjs"), "Security header verifier should exist");
 assert.ok(existsSync("prisma/schema.prisma"), "Prisma schema should exist");
 assert.ok(readdirSync("prisma/migrations").some((entry) => existsSync(path.join("prisma/migrations", entry, "migration.sql"))), "Prisma migrations should be present");
 
@@ -65,6 +68,10 @@ assert.match(railwayCutoverDoc, /VERIFY_DB_WORKFLOW_BASE_URL/, "Railway cutover 
 assert.match(railwayAuditScript, /docs\/railway-cutover\.md/, "Railway audit should point operators to the cutover checklist");
 assert.match(railwayAuditScript, /Public Networking/, "Railway audit should mention public domain diagnostics");
 assert.match(railwayAuditScript, /Variables/, "Railway audit should mention environment variable diagnostics");
+assert.match(railwayAuditScript, /findSecurityHeaderIssues/, "Railway audit should inspect public security headers");
+assert.match(railwayVerifyScript, /expectSecurityHeaders/, "Railway verification should require public security headers");
+assert.match(securityHeaders, /strict-transport-security/, "Security header verifier should check HSTS");
+assert.match(securityHeaders, /content-security-policy/, "Security header verifier should check CSP");
 assert.match(accessControl, /isAccessTokenSaltConfigured/, "Access control should expose salt configuration state");
 assert.match(accessControl, /process\.env\.NODE_ENV !== "production"/, "Access control should only allow default salt outside production");
 assert.match(operationsReadiness, /프로덕션에서는 기본 salt/, "Operations readiness should warn when production salt is missing");

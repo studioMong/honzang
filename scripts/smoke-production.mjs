@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import process from "node:process";
+import { findSecurityHeaderIssues } from "./lib/security-headers.mjs";
 
 const port = process.env.SMOKE_PORT ?? "3100";
 const baseUrl = `http://127.0.0.1:${port}`;
@@ -149,22 +150,9 @@ async function expectText(path, predicate) {
 
 async function expectSecurityHeaders(path) {
   const response = await fetch(`${baseUrl}${path}`, { cache: "no-store" });
-  const expectedHeaders = [
-    ["content-security-policy", /frame-ancestors 'none'/],
-    ["cross-origin-opener-policy", /^same-origin$/],
-    ["cross-origin-resource-policy", /^same-origin$/],
-    ["permissions-policy", /camera=\(\).*microphone=\(\)/],
-    ["referrer-policy", /^no-referrer$/],
-    ["strict-transport-security", /max-age=63072000/],
-    ["x-content-type-options", /^nosniff$/],
-    ["x-frame-options", /^DENY$/]
-  ];
-
-  for (const [header, pattern] of expectedHeaders) {
-    const value = response.headers.get(header) ?? "";
-    if (!pattern.test(value)) {
-      throw new Error(`${path} missing security header ${header}: ${value}`);
-    }
+  const issues = findSecurityHeaderIssues(response.headers);
+  if (issues.length > 0) {
+    throw new Error(`${path} missing security headers: ${issues.join(", ")}`);
   }
 }
 
