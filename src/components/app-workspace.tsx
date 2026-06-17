@@ -18,6 +18,7 @@ import {
   ReceiptText,
   RefreshCcw,
   Settings,
+  Smartphone,
   Upload,
   WalletCards
 } from "lucide-react";
@@ -49,6 +50,11 @@ import { createXlsxBlob, type XlsxSheet } from "@/lib/xlsx";
 import { createZipBlob, type ZipFile } from "@/lib/zip";
 
 export type ViewKey = "dashboard" | "imports" | "transactions" | "evidences" | "journals" | "reviews" | "reports" | "settings";
+
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};
 
 const views: Array<{ key: ViewKey; label: string; icon: React.ComponentType<{ size?: number }> }> = [
   { key: "dashboard", label: "대시보드", icon: LayoutDashboard },
@@ -151,6 +157,8 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
   const [reviewStatusOverrides, setReviewStatusOverrides] = useState<Record<string, ReviewItem["status"]>>({});
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<"sample" | "database">("sample");
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [isStandaloneMode, setIsStandaloneMode] = useState(false);
 
   const summary = useMemo(() => summarizeTransactions(transactions), [transactions]);
   const computedReviewItems = useMemo(() => buildReviewItems(transactions), [transactions]);
@@ -245,6 +253,43 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
     if (process.env.NODE_ENV !== "production" || !("serviceWorker" in navigator)) return;
     void navigator.serviceWorker.register("/sw.js").catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    const standaloneTimer = window.setTimeout(() => {
+      setIsStandaloneMode(isPwaStandalone());
+    }, 0);
+
+    function handleBeforeInstallPrompt(event: Event) {
+      event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+    }
+
+    function handleAppInstalled() {
+      setInstallPrompt(null);
+      setIsStandaloneMode(true);
+    }
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("appinstalled", handleAppInstalled);
+    return () => {
+      window.clearTimeout(standaloneTimer);
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", handleAppInstalled);
+    };
+  }, []);
+
+  async function installPwa() {
+    if (isStandaloneMode) return;
+    if (!installPrompt) {
+      window.alert("브라우저 메뉴에서 앱 설치 또는 홈 화면에 추가를 선택하세요.");
+      return;
+    }
+
+    await installPrompt.prompt();
+    const choice = await installPrompt.userChoice.catch(() => null);
+    setInstallPrompt(null);
+    if (choice?.outcome === "accepted") setIsStandaloneMode(true);
+  }
 
   async function updateTransaction(id: string, patch: Partial<AppTransaction> & { confirmedAccountId?: string }) {
     const confirmedAccount = patch.confirmedAccountId ? accounts.find((account) => account.id === patch.confirmedAccountId) ?? null : undefined;
@@ -343,6 +388,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
             <button className="icon-button" onClick={() => void refresh()} title="새로고침">
               {loading ? <Loader2 size={18} className="spin" /> : <RefreshCcw size={18} />}
             </button>
+            <InstallPwaButton isStandaloneMode={isStandaloneMode} onInstall={installPwa} />
             <button className="secondary-button" onClick={() => setActiveView("imports")}>
               <Upload size={17} />
               CSV 업로드
@@ -3492,6 +3538,12 @@ function getLatestTransactionPeriod(transactions: AppTransaction[]) {
   return latestDate ? latestDate.slice(0, 7) : null;
 }
 
+function isPwaStandalone() {
+  if (typeof window === "undefined") return false;
+  const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean };
+  return window.matchMedia("(display-mode: standalone)").matches || Boolean(navigatorWithStandalone.standalone);
+}
+
 function numericInputValue(value: string) {
   const normalized = Number(value.replace(/[^\d]/g, ""));
   return Number.isFinite(normalized) ? normalized : 0;
@@ -3616,6 +3668,20 @@ function SetupStatusItem({ item }: { item: CompanySetupItem }) {
       </div>
       <span className={`status ${item.tone}`}>{item.status}</span>
     </div>
+  );
+}
+
+function InstallPwaButton({ isStandaloneMode, onInstall }: { isStandaloneMode: boolean; onInstall: () => Promise<void> }) {
+  return (
+    <button
+      className="secondary-button"
+      disabled={isStandaloneMode}
+      onClick={() => void onInstall()}
+      title={isStandaloneMode ? "설치형 앱으로 실행 중" : "혼자장부를 설치형 앱으로 열기"}
+    >
+      <Smartphone size={16} />
+      {isStandaloneMode ? "앱 모드" : "앱 설치"}
+    </button>
   );
 }
 

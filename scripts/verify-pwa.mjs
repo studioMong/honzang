@@ -116,6 +116,9 @@ function verifyRegistrationSource() {
   const source = readFileSync("src/components/app-workspace.tsx", "utf8");
   assert.match(source, /navigator\.serviceWorker\.register\("\/sw\.js"\)/, "app should register /sw.js in production");
   assert.match(source, /process\.env\.NODE_ENV\s*!==\s*"production"/, "service worker registration should be production-gated");
+  assert.match(source, /beforeinstallprompt/, "app should listen for the PWA install prompt");
+  assert.match(source, /appinstalled/, "app should detect installed app mode");
+  assert.match(source, /앱 설치/, "app should expose an install action in the UI");
 }
 
 function delay(ms) {

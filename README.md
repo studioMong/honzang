@@ -126,7 +126,7 @@ npm run verify:backup-restore
 
 ## 웹/앱 지원
 
-혼자장부는 Next.js 웹앱으로 실행하며, `manifest.webmanifest`와 service worker를 통해 설치형 PWA 기본 동작을 지원합니다. 네트워크가 끊긴 상태에서 앱 화면 이동이 실패하면 `public/offline.html`을 표시합니다.
+혼자장부는 Next.js 웹앱으로 실행하며, `manifest.webmanifest`와 service worker를 통해 설치형 PWA 기본 동작을 지원합니다. 상단 바의 `앱 설치` 버튼은 브라우저가 제공하는 PWA 설치 프롬프트를 호출하고, 네트워크가 끊긴 상태에서 앱 화면 이동이 실패하면 `public/offline.html`을 표시합니다.
 
 PWA 리소스와 service worker 등록 상태는 프로덕션 빌드 후 아래 명령으로 확인합니다.
 
