@@ -1451,6 +1451,10 @@ function ReportsPanel({
   }
 
   async function deleteTaxReport(taxReportId: string) {
+    const taxReport = taxReports.find((item) => item.id === taxReportId);
+    const label = taxReport ? `${formatDate(taxReport.periodStart)} - ${formatDate(taxReport.periodEnd)} 리포트` : "선택한 리포트";
+    if (!window.confirm(`${label}를 삭제할까요? 저장된 스냅샷은 복구할 수 없습니다.`)) return;
+
     setDeletingReportId(taxReportId);
     try {
       const response = await fetch("/api/reports", {
@@ -2192,6 +2196,9 @@ function SettingsPanel({
   }
 
   async function deleteVendor(vendorId: string) {
+    const vendor = vendors.find((item) => item.id === vendorId);
+    if (!window.confirm(`${vendor?.name ?? "선택한 거래처"} 기본값을 삭제할까요? 이후 새 거래에는 이 기본값이 적용되지 않습니다.`)) return;
+
     const previous = vendors;
     onVendorsChanged(vendors.filter((vendor) => vendor.id !== vendorId));
     try {
@@ -2225,6 +2232,9 @@ function SettingsPanel({
   }
 
   async function deleteRule(ruleId: string) {
+    const rule = classificationRules.find((item) => item.id === ruleId);
+    if (!window.confirm(`${rule?.name ?? "선택한 자동 분류 규칙"}을 삭제할까요? 이후 CSV 가져오기에는 이 규칙이 적용되지 않습니다.`)) return;
+
     const previous = classificationRules;
     onRulesChanged(classificationRules.filter((rule) => rule.id !== ruleId));
     try {
