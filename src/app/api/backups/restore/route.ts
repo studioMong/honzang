@@ -5,6 +5,7 @@ import { DEFAULT_ACCOUNTS } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
+import { periodRangeFromMonth } from "@/lib/server/closing-periods";
 
 const sourceTypeSchema = z.enum(["BANK", "CARD", "HOMETAX_SALES", "HOMETAX_PURCHASES", "CASH_RECEIPT", "PG", "MANUAL"]);
 const accountTypeSchema = z.enum(["ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"]);
@@ -151,6 +152,18 @@ const taxReportSchema = z
   })
   .passthrough();
 
+const closingPeriodSchema = z
+  .object({
+    id: z.string().min(1).max(128).optional().nullable(),
+    period: z.string().regex(/^\d{4}-\d{2}$/),
+    periodStart: z.string().optional().nullable(),
+    periodEnd: z.string().optional().nullable(),
+    summaryPayload: z.unknown().optional().nullable(),
+    closedAt: z.string().optional().nullable(),
+    createdAt: z.string().optional().nullable()
+  })
+  .passthrough();
+
 const vendorSchema = z
   .object({
     id: z.string().min(1).max(128),
@@ -210,6 +223,7 @@ const workspaceBackupSchema = z
     evidences: z.array(evidenceSchema).default([]),
     journalEntries: z.array(journalEntrySchema).default([]),
     taxReports: z.array(taxReportSchema).default([]),
+    closingPeriods: z.array(closingPeriodSchema).default([]),
     vendors: z.array(vendorSchema).default([]),
     classificationRules: z.array(classificationRuleSchema).default([]),
     auditEvents: z.array(auditEventSchema).default([]),
@@ -289,6 +303,7 @@ async function restoreWorkspace(db: RestoreDb, backup: WorkspaceBackup) {
     await restoreEvidences(tx, company.id, backup.evidences, transactionIdMap);
     await restoreJournalEntries(tx, company.id, backup.journalEntries, transactionIdMap, accountByCode);
     await restoreTaxReports(tx, company.id, backup.taxReports);
+    await restoreClosingPeriods(tx, company.id, backup.closingPeriods);
     await restoreVendors(tx, company.id, backup.vendors, accountByCode);
     await restoreClassificationRules(tx, company.id, backup.classificationRules, accountByCode);
     await restoreReviewItems(tx, company.id, backup.reviewItems, transactionIdMap);
@@ -325,6 +340,7 @@ async function clearCompanyData(tx: Prisma.TransactionClient, companyId: string)
   await tx.transaction.deleteMany({ where: { companyId } });
   await tx.importBatch.deleteMany({ where: { companyId } });
   await tx.taxReport.deleteMany({ where: { companyId } });
+  await tx.closingPeriod.deleteMany({ where: { companyId } });
   await tx.vendor.deleteMany({ where: { companyId } });
   await tx.classificationRule.deleteMany({ where: { companyId } });
   await tx.csvTemplate.deleteMany({ where: { companyId } });
@@ -550,6 +566,25 @@ async function restoreTaxReports(tx: Prisma.TransactionClient, companyId: string
   }
 }
 
+async function restoreClosingPeriods(tx: Prisma.TransactionClient, companyId: string, closingPeriods: WorkspaceBackup["closingPeriods"]) {
+  for (const closingPeriod of uniqueByPeriod(closingPeriods)) {
+    const range = periodRangeFromMonth(closingPeriod.period);
+    if (!range) continue;
+    await tx.closingPeriod.create({
+      data: {
+        id: closingPeriod.id ?? undefined,
+        companyId,
+        period: closingPeriod.period,
+        periodStart: dateOrNow(closingPeriod.periodStart ?? range.start.toISOString()),
+        periodEnd: dateOrNow(closingPeriod.periodEnd ?? range.end.toISOString()),
+        summaryPayload: closingPeriod.summaryPayload === undefined ? undefined : toJsonInput(closingPeriod.summaryPayload),
+        closedAt: dateOrNow(closingPeriod.closedAt ?? closingPeriod.periodEnd ?? range.end.toISOString()),
+        createdAt: dateOrNow(closingPeriod.createdAt ?? closingPeriod.closedAt ?? range.end.toISOString())
+      }
+    });
+  }
+}
+
 async function restoreVendors(
   tx: Prisma.TransactionClient,
   companyId: string,
@@ -658,11 +693,20 @@ function buildRestoreCounts(backup: WorkspaceBackup) {
     evidences: uniqueById(backup.evidences).length,
     journalEntries: uniqueById(backup.journalEntries).length,
     taxReports: uniqueById(backup.taxReports).length,
+    closingPeriods: uniqueByPeriod(backup.closingPeriods).length,
     vendors: uniqueById(backup.vendors).length,
     classificationRules: uniqueById(backup.classificationRules).length,
     auditEvents: uniqueById(backup.auditEvents).length,
     reviewItems: uniqueById(backup.reviewItems).filter((item) => item.transaction?.id && transactionIds.has(item.transaction.id)).length
   };
+}
+
+function uniqueByPeriod<T extends { period: string }>(items: T[]) {
+  const byPeriod = new Map<string, T>();
+  for (const item of items) {
+    byPeriod.set(item.period, item);
+  }
+  return [...byPeriod.values()];
 }
 
 function uniqueById<T extends { id?: string | null }>(items: T[]) {
@@ -697,6 +741,10 @@ function dateOrNull(value?: string | null) {
 function emptyToNull(value?: string | null) {
   const normalized = value?.trim();
   return normalized ? normalized : null;
+}
+
+function toJsonInput(value: unknown) {
+  return value === null ? Prisma.JsonNull : (value as Prisma.InputJsonValue);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

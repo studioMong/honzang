@@ -6,6 +6,7 @@ import { getPrisma } from "@/lib/db";
 import { sampleTaxReports } from "@/lib/sample-data";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
+import { closedPeriodResponse, findClosedPeriodForDate } from "@/lib/server/closing-periods";
 import { serializeTaxReport } from "@/lib/server/serializers";
 
 const taxReportSchema = z.object({
@@ -69,6 +70,9 @@ export async function POST(request: Request) {
   }
 
   const company = await ensureDefaultCompany(db);
+  const closedPeriod = await findClosedPeriodForDate(db, company.id, periodStart);
+  if (closedPeriod) return closedPeriodResponse(closedPeriod.period);
+
   const taxReport = await db.taxReport.create({
     data: {
       companyId: company.id,
@@ -116,6 +120,8 @@ export async function DELETE(request: Request) {
   if (!taxReport) {
     return NextResponse.json({ ok: false, message: "리포트를 찾을 수 없습니다." }, { status: 404 });
   }
+  const closedPeriod = await findClosedPeriodForDate(db, company.id, taxReport.periodStart);
+  if (closedPeriod) return closedPeriodResponse(closedPeriod.period);
 
   await db.taxReport.delete({ where: { id: taxReport.id } });
   await recordAuditEvent(db, {

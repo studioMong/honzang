@@ -4,6 +4,7 @@ import { getPrisma } from "@/lib/db";
 import { sampleTransactions } from "@/lib/sample-data";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
+import { closedPeriodResponse, findClosedPeriodForDate } from "@/lib/server/closing-periods";
 import { serializeTransaction, serializeVendor } from "@/lib/server/serializers";
 import { applyVendorDefaults, inferAccount, summarizeTransactions } from "@/lib/accounting";
 
@@ -91,6 +92,9 @@ export async function POST(request: Request) {
   }
 
   const company = await ensureDefaultCompany(db);
+  const closedPeriod = await findClosedPeriodForDate(db, company.id, payload.transactionDate);
+  if (closedPeriod) return closedPeriodResponse(closedPeriod.period);
+
   const inferred = inferAccount(payload.description, payload.counterparty);
   const vendors = await db.vendor.findMany({
     where: { companyId: company.id },
@@ -177,9 +181,21 @@ export async function PATCH(request: Request) {
   }
 
   const company = await ensureDefaultCompany(db);
+  const existing = await db.transaction.findFirst({
+    where: {
+      id: String(body.id),
+      companyId: company.id
+    }
+  });
+  if (!existing) {
+    return NextResponse.json({ ok: false, message: "거래를 찾을 수 없습니다." }, { status: 404 });
+  }
+  const closedPeriod = await findClosedPeriodForDate(db, company.id, existing.transactionDate);
+  if (closedPeriod) return closedPeriodResponse(closedPeriod.period);
+
   const transaction = await db.transaction.update({
     where: {
-      id: String(body.id)
+      id: existing.id
     },
     data: {
       confirmedAccountId: body.confirmedAccountId || null,
@@ -191,10 +207,6 @@ export async function PATCH(request: Request) {
       confirmedAccount: true
     }
   });
-
-  if (transaction.companyId !== company.id) {
-    return NextResponse.json({ ok: false, message: "Invalid company transaction." }, { status: 403 });
-  }
   await recordAuditEvent(db, {
     companyId: company.id,
     action: "TRANSACTION_UPDATE",

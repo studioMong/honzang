@@ -66,6 +66,17 @@ const backup = {
   evidences: [],
   journalEntries: [],
   taxReports: [],
+  closingPeriods: [
+    {
+      id: "closing-dry-run-1",
+      period: "2026-06",
+      periodStart: "2026-06-01",
+      periodEnd: "2026-06-30",
+      summaryPayload: { transactionCount: 1 },
+      closedAt: "2026-06-17T00:00:00.000Z",
+      createdAt: "2026-06-17T00:00:00.000Z"
+    }
+  ],
   vendors: [],
   classificationRules: [],
   auditEvents: [
@@ -142,6 +153,7 @@ async function verifySettingsUi() {
   assert.match(body, /백업 ZIP/, "settings page should expose ZIP backup action");
   assert.match(body, /백업 복원/, "settings page should expose restore action");
   assert.match(body, /활동 로그/, "settings page should expose audit log section");
+  assert.match(body, /마감/, "settings page should expose closing period backup count");
 }
 
 async function verifyDryRun() {
@@ -152,6 +164,7 @@ async function verifyDryRun() {
   assert.equal(body.restoredCounts?.importBatches, 1, "dry-run should count import batches");
   assert.equal(body.restoredCounts?.originalImportFiles, 1, "dry-run should count original CSV files");
   assert.equal(body.restoredCounts?.auditEvents, 1, "dry-run should count audit events");
+  assert.equal(body.restoredCounts?.closingPeriods, 1, "dry-run should count closing periods");
   assert.equal(body.restoredCounts?.evidences, 0, "dry-run should count evidences");
 }
 

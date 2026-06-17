@@ -208,6 +208,17 @@ export type AppAuditEvent = {
   createdAt: string;
 };
 
+export type AppClosingPeriod = {
+  id: string;
+  period: string;
+  periodStart: string;
+  periodEnd: string;
+  summaryPayload?: unknown;
+  closedAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type SummaryReport = {
   periodLabel: string;
   revenue: number;

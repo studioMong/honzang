@@ -1,8 +1,9 @@
-import type { Account, AuditEvent, ClassificationRule, Evidence, ImportBatch, JournalEntry, JournalLine, ReviewItem, TaxReport, Transaction, Vendor } from "@prisma/client";
+import type { Account, AuditEvent, ClassificationRule, ClosingPeriod, Evidence, ImportBatch, JournalEntry, JournalLine, ReviewItem, TaxReport, Transaction, Vendor } from "@prisma/client";
 import type {
   AppAccount,
   AppAuditEvent,
   AppClassificationRule,
+  AppClosingPeriod,
   AppEvidence,
   AppImportBatch,
   AppJournalEntry,
@@ -198,5 +199,18 @@ export function serializeAuditEvent(auditEvent: AuditEvent): AppAuditEvent {
     summary: auditEvent.summary,
     metadata: auditEvent.metadata,
     createdAt: auditEvent.createdAt.toISOString()
+  };
+}
+
+export function serializeClosingPeriod(closingPeriod: ClosingPeriod): AppClosingPeriod {
+  return {
+    id: closingPeriod.id,
+    period: closingPeriod.period,
+    periodStart: closingPeriod.periodStart.toISOString().slice(0, 10),
+    periodEnd: closingPeriod.periodEnd.toISOString().slice(0, 10),
+    summaryPayload: closingPeriod.summaryPayload,
+    closedAt: closingPeriod.closedAt.toISOString(),
+    createdAt: closingPeriod.createdAt.toISOString(),
+    updatedAt: closingPeriod.updatedAt.toISOString()
   };
 }

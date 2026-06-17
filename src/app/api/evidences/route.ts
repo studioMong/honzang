@@ -5,6 +5,7 @@ import { getPrisma } from "@/lib/db";
 import { sampleEvidences } from "@/lib/sample-data";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
+import { closedPeriodResponse, findClosedPeriodForDate } from "@/lib/server/closing-periods";
 import { serializeEvidence } from "@/lib/server/serializers";
 
 const evidenceSchema = z.object({
@@ -82,6 +83,10 @@ export async function POST(request: Request) {
   if (payload.transactionId && !transaction) {
     return NextResponse.json({ ok: false, message: "거래를 찾을 수 없습니다." }, { status: 404 });
   }
+  const closedIssuePeriod = await findClosedPeriodForDate(db, company.id, payload.issueDate);
+  if (closedIssuePeriod) return closedPeriodResponse(closedIssuePeriod.period);
+  const closedTransactionPeriod = await findClosedPeriodForDate(db, company.id, transaction?.transactionDate);
+  if (closedTransactionPeriod) return closedPeriodResponse(closedTransactionPeriod.period);
 
   const evidence = await db.$transaction(async (tx) => {
     const created = await tx.evidence.create({

@@ -5,6 +5,7 @@ import { getPrisma } from "@/lib/db";
 import { sampleJournalEntries } from "@/lib/sample-data";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
+import { closedPeriodResponse, findClosedPeriodForDate } from "@/lib/server/closing-periods";
 import { serializeJournalEntry } from "@/lib/server/serializers";
 
 const journalLineSchema = z.object({
@@ -91,6 +92,9 @@ export async function POST(request: Request) {
   }
 
   const company = await ensureDefaultCompany(db);
+  const closedEntryPeriod = await findClosedPeriodForDate(db, company.id, payload.entryDate);
+  if (closedEntryPeriod) return closedPeriodResponse(closedEntryPeriod.period);
+
   const accounts = await db.account.findMany({ where: { companyId: company.id } });
   const accountByCode = new Map(accounts.map((account) => [account.code, account]));
   const missingAccount = payload.lines.find((line) => !accountByCode.has(line.accountCode));
@@ -111,6 +115,8 @@ export async function POST(request: Request) {
   if (payload.transactionId && !transaction) {
     return NextResponse.json({ ok: false, message: "거래를 찾을 수 없습니다." }, { status: 404 });
   }
+  const closedTransactionPeriod = await findClosedPeriodForDate(db, company.id, transaction?.transactionDate);
+  if (closedTransactionPeriod) return closedPeriodResponse(closedTransactionPeriod.period);
 
   const created = await db.$transaction(async (tx) => {
     if (transaction) {
@@ -203,6 +209,8 @@ export async function PATCH(request: Request) {
   if (!existing) {
     return NextResponse.json({ ok: false, message: "분개를 찾을 수 없습니다." }, { status: 404 });
   }
+  const closedPeriod = await findClosedPeriodForDate(db, company.id, existing.entryDate);
+  if (closedPeriod) return closedPeriodResponse(closedPeriod.period);
 
   const journalEntry = await db.journalEntry.update({
     where: { id: parsed.data.id },

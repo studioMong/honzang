@@ -24,6 +24,7 @@ import type {
   AppAccount,
   AppAuditEvent,
   AppClassificationRule,
+  AppClosingPeriod,
   AppCompany,
   AppEvidence,
   AppImportBatch,
@@ -99,6 +100,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
   const [taxReports, setTaxReports] = useState<AppTaxReport[]>(sampleTaxReports);
   const [vendors, setVendors] = useState<AppVendor[]>([]);
   const [auditEvents, setAuditEvents] = useState<AppAuditEvent[]>([]);
+  const [closingPeriods, setClosingPeriods] = useState<AppClosingPeriod[]>([]);
   const [reviewItems, setReviewItems] = useState<ReviewItem[]>(buildReviewItems(sampleTransactions));
   const [reviewStatusOverrides, setReviewStatusOverrides] = useState<Record<string, ReviewItem["status"]>>({});
   const [loading, setLoading] = useState(false);
@@ -129,6 +131,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       const reviewResponse = await fetch("/api/reviews", { cache: "no-store" });
       const vendorResponse = await fetch("/api/vendors", { cache: "no-store" });
       const auditResponse = await fetch("/api/audit-events", { cache: "no-store" });
+      const closingPeriodResponse = await fetch("/api/closing-periods", { cache: "no-store" });
       const companyPayload = await companyResponse.json();
       const transactionPayload = await transactionResponse.json();
       const importPayload = await importResponse.json();
@@ -138,6 +141,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       const reviewPayload = await reviewResponse.json();
       const vendorPayload = await vendorResponse.json();
       const auditPayload = await auditResponse.json();
+      const closingPeriodPayload = await closingPeriodResponse.json();
       const isDatabaseMode =
         companyPayload.mode === "database" ||
         transactionPayload.mode === "database" ||
@@ -147,7 +151,8 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
         reportPayload.mode === "database" ||
         reviewPayload.mode === "database" ||
         vendorPayload.mode === "database" ||
-        auditPayload.mode === "database";
+        auditPayload.mode === "database" ||
+        closingPeriodPayload.mode === "database";
       const nextTransactions = isDatabaseMode ? transactionPayload.transactions ?? [] : transactionPayload.transactions?.length ? transactionPayload.transactions : sampleTransactions;
       setCompany(companyPayload.company ?? sampleCompany);
       setAccounts(companyPayload.accounts ?? DEFAULT_ACCOUNTS);
@@ -160,6 +165,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       setTaxReports(reportPayload.taxReports ?? []);
       setVendors(vendorPayload.vendors ?? []);
       setAuditEvents(auditPayload.auditEvents ?? []);
+      setClosingPeriods(closingPeriodPayload.closingPeriods ?? []);
       setReviewItems(reviewPayload.reviewItems ?? buildReviewItems(nextTransactions));
       setMode(isDatabaseMode ? "database" : "sample");
     } catch {
@@ -174,6 +180,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       setTaxReports(sampleTaxReports);
       setVendors([]);
       setAuditEvents([]);
+      setClosingPeriods([]);
       setReviewItems(buildReviewItems(sampleTransactions));
       setMode("sample");
     } finally {
@@ -369,8 +376,10 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
             evidences={evidences}
             journalEntries={journalEntries}
             taxReports={taxReports}
+            closingPeriods={closingPeriods}
             onSaved={(taxReport) => setTaxReports((current) => [taxReport, ...current.filter((item) => item.id !== taxReport.id)])}
             onDeleted={(taxReportId) => setTaxReports((current) => current.filter((item) => item.id !== taxReportId))}
+            onClosingPeriodsChanged={setClosingPeriods}
           />
         )}
         {activeView === "settings" && (
@@ -387,6 +396,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
             vendors={vendors}
             classificationRules={classificationRules}
             auditEvents={auditEvents}
+            closingPeriods={closingPeriods}
             reviewItems={visibleReviewItems}
             onSaved={setCompany}
             onVendorsChanged={setVendors}
@@ -1475,8 +1485,10 @@ function ReportsPanel({
   evidences,
   journalEntries,
   taxReports,
+  closingPeriods,
   onSaved,
-  onDeleted
+  onDeleted,
+  onClosingPeriodsChanged
 }: {
   company: AppCompany;
   companyId: string;
@@ -1484,15 +1496,21 @@ function ReportsPanel({
   evidences: AppEvidence[];
   journalEntries: AppJournalEntry[];
   taxReports: AppTaxReport[];
+  closingPeriods: AppClosingPeriod[];
   onSaved: (taxReport: AppTaxReport) => void;
   onDeleted: (taxReportId: string) => void;
+  onClosingPeriodsChanged: (closingPeriods: AppClosingPeriod[]) => void;
 }) {
   const periodOptions = useMemo(() => buildPeriodOptions(transactions), [transactions]);
   const [period, setPeriod] = useState(() => periodOptions[0]?.value ?? "ALL");
   const [savingReport, setSavingReport] = useState(false);
   const [deletingReportId, setDeletingReportId] = useState<string | null>(null);
+  const [closingPeriodAction, setClosingPeriodAction] = useState<"close" | "reopen" | null>(null);
   const [selectedTaxReportId, setSelectedTaxReportId] = useState<string | null>(null);
   const selectedPeriod = period === "ALL" || periodOptions.some((option) => option.value === period) ? period : periodOptions[0]?.value ?? "ALL";
+  const selectedClosingPeriod = closingPeriods.find((item) => item.period === selectedPeriod) ?? null;
+  const canClosePeriod = selectedPeriod !== "ALL";
+  const isPeriodClosed = Boolean(selectedClosingPeriod);
   const filteredTransactions = useMemo(() => filterTransactionsByPeriod(transactions, selectedPeriod), [selectedPeriod, transactions]);
   const filteredEvidences = useMemo(() => filterEvidencesByPeriod(evidences, selectedPeriod), [evidences, selectedPeriod]);
   const filteredJournalEntries = useMemo(() => filterJournalEntriesByPeriod(journalEntries, selectedPeriod), [journalEntries, selectedPeriod]);
@@ -1545,6 +1563,7 @@ function ReportsPanel({
   }
 
   async function saveSnapshot() {
+    if (isPeriodClosed) return;
     setSavingReport(true);
     try {
       const response = await fetch("/api/reports", {
@@ -1579,6 +1598,10 @@ function ReportsPanel({
 
   async function deleteTaxReport(taxReportId: string) {
     const taxReport = taxReports.find((item) => item.id === taxReportId);
+    if (taxReport && isDateInClosedPeriod(taxReport.periodStart)) {
+      window.alert("마감 잠금된 기간의 리포트는 삭제할 수 없습니다. 먼저 마감 해제를 진행하세요.");
+      return;
+    }
     const label = taxReport ? `${formatDate(taxReport.periodStart)} - ${formatDate(taxReport.periodEnd)} 리포트` : "선택한 리포트";
     if (!window.confirm(`${label}를 삭제할까요? 저장된 스냅샷은 복구할 수 없습니다.`)) return;
 
@@ -1599,14 +1622,105 @@ function ReportsPanel({
     }
   }
 
+  async function closeSelectedPeriod() {
+    if (!canClosePeriod || isPeriodClosed) return;
+    if (!window.confirm(`${periodLabel} 장부를 마감 잠금 처리할까요? 잠금 후에는 해당 월의 거래, 증빙, 분개, 리포트 변경이 차단됩니다.`)) return;
+
+    setClosingPeriodAction("close");
+    try {
+      const response = await fetch("/api/closing-periods", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId,
+          period: selectedPeriod,
+          summaryPayload: {
+            periodRange,
+            report: buildTaxReportPayload({
+              period: selectedPeriod,
+              periodLabel,
+              summary: reportSummary,
+              filingScheduleRows,
+              filingPackageRows,
+              withholdingRows,
+              corporateTaxRows,
+              financialStatementRows,
+              ledgerRows,
+              transactionCount: filteredTransactions.length,
+              journalEntryCount: approvedJournalEntries.length
+            })
+          }
+        })
+      });
+      const payload = await response.json();
+      if (payload.closingPeriod) {
+        onClosingPeriodsChanged(sortClosingPeriods([payload.closingPeriod, ...closingPeriods.filter((item) => item.period !== selectedPeriod)]));
+      } else if (!response.ok) {
+        window.alert(payload.message ?? "마감 잠금에 실패했습니다.");
+      }
+    } finally {
+      setClosingPeriodAction(null);
+    }
+  }
+
+  async function reopenSelectedPeriod() {
+    if (!canClosePeriod || !isPeriodClosed) return;
+    if (!window.confirm(`${periodLabel} 마감 잠금을 해제할까요? 해제 후에는 해당 월 데이터를 다시 수정할 수 있습니다.`)) return;
+
+    setClosingPeriodAction("reopen");
+    try {
+      const response = await fetch("/api/closing-periods", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyId, period: selectedPeriod })
+      });
+      const payload = await response.json();
+      if (payload.ok) {
+        onClosingPeriodsChanged(closingPeriods.filter((item) => item.period !== selectedPeriod));
+      } else if (!response.ok) {
+        window.alert(payload.message ?? "마감 해제에 실패했습니다.");
+      }
+    } finally {
+      setClosingPeriodAction(null);
+    }
+  }
+
+  function isDateInClosedPeriod(value: string) {
+    return closingPeriods.some((item) => item.periodStart <= value && item.periodEnd >= value);
+  }
+
   return (
     <div className="content">
       <section className="panel report-filter-panel">
         <div className="panel-header">
-          <h2 className="panel-title">리포트 기간</h2>
+          <div>
+            <h2 className="panel-title">리포트 기간</h2>
+            <p className="panel-subtitle">
+              {isPeriodClosed
+                ? `${formatDate(selectedClosingPeriod?.closedAt ?? "")} 마감됨 · 해당 월 변경 잠금`
+                : canClosePeriod
+                  ? "월별 신고자료가 확정되면 마감 잠금으로 변경을 차단"
+                  : "월별 기간을 선택하면 마감 잠금을 사용할 수 있습니다."}
+            </p>
+          </div>
           <div className="toolbar">
             <span className="status blue">{periodLabel}</span>
-            <button className="primary-button" onClick={() => void saveSnapshot()} disabled={savingReport}>
+            <span className={`status ${isPeriodClosed ? "green" : canClosePeriod ? "amber" : "blue"}`}>
+              {isPeriodClosed ? "마감 잠금" : canClosePeriod ? "마감 가능" : "전체 기간"}
+            </span>
+            {canClosePeriod &&
+              (isPeriodClosed ? (
+                <button className="secondary-button" onClick={() => void reopenSelectedPeriod()} disabled={closingPeriodAction !== null}>
+                  {closingPeriodAction === "reopen" ? <Loader2 size={16} className="spin" /> : <RefreshCcw size={16} />}
+                  마감 해제
+                </button>
+              ) : (
+                <button className="secondary-button" onClick={() => void closeSelectedPeriod()} disabled={closingPeriodAction !== null}>
+                  {closingPeriodAction === "close" ? <Loader2 size={16} className="spin" /> : <FileCheck2 size={16} />}
+                  마감 잠금
+                </button>
+              ))}
+            <button className="primary-button" onClick={() => void saveSnapshot()} disabled={savingReport || isPeriodClosed}>
               {savingReport ? <Loader2 size={16} className="spin" /> : <CheckCircle2 size={16} />}
               스냅샷 저장
             </button>
@@ -1698,8 +1812,8 @@ function ReportsPanel({
                       <td className="amount">{formatKRW(payload.vatPayable ?? 0)}</td>
                       <td>
                         <button className="ghost-button" onClick={() => setSelectedTaxReportId(taxReport.id)}>열기</button>
-                        <button className="ghost-button" disabled={deletingReportId === taxReport.id} onClick={() => void deleteTaxReport(taxReport.id)}>
-                          {deletingReportId === taxReport.id ? "삭제 중" : "삭제"}
+                        <button className="ghost-button" disabled={deletingReportId === taxReport.id || isDateInClosedPeriod(taxReport.periodStart)} onClick={() => void deleteTaxReport(taxReport.id)}>
+                          {isDateInClosedPeriod(taxReport.periodStart) ? "마감됨" : deletingReportId === taxReport.id ? "삭제 중" : "삭제"}
                         </button>
                       </td>
                     </tr>
@@ -1724,8 +1838,8 @@ function ReportsPanel({
                 <Download size={16} />
                 JSON
               </button>
-              <button className="ghost-button" disabled={deletingReportId === selectedTaxReport.id} onClick={() => void deleteTaxReport(selectedTaxReport.id)}>
-                {deletingReportId === selectedTaxReport.id ? "삭제 중" : "삭제"}
+              <button className="ghost-button" disabled={deletingReportId === selectedTaxReport.id || isDateInClosedPeriod(selectedTaxReport.periodStart)} onClick={() => void deleteTaxReport(selectedTaxReport.id)}>
+                {isDateInClosedPeriod(selectedTaxReport.periodStart) ? "마감됨" : deletingReportId === selectedTaxReport.id ? "삭제 중" : "삭제"}
               </button>
               <button className="ghost-button" onClick={() => setSelectedTaxReportId(null)}>닫기</button>
             </div>
@@ -2224,6 +2338,7 @@ function SettingsPanel({
   vendors,
   classificationRules,
   auditEvents,
+  closingPeriods,
   reviewItems,
   onSaved,
   onVendorsChanged,
@@ -2242,6 +2357,7 @@ function SettingsPanel({
   vendors: AppVendor[];
   classificationRules: AppClassificationRule[];
   auditEvents: AppAuditEvent[];
+  closingPeriods: AppClosingPeriod[];
   reviewItems: ReviewItem[];
   onSaved: (company: AppCompany) => void;
   onVendorsChanged: (vendors: AppVendor[]) => void;
@@ -2288,6 +2404,7 @@ function SettingsPanel({
       vendors,
       classificationRules,
       auditEvents,
+      closingPeriods,
       reviewItems
     });
   }
@@ -2482,8 +2599,9 @@ function SettingsPanel({
         `거래 ${formatNumber(dryRunCounts.transactions ?? 0)}건`,
         `증빙 ${formatNumber(dryRunCounts.evidences ?? 0)}건`,
         `분개 ${formatNumber(dryRunCounts.journalEntries ?? 0)}개`,
+        `마감 ${formatNumber(dryRunCounts.closingPeriods ?? 0)}개`,
         `원본 CSV ${formatNumber(dryRunCounts.originalImportFiles ?? 0)}개`,
-        "현재 DB의 회사 데이터, 거래, 증빙, 분개, 리포트, 규칙을 백업 파일 내용으로 교체할까요?"
+        "현재 DB의 회사 데이터, 거래, 증빙, 분개, 리포트, 마감, 규칙을 백업 파일 내용으로 교체할까요?"
       ].join("\n");
       if (!window.confirm(restoreText)) return;
 
@@ -2501,7 +2619,7 @@ function SettingsPanel({
       const counts = payload.restoredCounts ?? {};
       setBackupMessage({
         tone: "green",
-        text: `복원 완료: 거래 ${formatNumber(counts.transactions ?? 0)}건, 증빙 ${formatNumber(counts.evidences ?? 0)}건, 분개 ${formatNumber(counts.journalEntries ?? 0)}개, 원본 CSV ${formatNumber(counts.originalImportFiles ?? 0)}개`
+        text: `복원 완료: 거래 ${formatNumber(counts.transactions ?? 0)}건, 증빙 ${formatNumber(counts.evidences ?? 0)}건, 분개 ${formatNumber(counts.journalEntries ?? 0)}개, 마감 ${formatNumber(counts.closingPeriods ?? 0)}개, 원본 CSV ${formatNumber(counts.originalImportFiles ?? 0)}개`
       });
       await onRestored();
     } catch {
@@ -2861,7 +2979,7 @@ function SettingsPanel({
         <div className="panel-header">
           <div>
             <h2 className="panel-title">전체 백업</h2>
-            <p className="panel-subtitle">현재 회사 데이터, 거래, 증빙, 분개, 리포트, 규칙을 파일로 보관</p>
+            <p className="panel-subtitle">현재 회사 데이터, 거래, 증빙, 분개, 리포트, 마감, 규칙을 파일로 보관</p>
           </div>
           <div className="toolbar">
             <button className="secondary-button" onClick={() => void downloadWorkspaceBackupJson()} disabled={exportingBackup}>
@@ -2896,6 +3014,7 @@ function SettingsPanel({
             <ChecklistItem tone="green" title="증빙" value={`${formatNumber(evidences.length)}건`} />
             <ChecklistItem tone="green" title="분개" value={`${formatNumber(journalEntries.length)}건`} />
             <ChecklistItem tone="green" title="리포트" value={`${formatNumber(taxReports.length)}개`} />
+            <ChecklistItem tone="green" title="마감" value={`${formatNumber(closingPeriods.length)}개`} />
             <ChecklistItem tone="green" title="원본 CSV" value={`${formatNumber(importBatches.filter((batch) => batch.hasOriginalFile).length)}개`} />
           </div>
           {backupMessage && <div className={`import-message status ${backupMessage.tone}`}>{backupMessage.text}</div>}
@@ -3189,6 +3308,10 @@ function buildPeriodOptions(transactions: AppTransaction[]) {
   return [...new Set(transactions.map((transaction) => transaction.transactionDate.slice(0, 7)).filter(Boolean))]
     .sort((a, b) => b.localeCompare(a))
     .map((value) => ({ value, label: formatPeriodLabel(value) }));
+}
+
+function sortClosingPeriods(closingPeriods: AppClosingPeriod[]) {
+  return [...closingPeriods].sort((a, b) => b.period.localeCompare(a.period));
 }
 
 function formatPeriodLabel(period: string) {
@@ -3548,6 +3671,7 @@ function buildWorkspaceBackupPayload({
   vendors,
   classificationRules,
   auditEvents,
+  closingPeriods,
   reviewItems
 }: {
   mode: "sample" | "database";
@@ -3563,6 +3687,7 @@ function buildWorkspaceBackupPayload({
   vendors: AppVendor[];
   classificationRules: AppClassificationRule[];
   auditEvents: AppAuditEvent[];
+  closingPeriods: AppClosingPeriod[];
   reviewItems: ReviewItem[];
 }) {
   return {
@@ -3582,6 +3707,7 @@ function buildWorkspaceBackupPayload({
       vendors: vendors.length,
       classificationRules: classificationRules.length,
       auditEvents: auditEvents.length,
+      closingPeriods: closingPeriods.length,
       reviewItems: reviewItems.length
     },
     company,
@@ -3596,6 +3722,7 @@ function buildWorkspaceBackupPayload({
     vendors,
     classificationRules,
     auditEvents,
+    closingPeriods,
     reviewItems,
     notes: [
       "혼자장부 전체 백업 파일입니다.",

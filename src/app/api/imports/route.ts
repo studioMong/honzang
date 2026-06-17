@@ -6,6 +6,7 @@ import { getPrisma } from "@/lib/db";
 import { applyClassificationRules, applyVendorDefaults, normalizeCsvRow, summarizeTransactions } from "@/lib/accounting";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
+import { closedPeriodResponse, findClosedPeriodForDates } from "@/lib/server/closing-periods";
 import { serializeAccount, serializeClassificationRule, serializeImportBatch, serializeTransaction, serializeVendor } from "@/lib/server/serializers";
 import type { CsvColumnMapping, ParsedCsvRow, SourceType } from "@/types";
 
@@ -115,9 +116,15 @@ export async function DELETE(request: Request) {
       companyId: company.id,
       importBatchId: importBatch.id
     },
-    select: { id: true }
+    select: { id: true, transactionDate: true }
   });
   const transactionIds = transactions.map((transaction) => transaction.id);
+  const closedPeriod = await findClosedPeriodForDates(
+    db,
+    company.id,
+    transactions.map((transaction) => transaction.transactionDate)
+  );
+  if (closedPeriod) return closedPeriodResponse(closedPeriod.period);
   const approvedJournalCount = transactionIds.length
     ? await db.journalEntry.count({
         where: {
@@ -229,6 +236,12 @@ export async function POST(request: Request) {
   }
 
   const company = await ensureDefaultCompany(db);
+  const closedPeriod = await findClosedPeriodForDates(
+    db,
+    company.id,
+    normalized.map((transaction) => transaction.transactionDate)
+  );
+  if (closedPeriod) return closedPeriodResponse(closedPeriod.period);
   const existingBatch = await db.importBatch.findFirst({
     where: {
       companyId: company.id,

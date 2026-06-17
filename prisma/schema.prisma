@@ -96,6 +96,7 @@ model Company {
   reviewItems                     ReviewItem[]
   taxReports                      TaxReport[]
   auditEvents                     AuditEvent[]
+  closingPeriods                  ClosingPeriod[]
 }
 
 model Account {
@@ -335,4 +336,21 @@ model AuditEvent {
   @@index([companyId, createdAt])
   @@index([companyId, action])
   @@index([companyId, entityType])
+}
+
+model ClosingPeriod {
+  id                    String      @id @default(cuid())
+  companyId             String
+  period                String
+  periodStart           DateTime
+  periodEnd             DateTime
+  summaryPayload        Json?
+  closedAt              DateTime    @default(now())
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  company               Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, period])
+  @@index([companyId, periodStart, periodEnd])
 }
