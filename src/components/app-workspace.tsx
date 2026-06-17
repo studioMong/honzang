@@ -253,6 +253,10 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
             onImportBatch={(importBatch) => {
               setImportBatches((current) => mergeImportBatches(current, importBatch));
             }}
+            onImportDeleted={(importBatchId) => {
+              setImportBatches((current) => current.filter((batch) => batch.id !== importBatchId));
+              void refresh();
+            }}
           />
         )}
         {activeView === "transactions" && (
@@ -394,7 +398,8 @@ function CsvImportPanel({
   csvTemplates,
   classificationRules,
   onImported,
-  onImportBatch
+  onImportBatch,
+  onImportDeleted
 }: {
   companyId: string;
   accounts: AppAccount[];
@@ -403,12 +408,14 @@ function CsvImportPanel({
   classificationRules: AppClassificationRule[];
   onImported: (transactions: AppTransaction[]) => void;
   onImportBatch: (importBatch: AppImportBatch) => void;
+  onImportDeleted: (importBatchId: string) => void;
 }) {
   const [sourceType, setSourceType] = useState<SourceType>("BANK");
   const [fileName, setFileName] = useState("");
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [mapping, setMapping] = useState<CsvColumnMapping>({});
   const [saving, setSaving] = useState(false);
+  const [deletingBatchId, setDeletingBatchId] = useState<string | null>(null);
   const [importMessage, setImportMessage] = useState<{ tone: "green" | "amber" | "red"; text: string } | null>(null);
   const canImport = preview && mapping.transactionDate && mapping.description && (mapping.amount || mapping.depositAmount || mapping.withdrawalAmount);
 
@@ -458,6 +465,35 @@ function CsvImportPanel({
       }
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function deleteImportBatch(batch: AppImportBatch) {
+    const confirmed = window.confirm(`${batch.originalFileName} 업로드와 연결 거래를 삭제할까요? 승인된 분개가 있으면 삭제되지 않습니다.`);
+    if (!confirmed) return;
+
+    setDeletingBatchId(batch.id);
+    try {
+      const response = await fetch("/api/imports", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyId, importBatchId: batch.id })
+      });
+      const payload = await response.json();
+      if (response.ok) {
+        setImportMessage({
+          tone: "green",
+          text: `${formatNumber(payload.deletedTransactions ?? 0)}건의 거래를 삭제했습니다.`
+        });
+        onImportDeleted(batch.id);
+      } else {
+        setImportMessage({
+          tone: "red",
+          text: payload.message ?? "업로드 삭제에 실패했습니다."
+        });
+      }
+    } finally {
+      setDeletingBatchId(null);
     }
   }
 
@@ -561,12 +597,13 @@ function CsvImportPanel({
                 <th>파일</th>
                 <th className="amount">행</th>
                 <th>해시</th>
+                <th>작업</th>
               </tr>
             </thead>
             <tbody>
               {importBatches.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="empty-cell">아직 업로드한 CSV가 없습니다.</td>
+                  <td colSpan={6} className="empty-cell">아직 업로드한 CSV가 없습니다.</td>
                 </tr>
               ) : (
                 importBatches.map((batch) => (
@@ -576,6 +613,11 @@ function CsvImportPanel({
                     <td>{batch.originalFileName}</td>
                     <td className="amount">{formatNumber(batch.rowCount)}</td>
                     <td>{batch.originalFileHash ? batch.originalFileHash.slice(0, 12) : "-"}</td>
+                    <td>
+                      <button className="ghost-button" onClick={() => void deleteImportBatch(batch)} disabled={deletingBatchId === batch.id}>
+                        {deletingBatchId === batch.id ? "삭제 중" : "삭제"}
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}

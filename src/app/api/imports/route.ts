@@ -30,6 +30,11 @@ const importSchema = z.object({
   rows: z.array(z.record(z.string(), z.union([z.string(), z.number(), z.null()]))).min(1).max(2000)
 });
 
+const deleteImportSchema = z.object({
+  companyId: z.string().default(DEFAULT_COMPANY_ID),
+  importBatchId: z.string().min(1)
+});
+
 export async function GET() {
   const db = getPrisma();
 
@@ -45,6 +50,105 @@ export async function GET() {
   });
 
   return NextResponse.json({ importBatches: importBatches.map(serializeImportBatch), mode: "database" });
+}
+
+export async function DELETE(request: Request) {
+  const parsed = deleteImportSchema.safeParse(await request.json());
+  if (!parsed.success) {
+    return NextResponse.json({ ok: false, errors: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const db = getPrisma();
+  if (!db) {
+    return NextResponse.json({ ok: true, mode: "sample", deletedTransactions: 0 });
+  }
+
+  const company = await ensureDefaultCompany(db);
+  const importBatch = await db.importBatch.findFirst({
+    where: {
+      id: parsed.data.importBatchId,
+      companyId: company.id
+    }
+  });
+
+  if (!importBatch) {
+    return NextResponse.json({ ok: false, message: "업로드 이력을 찾을 수 없습니다." }, { status: 404 });
+  }
+
+  const transactions = await db.transaction.findMany({
+    where: {
+      companyId: company.id,
+      importBatchId: importBatch.id
+    },
+    select: { id: true }
+  });
+  const transactionIds = transactions.map((transaction) => transaction.id);
+  const approvedJournalCount = transactionIds.length
+    ? await db.journalEntry.count({
+        where: {
+          companyId: company.id,
+          transactionId: { in: transactionIds },
+          status: "APPROVED"
+        }
+      })
+    : 0;
+
+  if (approvedJournalCount > 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: "승인된 분개가 있는 업로드는 삭제할 수 없습니다. 분개를 취소한 뒤 다시 시도하세요.",
+        approvedJournalCount
+      },
+      { status: 409 }
+    );
+  }
+
+  const result = await db.$transaction(async (tx) => {
+    if (transactionIds.length) {
+      await tx.evidence.updateMany({
+        where: {
+          companyId: company.id,
+          transactionId: { in: transactionIds }
+        },
+        data: { transactionId: null }
+      });
+      await tx.reviewItem.deleteMany({
+        where: {
+          companyId: company.id,
+          transactionId: { in: transactionIds }
+        }
+      });
+      const draftJournalEntries = await tx.journalEntry.findMany({
+        where: {
+          companyId: company.id,
+          transactionId: { in: transactionIds },
+          status: "DRAFT"
+        },
+        select: { id: true }
+      });
+      const draftJournalEntryIds = draftJournalEntries.map((entry) => entry.id);
+      if (draftJournalEntryIds.length) {
+        await tx.journalLine.deleteMany({ where: { journalEntryId: { in: draftJournalEntryIds } } });
+        await tx.journalEntry.deleteMany({ where: { id: { in: draftJournalEntryIds } } });
+      }
+      await tx.transaction.deleteMany({
+        where: {
+          companyId: company.id,
+          importBatchId: importBatch.id
+        }
+      });
+    }
+    await tx.importBatch.delete({ where: { id: importBatch.id } });
+    return { deletedTransactions: transactionIds.length };
+  });
+
+  return NextResponse.json({
+    ok: true,
+    mode: "database",
+    importBatchId: importBatch.id,
+    ...result
+  });
 }
 
 export async function POST(request: Request) {
