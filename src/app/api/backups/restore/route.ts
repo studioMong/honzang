@@ -6,6 +6,14 @@ import { getPrisma } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { periodRangeFromMonth } from "@/lib/server/closing-periods";
+import {
+  MAX_EVIDENCE_FILE_DATA_URL_LENGTH,
+  MAX_EVIDENCE_FILE_SIZE,
+  normalizeEvidenceFileUrl,
+  parseStrictEvidenceDate,
+  validateEvidenceFile,
+  validateEvidenceFileUrl
+} from "@/lib/server/evidence-validation";
 
 const sourceTypeSchema = z.enum(["BANK", "CARD", "HOMETAX_SALES", "HOMETAX_PURCHASES", "CASH_RECEIPT", "PG", "MANUAL"]);
 const accountTypeSchema = z.enum(["ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"]);
@@ -114,9 +122,9 @@ const evidenceSchema = z
     totalAmount: z.coerce.number().nonnegative().optional().nullable(),
     fileName: z.string().max(240).optional().nullable(),
     fileUrl: z.string().max(500).optional().nullable(),
-    fileDataUrl: z.string().max(1_500_000).optional().nullable(),
+    fileDataUrl: z.string().max(MAX_EVIDENCE_FILE_DATA_URL_LENGTH).optional().nullable(),
     fileMimeType: z.string().max(120).optional().nullable(),
-    fileSize: z.coerce.number().int().nonnegative().max(750_000).optional().nullable(),
+    fileSize: z.coerce.number().int().nonnegative().max(MAX_EVIDENCE_FILE_SIZE).optional().nullable(),
     transactionId: z.string().optional().nullable()
   })
   .passthrough();
@@ -254,6 +262,19 @@ export async function POST(request: Request) {
 
   if (!parsed.success) {
     return NextResponse.json({ ok: false, message: "혼자장부 백업 JSON 형식이 아닙니다.", errors: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const evidenceIssues = validateBackupEvidences(parsed.data.evidences);
+  if (evidenceIssues.length > 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_BACKUP_EVIDENCE",
+        message: "백업 증빙 데이터가 올바르지 않습니다.",
+        issues: evidenceIssues
+      },
+      { status: 400 }
+    );
   }
 
   if (body.dryRun === true) {
@@ -492,20 +513,22 @@ async function restoreEvidences(
   transactionIdMap: Map<string, string>
 ) {
   for (const evidence of uniqueById(evidences)) {
+    const issueDate = parseStrictEvidenceDate(evidence.issueDate);
+    const fileUrl = normalizeEvidenceFileUrl(evidence.fileUrl);
     await tx.evidence.create({
       data: {
         id: evidence.id,
         companyId,
         transactionId: evidence.transactionId ? transactionIdMap.get(evidence.transactionId) ?? null : null,
         evidenceType: evidence.evidenceType,
-        issueDate: dateOrNull(evidence.issueDate),
+        issueDate: issueDate ? new Date(issueDate) : null,
         counterparty: emptyToNull(evidence.counterparty),
         businessRegistrationNumber: emptyToNull(evidence.businessRegistrationNumber),
         supplyAmount: evidence.supplyAmount ?? null,
         vatAmount: evidence.vatAmount ?? null,
         totalAmount: evidence.totalAmount ?? null,
         fileName: emptyToNull(evidence.fileName),
-        fileUrl: emptyToNull(evidence.fileUrl),
+        fileUrl,
         rawPayload: {
           restoredFromBackup: true,
           fileDataUrl: evidence.fileDataUrl ?? null,
@@ -705,6 +728,25 @@ function buildRestoreCounts(backup: WorkspaceBackup) {
     auditEvents: uniqueById(backup.auditEvents).length,
     reviewItems: uniqueById(backup.reviewItems).filter((item) => item.transaction?.id && transactionIds.has(item.transaction.id)).length
   };
+}
+
+function validateBackupEvidences(evidences: WorkspaceBackup["evidences"]) {
+  const issues: string[] = [];
+
+  for (const [index, evidence] of uniqueById(evidences).entries()) {
+    const label = evidence.id ? `증빙 ${evidence.id}` : `${index + 1}번째 증빙`;
+    if (evidence.issueDate && !parseStrictEvidenceDate(evidence.issueDate)) {
+      issues.push(`${label}: 증빙 발행일은 유효한 날짜여야 합니다.`);
+    }
+
+    const fileIssue = validateEvidenceFile(evidence);
+    if (fileIssue) issues.push(`${label}: ${fileIssue}`);
+
+    const fileUrlIssue = validateEvidenceFileUrl(evidence.fileUrl);
+    if (fileUrlIssue) issues.push(`${label}: ${fileUrlIssue}`);
+  }
+
+  return issues;
 }
 
 function uniqueByPeriod<T extends { period: string }>(items: T[]) {

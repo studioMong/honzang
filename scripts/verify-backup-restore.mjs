@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import process from "node:process";
@@ -7,6 +8,7 @@ const port = process.env.BACKUP_RESTORE_VERIFY_PORT ?? "3103";
 const baseUrl = `http://127.0.0.1:${port}`;
 const startupTimeoutMs = Number(process.env.BACKUP_RESTORE_VERIFY_TIMEOUT_MS ?? 20_000);
 const serverPath = ".next/standalone/server.js";
+const evidenceFileText = "dry-run-evidence";
 
 if (!existsSync(serverPath)) {
   console.error(`${serverPath} not found. Run npm run build before npm run verify:backup-restore.`);
@@ -93,7 +95,22 @@ const backup = {
       evidenceStatus: "UNCHECKED"
     }
   ],
-  evidences: [],
+  evidences: [
+    {
+      id: "evidence-dry-run-1",
+      evidenceType: "검증 영수증",
+      issueDate: "2026-06-17",
+      counterparty: "Dry Run 거래처",
+      supplyAmount: 1000,
+      vatAmount: 100,
+      totalAmount: 1100,
+      fileName: "dry-run-evidence.txt",
+      fileDataUrl: `data:text/plain;base64,${Buffer.from(evidenceFileText).toString("base64")}`,
+      fileMimeType: "text/plain",
+      fileSize: Buffer.byteLength(evidenceFileText),
+      transactionId: "tx-dry-run-1"
+    }
+  ],
   journalEntries: [],
   taxReports: [],
   closingPeriods: [
@@ -145,6 +162,7 @@ try {
   await waitForServer();
   await verifySettingsUi();
   await verifyDryRun();
+  await verifyInvalidEvidenceBackup();
   await verifyConfirmGuard();
   console.log(`Backup restore verification passed at ${baseUrl}`);
 } catch (error) {
@@ -201,7 +219,26 @@ async function verifyDryRun() {
   assert.equal(body.restoredCounts?.originalImportFiles, 1, "dry-run should count original CSV files");
   assert.equal(body.restoredCounts?.auditEvents, 1, "dry-run should count audit events");
   assert.equal(body.restoredCounts?.closingPeriods, 1, "dry-run should count closing periods");
-  assert.equal(body.restoredCounts?.evidences, 0, "dry-run should count evidences");
+  assert.equal(body.restoredCounts?.evidences, 1, "dry-run should count evidences");
+}
+
+async function verifyInvalidEvidenceBackup() {
+  const invalidBackup = structuredClone(backup);
+  invalidBackup.evidences = [
+    {
+      ...backup.evidences[0],
+      id: "evidence-invalid-1",
+      issueDate: "2026-02-31",
+      fileUrl: "javascript:alert(1)",
+      fileSize: 999
+    }
+  ];
+
+  const body = await postJson("/api/backups/restore", { backup: invalidBackup, dryRun: true }, 400);
+  assert.equal(body.ok, false, "restore should reject invalid evidence backup data");
+  assert.equal(body.code, "INVALID_BACKUP_EVIDENCE", "restore should return evidence validation code");
+  assert.ok(Array.isArray(body.issues), "restore should return evidence validation issues");
+  assert.ok(body.issues.length >= 3, "restore should report invalid date, file, and URL issues");
 }
 
 async function verifyConfirmGuard() {
