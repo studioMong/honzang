@@ -32,6 +32,7 @@ assert.match(nextConfig, /output:\s*"standalone"/, "Next config should produce s
 assert.match(proxy, /api\/auth\/login/, "proxy should leave auth login public");
 assert.match(proxy, /api\/health/, "proxy should leave healthcheck public");
 assert.match(proxy, /isRequestAuthenticated/, "proxy should protect private routes by access cookie");
+assert.ok(existsSync("src/app/api/operations/readiness/route.ts"), "Operations readiness API should exist");
 assert.match(dockerignore, /^\.next$/m, ".dockerignore should exclude local build output");
 assert.match(dockerignore, /^node_modules$/m, ".dockerignore should exclude local dependencies");
 assert.match(dockerignore, /^\.env\.\*$/m, ".dockerignore should exclude env files");

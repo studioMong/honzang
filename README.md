@@ -71,6 +71,7 @@ Railway는 GitHub 저장소를 연결한 뒤 다음 설정을 사용합니다.
 
 - `/api/health`: 앱 서버와 DB 연결 상태
 - `/api/version`: 앱 버전과 Railway 커밋 메타데이터
+- 설정 화면의 `운영 준비 점검`: Postgres, 접근코드, 공개 앱 URL, Railway 메타데이터 상태
 
 Railway 공개 URL이 최신 Next 서버와 Postgres를 바라보는지는 아래 명령으로 확인합니다.
 

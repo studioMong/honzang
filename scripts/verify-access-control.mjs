@@ -95,6 +95,9 @@ async function verifyUnauthorizedApi() {
   const body = await response.json();
   assert.equal(response.status, 401, "sensitive APIs should require access cookie");
   assert.equal(body.code, "AUTH_REQUIRED", "unauthorized API response should identify auth requirement");
+
+  const operationsResponse = await fetch(`${baseUrl}/api/operations/readiness`, { cache: "no-store" });
+  assert.equal(operationsResponse.status, 401, "operations readiness API should require access cookie");
 }
 
 async function verifyWrongCode() {
@@ -135,6 +138,7 @@ async function verifyAuthenticatedSession(cookie) {
 
 async function verifyAuthenticatedApi(cookie) {
   await expectJson("/api/transactions", (body) => Array.isArray(body.transactions), { Cookie: cookie });
+  await expectJson("/api/operations/readiness", (body) => Array.isArray(body.checks) && body.checks.some((check) => check.key === "accessCode"), { Cookie: cookie });
 }
 
 async function verifyLogout(cookie) {

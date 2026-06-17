@@ -1,0 +1,147 @@
+import { NextResponse } from "next/server";
+import { getPrisma } from "@/lib/db";
+import { isAccessControlEnabled } from "@/lib/server/access-control";
+import packageInfo from "../../../../../package.json";
+
+type ReadinessTone = "green" | "amber" | "red" | "blue";
+
+type ReadinessCheck = {
+  key: string;
+  label: string;
+  status: string;
+  tone: ReadinessTone;
+  detail: string;
+  action: string;
+};
+
+export const dynamic = "force-dynamic";
+
+export async function GET() {
+  const checks: ReadinessCheck[] = [];
+  checks.push(await databaseCheck());
+  checks.push(accessCodeCheck());
+  checks.push(accessSaltCheck());
+  checks.push(appUrlCheck());
+  checks.push(runtimeCheck());
+  checks.push(railwayCheck());
+
+  const blockers = checks.filter((check) => check.tone === "red").length;
+  const warnings = checks.filter((check) => check.tone === "amber").length;
+
+  return NextResponse.json({
+    app: packageInfo.name,
+    version: packageInfo.version,
+    generatedAt: new Date().toISOString(),
+    summary: {
+      blockers,
+      warnings,
+      passes: checks.filter((check) => check.tone === "green").length
+    },
+    checks,
+    railway: {
+      commitSha: process.env.RAILWAY_GIT_COMMIT_SHA ?? null,
+      branch: process.env.RAILWAY_GIT_BRANCH ?? null,
+      service: process.env.RAILWAY_SERVICE_NAME ?? null,
+      environment: process.env.RAILWAY_ENVIRONMENT_NAME ?? null
+    }
+  });
+}
+
+async function databaseCheck(): Promise<ReadinessCheck> {
+  const db = getPrisma();
+  if (!db) {
+    return {
+      key: "database",
+      label: "Postgres 연결",
+      status: "미설정",
+      tone: "red",
+      detail: "DATABASE_URL이 없어 샘플 데이터 모드로 실행됩니다.",
+      action: "Railway Postgres DATABASE_URL을 서비스 변수로 연결"
+    };
+  }
+
+  try {
+    await db.$queryRaw`SELECT 1`;
+    return {
+      key: "database",
+      label: "Postgres 연결",
+      status: "연결됨",
+      tone: "green",
+      detail: "앱 서버에서 Postgres 쿼리를 실행할 수 있습니다.",
+      action: "배포 후 /api/health도 함께 확인"
+    };
+  } catch (error) {
+    return {
+      key: "database",
+      label: "Postgres 연결",
+      status: "오류",
+      tone: "red",
+      detail: error instanceof Error ? error.message : "Postgres 연결 확인에 실패했습니다.",
+      action: "DATABASE_URL, Railway Postgres 연결, migration 상태 확인"
+    };
+  }
+}
+
+function accessCodeCheck(): ReadinessCheck {
+  const enabled = isAccessControlEnabled();
+  const production = process.env.NODE_ENV === "production";
+  return {
+    key: "accessCode",
+    label: "접근코드 보호",
+    status: enabled ? "사용" : "미설정",
+    tone: enabled ? "green" : production ? "red" : "amber",
+    detail: enabled ? "앱 화면과 민감 API가 접근코드로 보호됩니다." : "HONZANG_ACCESS_CODE가 없어 앱 화면과 API가 열립니다.",
+    action: enabled ? "코드 변경 시 기존 접근 쿠키 무효화 확인" : "Railway Variables에 HONZANG_ACCESS_CODE 추가"
+  };
+}
+
+function accessSaltCheck(): ReadinessCheck {
+  const configured = Boolean(process.env.HONZANG_ACCESS_TOKEN_SALT?.trim());
+  return {
+    key: "accessSalt",
+    label: "접근 쿠키 salt",
+    status: configured ? "설정됨" : "기본값",
+    tone: configured ? "green" : "amber",
+    detail: configured ? "배포 환경 전용 salt로 접근 쿠키 토큰을 생성합니다." : "기본 salt를 사용 중입니다.",
+    action: configured ? "장기 운영 전 salt 보관 위치 확인" : "Railway Variables에 긴 랜덤 HONZANG_ACCESS_TOKEN_SALT 추가"
+  };
+}
+
+function appUrlCheck(): ReadinessCheck {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  const validHttps = appUrl?.startsWith("https://");
+  return {
+    key: "appUrl",
+    label: "공개 앱 URL",
+    status: validHttps ? "설정됨" : appUrl ? "확인 필요" : "미설정",
+    tone: validHttps ? "green" : appUrl ? "amber" : "red",
+    detail: appUrl ? `NEXT_PUBLIC_APP_URL=${appUrl}` : "NEXT_PUBLIC_APP_URL이 없습니다.",
+    action: validHttps ? "Railway public domain과 실제 응답 일치 확인" : "NEXT_PUBLIC_APP_URL을 https 공개 도메인으로 설정"
+  };
+}
+
+function runtimeCheck(): ReadinessCheck {
+  const production = process.env.NODE_ENV === "production";
+  return {
+    key: "runtime",
+    label: "서버 런타임",
+    status: process.env.NODE_ENV ?? "unknown",
+    tone: production ? "green" : "blue",
+    detail: production ? "프로덕션 빌드로 실행 중입니다." : "개발 또는 검증 런타임입니다.",
+    action: production ? "standalone 서버와 healthcheck 유지" : "배포에서는 npm run build 후 npm run start 사용"
+  };
+}
+
+function railwayCheck(): ReadinessCheck {
+  const hasRailwayMetadata = Boolean(process.env.RAILWAY_SERVICE_NAME || process.env.RAILWAY_GIT_COMMIT_SHA);
+  return {
+    key: "railway",
+    label: "Railway 메타데이터",
+    status: hasRailwayMetadata ? "감지됨" : "로컬/미감지",
+    tone: hasRailwayMetadata ? "green" : "blue",
+    detail: hasRailwayMetadata
+      ? `service=${process.env.RAILWAY_SERVICE_NAME ?? "-"} branch=${process.env.RAILWAY_GIT_BRANCH ?? "-"}`
+      : "Railway 런타임 환경변수가 없습니다.",
+    action: hasRailwayMetadata ? "Deploy source commit과 GitHub main HEAD 일치 확인" : "Railway 배포 후 /api/version으로 커밋 확인"
+  };
+}

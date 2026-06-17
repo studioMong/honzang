@@ -39,8 +39,18 @@ try {
   await expectJson("/api/vendors", (body) => Array.isArray(body.vendors));
   await expectJson("/api/audit-events", (body) => Array.isArray(body.auditEvents));
   await expectJson("/api/closing-periods", (body) => Array.isArray(body.closingPeriods));
+  await expectJson("/api/operations/readiness", (body) =>
+    body.app === "honzang" &&
+    Array.isArray(body.checks) &&
+    body.checks.some((check) => check.key === "database") &&
+    body.checks.some((check) => check.key === "accessCode") &&
+    Number.isInteger(body.summary?.blockers)
+  );
   await expectText("/", (body) =>
     ["혼자장부", "최근 월 신고 준비", "오늘 할 일", "1인법인 신고 준비"].every((text) => body.includes(text))
+  );
+  await expectText("/?view=settings", (body) =>
+    ["운영 준비 점검", "배포 환경 상태 확인", "전체 백업", "데이터 보관/삭제 기준"].every((text) => body.includes(text))
   );
   await expectText("/?view=reports", (body) =>
     ["혼자장부 신고 준비 리포트", "최종 신고 점검", "홈택스 제출 전 입력 가이드", "자료 수집 현황", "신고 패키지", "재무제표 초안"].every((text) => body.includes(text))

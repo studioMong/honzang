@@ -93,6 +93,33 @@ type FilingSubmissionGuideRow = {
   "마감 전 확인": string;
 };
 
+type OperationReadinessCheck = {
+  key: string;
+  label: string;
+  status: string;
+  tone: StatusTone;
+  detail: string;
+  action: string;
+};
+
+type OperationReadinessPayload = {
+  app: string;
+  version: string;
+  generatedAt: string;
+  summary: {
+    blockers: number;
+    warnings: number;
+    passes: number;
+  };
+  checks: OperationReadinessCheck[];
+  railway: {
+    commitSha: string | null;
+    branch: string | null;
+    service: string | null;
+    environment: string | null;
+  };
+};
+
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
@@ -3129,6 +3156,8 @@ function SettingsPanel({
   const [exportingBackup, setExportingBackup] = useState(false);
   const [restoringBackup, setRestoringBackup] = useState(false);
   const [backupMessage, setBackupMessage] = useState<{ tone: "green" | "red" | "amber"; text: string } | null>(null);
+  const [operationReadiness, setOperationReadiness] = useState<OperationReadinessPayload | null>(null);
+  const [operationLoading, setOperationLoading] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const setupItems = buildCompanySetupItems(form);
   const billingEstimate = buildBillingEstimate(form, transactions);
@@ -3186,6 +3215,10 @@ function SettingsPanel({
     return () => window.clearTimeout(timer);
   }, [company]);
 
+  useEffect(() => {
+    void loadOperationReadiness();
+  }, []);
+
   function updateForm<K extends keyof AppCompany>(key: K, value: AppCompany[K]) {
     setForm((current) => ({ ...current, [key]: value }));
   }
@@ -3211,6 +3244,21 @@ function SettingsPanel({
       setSavedAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function loadOperationReadiness() {
+    setOperationLoading(true);
+    try {
+      const response = await fetch("/api/operations/readiness", { cache: "no-store" });
+      if (response.status === 401) {
+        redirectToAccess();
+        return;
+      }
+      const payload = await response.json();
+      if (response.ok) setOperationReadiness(payload);
+    } finally {
+      setOperationLoading(false);
     }
   }
 
@@ -3500,6 +3548,60 @@ function SettingsPanel({
             checked={form.contractorPaymentEnabled}
             onChange={(checked) => updateForm("contractorPaymentEnabled", checked)}
           />
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="panel-title">운영 준비 점검</h2>
+            <p className="panel-subtitle">
+              {operationReadiness ? `${operationReadiness.app} ${operationReadiness.version} · ${formatDateTime(operationReadiness.generatedAt)}` : "배포 환경 상태 확인"}
+            </p>
+          </div>
+          <div className="toolbar">
+            {operationReadiness && (
+              <span className={`status ${operationReadiness.summary.blockers > 0 ? "red" : operationReadiness.summary.warnings > 0 ? "amber" : "green"}`}>
+                {operationReadiness.summary.blockers > 0
+                  ? `${formatNumber(operationReadiness.summary.blockers)}개 차단`
+                  : operationReadiness.summary.warnings > 0
+                    ? `${formatNumber(operationReadiness.summary.warnings)}개 확인`
+                    : "준비됨"}
+              </span>
+            )}
+            <button className="secondary-button" onClick={() => void loadOperationReadiness()} disabled={operationLoading}>
+              {operationLoading ? <Loader2 size={16} className="spin" /> : <RefreshCcw size={16} />}
+              새로고침
+            </button>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>항목</th>
+                <th>상태</th>
+                <th>확인</th>
+                <th>다음 작업</th>
+              </tr>
+            </thead>
+            <tbody>
+              {!operationReadiness ? (
+                <tr>
+                  <td colSpan={4} className="empty-cell">운영 준비 상태를 불러오는 중입니다.</td>
+                </tr>
+              ) : (
+                operationReadiness.checks.map((check) => (
+                  <tr key={check.key}>
+                    <td>{check.label}</td>
+                    <td><span className={`status ${check.tone}`}>{check.status}</span></td>
+                    <td>{check.detail}</td>
+                    <td>{check.action}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
 
