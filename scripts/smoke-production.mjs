@@ -145,6 +145,8 @@ try {
       "자료 수집 현황",
       "신고 패키지",
       "마감 스냅샷",
+      "closing-snapshot-row-zip",
+      "closing-snapshot-row-xlsx",
       "재무제표 초안",
       "현금흐름 요약",
       "통장 잔액 대조",
