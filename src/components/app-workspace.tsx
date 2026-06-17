@@ -35,7 +35,7 @@ import type {
   SourceType
 } from "@/types";
 import { DEFAULT_ACCOUNTS, DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/defaults";
-import { generateJournalDraft, inferMapping, normalizeCsvRow, summarizeTransactions } from "@/lib/accounting";
+import { generateJournalDraft, inferMapping, normalizeCsvRow, parseMoney, summarizeTransactions } from "@/lib/accounting";
 import { formatDate, formatKRW, formatNumber } from "@/lib/format";
 import { sampleCompany, sampleEvidences, sampleJournalEntries, sampleTaxReports, sampleTransactions } from "@/lib/sample-data";
 
@@ -602,7 +602,7 @@ function EvidencesPanel({
   transactions: AppTransaction[];
   onCreated: (evidence: AppEvidence) => void;
 }) {
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<EvidenceFormState>({
     evidenceType: "전자세금계산서",
     issueDate: new Date().toISOString().slice(0, 10),
     counterparty: "",
@@ -614,6 +614,7 @@ function EvidencesPanel({
     transactionId: ""
   });
   const [saving, setSaving] = useState(false);
+  const matchCandidates = useMemo(() => buildEvidenceMatchCandidates(form, transactions), [form, transactions]);
 
   function updateField(key: keyof typeof form, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -713,6 +714,33 @@ function EvidencesPanel({
                 </option>
               ))}
             </select>
+          </div>
+          <div className="field field-wide">
+            <label>추천 매칭</label>
+            <div className="match-suggestions">
+              {matchCandidates.length === 0 ? (
+                <span className="muted">거래처, 발행일, 합계를 입력하면 후보가 표시됩니다.</span>
+              ) : (
+                matchCandidates.map((candidate) => (
+                  <button
+                    key={candidate.transaction.id}
+                    type="button"
+                    className="match-suggestion"
+                    data-selected={form.transactionId === candidate.transaction.id}
+                    onClick={() => updateField("transactionId", candidate.transaction.id)}
+                  >
+                    <span>
+                      <strong>{candidate.transaction.description}</strong>
+                      <small>
+                        {formatDate(candidate.transaction.transactionDate)} · {candidate.transaction.counterparty ?? "거래처 없음"} ·{" "}
+                        {formatKRW(candidate.transaction.depositAmount || candidate.transaction.withdrawalAmount)}
+                      </small>
+                    </span>
+                    <span className={`status ${candidate.tone}`}>{candidate.reason}</span>
+                  </button>
+                ))
+              )}
+            </div>
           </div>
           <div className="field">
             <label>파일명</label>
@@ -1807,6 +1835,53 @@ function ToggleField({ label, checked, onChange }: { label: string; checked: boo
       <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
     </label>
   );
+}
+
+type EvidenceFormState = {
+  evidenceType: string;
+  issueDate: string;
+  counterparty: string;
+  businessRegistrationNumber: string;
+  supplyAmount: string;
+  vatAmount: string;
+  totalAmount: string;
+  fileName: string;
+  transactionId: string;
+};
+
+function buildEvidenceMatchCandidates(form: EvidenceFormState, transactions: AppTransaction[]) {
+  const evidenceAmount = parseMoney(form.totalAmount) || parseMoney(form.supplyAmount) + parseMoney(form.vatAmount);
+  const counterparty = form.counterparty.trim().toLowerCase();
+  const issueDate = form.issueDate ? parseIsoDate(form.issueDate) : null;
+
+  return transactions
+    .filter((transaction) => transaction.withdrawalAmount > 0 || transaction.depositAmount > 0)
+    .map((transaction) => {
+      const transactionAmount = transaction.withdrawalAmount || transaction.depositAmount;
+      const amountDiff = evidenceAmount ? Math.abs(transactionAmount - evidenceAmount) : Number.POSITIVE_INFINITY;
+      const amountScore = evidenceAmount && amountDiff === 0 ? 60 : evidenceAmount && amountDiff <= 10 ? 45 : evidenceAmount && amountDiff <= 1_000 ? 25 : 0;
+      const text = `${transaction.description} ${transaction.counterparty ?? ""}`.toLowerCase();
+      const transactionCounterparty = transaction.counterparty?.trim().toLowerCase() ?? "";
+      const counterpartyScore = counterparty && text.includes(counterparty) ? 25 : counterparty && transactionCounterparty && counterparty.includes(transactionCounterparty) ? 15 : 0;
+      const dateDiff = issueDate ? Math.abs(daysBetween(issueDate, parseIsoDate(transaction.transactionDate))) : Number.POSITIVE_INFINITY;
+      const dateScore = dateDiff === 0 ? 15 : dateDiff <= 3 ? 10 : dateDiff <= 7 ? 5 : 0;
+      const matchedPenalty = transaction.evidenceStatus === "MATCHED" ? -35 : 0;
+      const score = amountScore + counterpartyScore + dateScore + matchedPenalty;
+
+      return {
+        transaction,
+        score,
+        reason: amountDiff === 0 ? "금액 일치" : counterpartyScore > 0 ? "거래처 유사" : dateDiff <= 3 ? "일자 근접" : "후보",
+        tone: score >= 70 ? ("green" as const) : score >= 35 ? ("amber" as const) : ("blue" as const)
+      };
+    })
+    .filter((candidate) => candidate.score > 0)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 5);
+}
+
+function daysBetween(left: Date, right: Date) {
+  return Math.round((left.getTime() - right.getTime()) / 86_400_000);
 }
 
 function evidenceBadge(status: EvidenceStatus) {

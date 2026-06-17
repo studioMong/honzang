@@ -301,6 +301,10 @@ a {
   gap: 6px;
 }
 
+.field-wide {
+  grid-column: 1 / -1;
+}
+
 .field label {
   color: var(--muted);
   font-size: 12px;
@@ -407,6 +411,42 @@ a {
 .import-message {
   width: fit-content;
   margin-bottom: 12px;
+}
+
+.match-suggestions {
+  display: grid;
+  gap: 8px;
+}
+
+.match-suggestion {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.match-suggestion[data-selected="true"] {
+  border-color: #b9ddcf;
+  background: var(--green-soft);
+}
+
+.match-suggestion strong,
+.match-suggestion small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.match-suggestion small {
+  margin-top: 3px;
+  color: var(--muted);
 }
 
 .table-wrap {
