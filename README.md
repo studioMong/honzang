@@ -20,6 +20,13 @@ npm run dev
 
 DB 없이 실행하면 샘플 데이터 모드로 동작합니다.
 
+프로덕션 standalone 서버 경로는 아래 명령으로 확인합니다.
+
+```bash
+npm run build
+npm run smoke:prod
+```
+
 ## Railway 환경변수
 
 Railway 서비스 Variables에서 Postgres 서비스의 `DATABASE_URL`을 참조 변수로 연결합니다.
