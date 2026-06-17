@@ -1,7 +1,9 @@
 .DS_Store
 node_modules/
+.next/
 dist/
 build/
 .env
 .env.*
 *.log
+tsconfig.tsbuildinfo

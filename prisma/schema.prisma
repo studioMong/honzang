@@ -1,0 +1,315 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum BillingModel {
+  INTERNAL_PER_USE
+  SAAS_MONTHLY
+  SAAS_ANNUAL
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum SourceType {
+  BANK
+  CARD
+  HOMETAX_SALES
+  HOMETAX_PURCHASES
+  CASH_RECEIPT
+  PG
+  MANUAL
+}
+
+enum TransactionDirection {
+  DEPOSIT
+  WITHDRAWAL
+  TRANSFER
+  UNKNOWN
+}
+
+enum EvidenceStatus {
+  UNCHECKED
+  MISSING
+  ATTACHED
+  MATCHED
+  NOT_REQUIRED
+}
+
+enum ReviewSeverity {
+  INFO
+  WARNING
+  DANGER
+}
+
+enum ReviewStatus {
+  OPEN
+  RESOLVED
+  IGNORED
+}
+
+enum JournalStatus {
+  DRAFT
+  APPROVED
+  VOID
+}
+
+enum TaxReportType {
+  MONTHLY_PROFIT
+  VAT_PREP
+  WITHHOLDING_CHECKLIST
+  CORPORATE_TAX_PREP
+  RISK_REVIEW
+}
+
+model Company {
+  id                              String     @id @default(cuid())
+  name                            String
+  businessRegistrationNumber      String?
+  industry                        String?
+  vatType                         String     @default("GENERAL")
+  fiscalYearEndMonth              Int        @default(12)
+  representativeSalaryEnabled     Boolean    @default(false)
+  employeePayrollEnabled          Boolean    @default(false)
+  contractorPaymentEnabled        Boolean    @default(false)
+  billingModel                    BillingModel @default(INTERNAL_PER_USE)
+  createdAt                       DateTime   @default(now())
+  updatedAt                       DateTime   @updatedAt
+
+  accounts                        Account[]
+  csvTemplates                    CsvTemplate[]
+  importBatches                   ImportBatch[]
+  transactions                    Transaction[]
+  evidences                       Evidence[]
+  journalEntries                  JournalEntry[]
+  vendors                         Vendor[]
+  classificationRules             ClassificationRule[]
+  reviewItems                     ReviewItem[]
+  taxReports                      TaxReport[]
+}
+
+model Account {
+  id              String      @id @default(cuid())
+  companyId       String
+  code            String
+  name            String
+  type            AccountType
+  taxCategory     String?
+  isDefault       Boolean     @default(false)
+  isActive        Boolean     @default(true)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  company         Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  suggestedTransactions Transaction[] @relation("SuggestedAccount")
+  confirmedTransactions Transaction[] @relation("ConfirmedAccount")
+  journalLines    JournalLine[]
+  vendors         Vendor[]
+
+  @@unique([companyId, code])
+  @@index([companyId, type])
+}
+
+model CsvTemplate {
+  id              String      @id @default(cuid())
+  companyId       String
+  name            String
+  sourceType      SourceType
+  headerSignature String?
+  mapping         Json
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  company         Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, sourceType])
+}
+
+model ImportBatch {
+  id              String      @id @default(cuid())
+  companyId       String
+  sourceType      SourceType
+  originalFileName String
+  originalFileHash String?
+  rowCount        Int         @default(0)
+  mapping         Json?
+  importedAt      DateTime    @default(now())
+
+  company         Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  transactions    Transaction[]
+}
+
+model Transaction {
+  id                    String        @id @default(cuid())
+  companyId             String
+  importBatchId         String?
+  sourceType            SourceType
+  sourceRowNumber       Int?
+  transactionDate       DateTime
+  description           String
+  counterparty          String?
+  direction             TransactionDirection @default(UNKNOWN)
+  depositAmount         Decimal       @default(0) @db.Decimal(14, 2)
+  withdrawalAmount      Decimal       @default(0) @db.Decimal(14, 2)
+  supplyAmount          Decimal?      @db.Decimal(14, 2)
+  vatAmount             Decimal?      @db.Decimal(14, 2)
+  balance               Decimal?      @db.Decimal(14, 2)
+  currency              String        @default("KRW")
+  approvalNumber        String?
+  rawPayload            Json?
+  suggestedAccountId    String?
+  confirmedAccountId    String?
+  evidenceStatus        EvidenceStatus @default(UNCHECKED)
+  memo                  String?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  company               Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  importBatch           ImportBatch?  @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  suggestedAccount      Account?      @relation("SuggestedAccount", fields: [suggestedAccountId], references: [id], onDelete: SetNull)
+  confirmedAccount      Account?      @relation("ConfirmedAccount", fields: [confirmedAccountId], references: [id], onDelete: SetNull)
+  evidences             Evidence[]
+  journalEntries        JournalEntry[]
+  reviewItems           ReviewItem[]
+
+  @@index([companyId, transactionDate])
+  @@index([companyId, sourceType])
+  @@index([companyId, evidenceStatus])
+}
+
+model Evidence {
+  id                    String      @id @default(cuid())
+  companyId             String
+  transactionId         String?
+  evidenceType          String
+  issueDate             DateTime?
+  counterparty          String?
+  businessRegistrationNumber String?
+  supplyAmount          Decimal?    @db.Decimal(14, 2)
+  vatAmount             Decimal?    @db.Decimal(14, 2)
+  totalAmount           Decimal?    @db.Decimal(14, 2)
+  fileName              String?
+  fileUrl               String?
+  rawPayload            Json?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  company               Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  transaction           Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, evidenceType])
+  @@index([companyId, issueDate])
+}
+
+model JournalEntry {
+  id                    String      @id @default(cuid())
+  companyId             String
+  transactionId         String?
+  entryDate             DateTime
+  memo                  String
+  status                JournalStatus @default(DRAFT)
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  company               Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  transaction           Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  lines                 JournalLine[]
+
+  @@index([companyId, entryDate])
+  @@index([companyId, status])
+}
+
+model JournalLine {
+  id                    String      @id @default(cuid())
+  journalEntryId        String
+  accountId             String
+  debitAmount           Decimal     @default(0) @db.Decimal(14, 2)
+  creditAmount          Decimal     @default(0) @db.Decimal(14, 2)
+  vatType               String?
+  memo                  String?
+  createdAt             DateTime    @default(now())
+
+  journalEntry          JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  account               Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@index([journalEntryId])
+  @@index([accountId])
+}
+
+model Vendor {
+  id                    String      @id @default(cuid())
+  companyId             String
+  name                  String
+  businessRegistrationNumber String?
+  defaultAccountId      String?
+  withholdingType       String?
+  memo                  String?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  company               Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  defaultAccount        Account?    @relation(fields: [defaultAccountId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, name])
+}
+
+model ClassificationRule {
+  id                    String      @id @default(cuid())
+  companyId             String
+  name                  String
+  sourceType            SourceType?
+  condition             Json
+  action                Json
+  priority              Int         @default(100)
+  isActive              Boolean     @default(true)
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  company               Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, isActive, priority])
+}
+
+model ReviewItem {
+  id                    String      @id @default(cuid())
+  companyId             String
+  transactionId         String?
+  targetType            String
+  targetId              String
+  severity              ReviewSeverity
+  reason                String
+  recommendation        String?
+  status                ReviewStatus @default(OPEN)
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  company               Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  transaction           Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status])
+  @@index([companyId, severity])
+}
+
+model TaxReport {
+  id                    String      @id @default(cuid())
+  companyId             String
+  reportType            TaxReportType
+  periodStart           DateTime
+  periodEnd             DateTime
+  calculatedPayload     Json
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  company               Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, reportType, periodStart, periodEnd])
+}
