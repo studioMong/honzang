@@ -29,7 +29,34 @@ const backup = {
     annualSubscriptionPrice: 330000
   },
   accounts: [],
-  csvTemplates: [],
+  csvTemplates: [
+    {
+      id: "csv-template-bank-primary",
+      name: "은행 기본 템플릿",
+      sourceType: "BANK",
+      headerSignature: "거래일|적요|입금|출금|잔액",
+      mapping: {
+        transactionDate: "거래일",
+        description: "적요",
+        depositAmount: "입금",
+        withdrawalAmount: "출금",
+        balance: "잔액"
+      }
+    },
+    {
+      id: "csv-template-bank-secondary",
+      name: "은행 템플릿 2",
+      sourceType: "BANK",
+      headerSignature: "일자|거래내용|맡기신금액|찾으신금액|거래후잔액",
+      mapping: {
+        transactionDate: "일자",
+        description: "거래내용",
+        depositAmount: "맡기신금액",
+        withdrawalAmount: "찾으신금액",
+        balance: "거래후잔액"
+      }
+    }
+  ],
   importBatches: [
     {
       id: "import-dry-run-1",
@@ -157,6 +184,7 @@ async function verifySettingsUi() {
   assert.match(body, /백업 복원/, "settings page should expose restore action");
   assert.match(body, /백업 점검/, "settings page should expose backup readiness table");
   assert.match(body, /데이터 보관\/삭제 기준/, "settings page should expose data retention policy");
+  assert.match(body, /CSV 매핑 템플릿/, "settings page should expose CSV mapping template section");
   assert.match(body, /원본 CSV/, "settings page should expose original CSV backup status");
   assert.match(body, /증빙 파일/, "settings page should expose evidence file backup status");
   assert.match(body, /활동 로그/, "settings page should expose audit log section");
@@ -168,6 +196,7 @@ async function verifyDryRun() {
   assert.equal(body.ok, true, "dry-run should succeed");
   assert.equal(body.dryRun, true, "dry-run response should be marked");
   assert.equal(body.restoredCounts?.transactions, 1, "dry-run should count transactions");
+  assert.equal(body.restoredCounts?.csvTemplates, 2, "dry-run should count CSV templates");
   assert.equal(body.restoredCounts?.importBatches, 1, "dry-run should count import batches");
   assert.equal(body.restoredCounts?.originalImportFiles, 1, "dry-run should count original CSV files");
   assert.equal(body.restoredCounts?.auditEvents, 1, "dry-run should count audit events");
