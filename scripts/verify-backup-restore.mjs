@@ -165,6 +165,7 @@ try {
   await verifyDryRun();
   await verifyInvalidDateBackup();
   await verifyInvalidEvidenceBackup();
+  await verifyInvalidEvidenceAmountBackup();
   await verifyInvalidJournalBackup();
   await verifyInvalidOriginalImportFileBackup();
   await verifyConfirmGuard();
@@ -243,6 +244,23 @@ async function verifyInvalidEvidenceBackup() {
   assert.equal(body.code, "INVALID_BACKUP_EVIDENCE", "restore should return evidence validation code");
   assert.ok(Array.isArray(body.issues), "restore should return evidence validation issues");
   assert.ok(body.issues.length >= 3, "restore should report invalid date, file, and URL issues");
+}
+
+async function verifyInvalidEvidenceAmountBackup() {
+  const invalidBackup = structuredClone(backup);
+  invalidBackup.evidences = [
+    {
+      ...backup.evidences[0],
+      id: "evidence-invalid-amount-1",
+      totalAmount: 1000
+    }
+  ];
+
+  const body = await postJson("/api/backups/restore", { backup: invalidBackup, dryRun: true }, 400);
+  assert.equal(body.ok, false, "restore should reject invalid evidence amount backup data");
+  assert.equal(body.code, "INVALID_BACKUP_EVIDENCE", "restore should return evidence validation code");
+  assert.ok(Array.isArray(body.issues), "restore should return evidence validation issues");
+  assert.ok(body.issues.some((issue) => issue.includes("합계")), "restore should report inconsistent evidence totals");
 }
 
 async function verifyInvalidDateBackup() {

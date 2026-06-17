@@ -12,6 +12,7 @@ import {
   MAX_EVIDENCE_FILE_SIZE,
   normalizeEvidenceFileUrl,
   parseStrictEvidenceDate,
+  validateEvidenceAmounts,
   validateEvidenceFile,
   validateEvidenceFileUrl
 } from "@/lib/server/evidence-validation";
@@ -785,6 +786,9 @@ function validateBackupEvidences(evidences: WorkspaceBackup["evidences"]) {
 
     const fileUrlIssue = validateEvidenceFileUrl(evidence.fileUrl);
     if (fileUrlIssue) issues.push(`${label}: ${fileUrlIssue}`);
+
+    const amountIssue = validateEvidenceAmounts(evidence);
+    if (amountIssue) issues.push(`${label}: ${amountIssue}`);
   }
 
   return issues;

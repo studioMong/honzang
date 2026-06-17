@@ -11,6 +11,7 @@ import {
   MAX_EVIDENCE_FILE_SIZE,
   normalizeEvidenceFileUrl,
   parseStrictEvidenceDate,
+  validateEvidenceAmounts,
   validateEvidenceFile,
   validateEvidenceFileUrl
 } from "@/lib/server/evidence-validation";
@@ -101,6 +102,18 @@ export async function POST(request: Request) {
         ok: false,
         code: "INVALID_EVIDENCE_FILE_URL",
         message: fileUrlIssue
+      },
+      { status: 400 }
+    );
+  }
+
+  const amountIssue = validateEvidenceAmounts(payload);
+  if (amountIssue) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_EVIDENCE_AMOUNTS",
+        message: amountIssue
       },
       { status: 400 }
     );

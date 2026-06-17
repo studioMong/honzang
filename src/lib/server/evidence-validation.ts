@@ -10,6 +10,12 @@ export type EvidenceFileValidationInput = {
   fileSize?: number | null;
 };
 
+export type EvidenceAmountValidationInput = {
+  supplyAmount?: number | null;
+  vatAmount?: number | null;
+  totalAmount?: number | null;
+};
+
 export const parseStrictEvidenceDate = parseStrictDate;
 
 export function normalizeEvidenceFileUrl(value: string | null | undefined) {
@@ -45,6 +51,29 @@ export function validateEvidenceFileUrl(value: string | null | undefined) {
   }
 }
 
+export function validateEvidenceAmounts(payload: EvidenceAmountValidationInput) {
+  const supplyAmount = payload.supplyAmount ?? null;
+  const vatAmount = payload.vatAmount ?? null;
+  const totalAmount = payload.totalAmount ?? null;
+
+  if (totalAmount !== null && supplyAmount !== null && roundWon(totalAmount) < roundWon(supplyAmount)) {
+    return "증빙 합계는 공급가액보다 작을 수 없습니다.";
+  }
+  if (totalAmount !== null && vatAmount !== null && roundWon(totalAmount) < roundWon(vatAmount)) {
+    return "증빙 합계는 부가세보다 작을 수 없습니다.";
+  }
+  if (
+    supplyAmount !== null &&
+    vatAmount !== null &&
+    totalAmount !== null &&
+    roundWon(supplyAmount) + roundWon(vatAmount) !== roundWon(totalAmount)
+  ) {
+    return "증빙 합계는 공급가액과 부가세의 합과 일치해야 합니다.";
+  }
+
+  return null;
+}
+
 function parseBase64DataUrl(value: string) {
   const matched = value.match(/^data:([^;,]+);base64,([A-Za-z0-9+/]+={0,2})$/);
   if (!matched) return null;
@@ -56,4 +85,8 @@ function parseBase64DataUrl(value: string) {
     mimeType,
     byteLength: Buffer.from(base64, "base64").length
   };
+}
+
+function roundWon(value: number) {
+  return Math.round(value);
 }

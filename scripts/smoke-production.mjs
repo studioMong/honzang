@@ -59,6 +59,7 @@ try {
   await expectInvalidEvidenceDate();
   await expectInvalidEvidenceFile();
   await expectInvalidEvidenceFileUrl();
+  await expectInvalidEvidenceAmounts();
   await expectInvalidReportPeriod();
   await expectInvalidReportPeriodRange();
   await expectText("/", (body) =>
@@ -450,6 +451,28 @@ async function expectInvalidEvidenceFileUrl() {
   const body = JSON.parse(text);
   if (body.code !== "INVALID_EVIDENCE_FILE_URL") {
     throw new Error(`/api/evidences returned unexpected file URL validation payload: ${text}`);
+  }
+}
+
+async function expectInvalidEvidenceAmounts() {
+  const response = await fetch(`${baseUrl}/api/evidences`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      evidenceType: "전자세금계산서",
+      issueDate: "2026-06-17",
+      supplyAmount: 1000,
+      vatAmount: 100,
+      totalAmount: 1000
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/evidences should reject inconsistent amounts, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_EVIDENCE_AMOUNTS") {
+    throw new Error(`/api/evidences returned unexpected amount validation payload: ${text}`);
   }
 }
 
