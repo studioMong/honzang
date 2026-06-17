@@ -1048,7 +1048,11 @@ function CsvImportPanel({
         onImported(payload.transactions);
       } else if (!response.ok) {
         setImportMessage(toImportErrorMessage(payload));
+      } else {
+        setImportMessage({ tone: "red", text: "CSV 가져오기 결과를 확인할 수 없습니다." });
       }
+    } catch {
+      setImportMessage({ tone: "red", text: "CSV 가져오기 중 오류가 발생했습니다." });
     } finally {
       setSaving(false);
     }
@@ -1078,6 +1082,11 @@ function CsvImportPanel({
           text: payload.message ?? "업로드 삭제에 실패했습니다."
         });
       }
+    } catch {
+      setImportMessage({
+        tone: "red",
+        text: "업로드 삭제 중 오류가 발생했습니다."
+      });
     } finally {
       setDeletingBatchId(null);
     }
@@ -1669,6 +1678,8 @@ function EvidencesPanel({
       } else {
         setFileError("증빙 저장 결과를 확인할 수 없습니다.");
       }
+    } catch {
+      setFileError("증빙 저장 중 오류가 발생했습니다.");
     } finally {
       setSaving(false);
     }
