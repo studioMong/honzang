@@ -70,6 +70,9 @@ export type AppEvidence = {
   totalAmount?: number | null;
   fileName?: string | null;
   fileUrl?: string | null;
+  fileDataUrl?: string | null;
+  fileMimeType?: string | null;
+  fileSize?: number | null;
   transactionId?: string | null;
   transaction?: AppTransaction | null;
 };

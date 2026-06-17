@@ -17,6 +17,9 @@ const evidenceSchema = z.object({
   totalAmount: z.coerce.number().nonnegative().optional().nullable(),
   fileName: z.string().max(240).optional().nullable(),
   fileUrl: z.string().max(500).optional().nullable(),
+  fileDataUrl: z.string().max(1_500_000).optional().nullable(),
+  fileMimeType: z.string().max(120).optional().nullable(),
+  fileSize: z.coerce.number().int().nonnegative().max(750_000).optional().nullable(),
   transactionId: z.string().optional().nullable()
 });
 
@@ -92,7 +95,12 @@ export async function POST(request: Request) {
         vatAmount: payload.vatAmount,
         totalAmount: payload.totalAmount,
         fileName: payload.fileName,
-        fileUrl: payload.fileUrl
+        fileUrl: payload.fileUrl,
+        rawPayload: {
+          fileDataUrl: payload.fileDataUrl ?? null,
+          fileMimeType: payload.fileMimeType ?? null,
+          fileSize: payload.fileSize ?? null
+        }
       }
     });
 

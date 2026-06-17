@@ -382,6 +382,12 @@ a {
   font-size: 13px;
 }
 
+.field-help {
+  margin: -6px 0 0;
+  color: var(--red);
+  font-size: 12px;
+}
+
 .mapping-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

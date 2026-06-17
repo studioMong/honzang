@@ -70,6 +70,7 @@ const mappingFields: Array<{ key: keyof CsvColumnMapping; label: string; require
 ];
 
 const sourceOptions: SourceType[] = ["BANK", "CARD", "HOMETAX_SALES", "HOMETAX_PURCHASES", "CASH_RECEIPT", "PG"];
+const MAX_EVIDENCE_FILE_SIZE = 750_000;
 
 const sampleCsvLinks: Record<SourceType, { label: string; href: string }> = {
   BANK: { label: "통장 샘플", href: "/samples/bank-transactions.csv" },
@@ -355,6 +356,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
             company={company}
             companyId={company.id || DEFAULT_COMPANY_ID}
             transactions={transactions}
+            evidences={evidences}
             journalEntries={journalEntries}
             taxReports={taxReports}
             onSaved={(taxReport) => setTaxReports((current) => [taxReport, ...current.filter((item) => item.id !== taxReport.id)])}
@@ -922,13 +924,35 @@ function EvidencesPanel({
     vatAmount: "",
     totalAmount: "",
     fileName: "",
+    fileDataUrl: "",
+    fileMimeType: "",
+    fileSize: "",
     transactionId: ""
   });
   const [saving, setSaving] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
   const matchCandidates = useMemo(() => buildEvidenceMatchCandidates(form, transactions), [form, transactions]);
 
   function updateField(key: keyof typeof form, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function handleEvidenceFile(file?: File | null) {
+    if (!file) return;
+    if (file.size > MAX_EVIDENCE_FILE_SIZE) {
+      setFileError(`파일은 ${formatFileSize(MAX_EVIDENCE_FILE_SIZE)} 이하만 DB에 보관할 수 있습니다.`);
+      return;
+    }
+
+    setFileError(null);
+    const dataUrl = await readFileAsDataUrl(file);
+    setForm((current) => ({
+      ...current,
+      fileName: file.name,
+      fileDataUrl: dataUrl,
+      fileMimeType: file.type || "application/octet-stream",
+      fileSize: String(file.size)
+    }));
   }
 
   async function createEvidence() {
@@ -947,6 +971,9 @@ function EvidencesPanel({
           vatAmount: form.vatAmount ? Number(form.vatAmount) : null,
           totalAmount: form.totalAmount ? Number(form.totalAmount) : null,
           fileName: form.fileName || null,
+          fileDataUrl: form.fileDataUrl || null,
+          fileMimeType: form.fileMimeType || null,
+          fileSize: form.fileSize ? Number(form.fileSize) : null,
           transactionId: form.transactionId || null
         })
       });
@@ -961,8 +988,12 @@ function EvidencesPanel({
           vatAmount: "",
           totalAmount: "",
           fileName: "",
+          fileDataUrl: "",
+          fileMimeType: "",
+          fileSize: "",
           transactionId: ""
         }));
+        setFileError(null);
       }
     } finally {
       setSaving(false);
@@ -1060,17 +1091,15 @@ function EvidencesPanel({
           <label className="file-drop">
             <input
               type="file"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) updateField("fileName", file.name);
-              }}
+              onChange={(event) => void handleEvidenceFile(event.target.files?.[0])}
             />
             <span>
               <FileCheck2 size={28} />
               <strong>{form.fileName || "증빙 파일 선택"}</strong>
-              <span>초기 버전은 파일명과 매칭 정보를 저장합니다</span>
+              <span>{form.fileSize ? `${formatFileSize(Number(form.fileSize))} DB 보관 준비` : `${formatFileSize(MAX_EVIDENCE_FILE_SIZE)} 이하 파일은 DB에 보관합니다`}</span>
             </span>
           </label>
+          {fileError && <p className="field-help">{fileError}</p>}
         </div>
       </section>
 
@@ -1103,7 +1132,13 @@ function EvidencesPanel({
                   <td className="amount">{evidence.supplyAmount ? formatKRW(evidence.supplyAmount) : "-"}</td>
                   <td className="amount">{evidence.vatAmount ? formatKRW(evidence.vatAmount) : "-"}</td>
                   <td className="amount">{evidence.totalAmount ? formatKRW(evidence.totalAmount) : "-"}</td>
-                  <td>{evidence.fileName ?? "-"}</td>
+                  <td>
+                    {evidence.fileDataUrl ? (
+                      <button className="ghost-button" onClick={() => downloadDataUrl(evidence.fileName ?? "evidence", evidence.fileDataUrl ?? "")}>다운로드</button>
+                    ) : (
+                      evidence.fileName ?? "-"
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1358,6 +1393,7 @@ function ReportsPanel({
   company,
   companyId,
   transactions,
+  evidences,
   journalEntries,
   taxReports,
   onSaved,
@@ -1366,6 +1402,7 @@ function ReportsPanel({
   company: AppCompany;
   companyId: string;
   transactions: AppTransaction[];
+  evidences: AppEvidence[];
   journalEntries: AppJournalEntry[];
   taxReports: AppTaxReport[];
   onSaved: (taxReport: AppTaxReport) => void;
@@ -1378,6 +1415,7 @@ function ReportsPanel({
   const [selectedTaxReportId, setSelectedTaxReportId] = useState<string | null>(null);
   const selectedPeriod = period === "ALL" || periodOptions.some((option) => option.value === period) ? period : periodOptions[0]?.value ?? "ALL";
   const filteredTransactions = useMemo(() => filterTransactionsByPeriod(transactions, selectedPeriod), [selectedPeriod, transactions]);
+  const filteredEvidences = useMemo(() => filterEvidencesByPeriod(evidences, selectedPeriod), [evidences, selectedPeriod]);
   const filteredJournalEntries = useMemo(() => filterJournalEntriesByPeriod(journalEntries, selectedPeriod), [journalEntries, selectedPeriod]);
   const approvedJournalEntries = useMemo(() => filteredJournalEntries.filter((entry) => entry.status === "APPROVED"), [filteredJournalEntries]);
   const reportSummary = useMemo(() => summarizeTransactions(filteredTransactions), [filteredTransactions]);
@@ -1406,6 +1444,7 @@ function ReportsPanel({
         periodRange,
         summary: reportSummary,
         transactions: filteredTransactions,
+        evidences: filteredEvidences,
         reviews,
         filingScheduleRows,
         filingPackageRows,
@@ -2733,6 +2772,9 @@ type EvidenceFormState = {
   vatAmount: string;
   totalAmount: string;
   fileName: string;
+  fileDataUrl: string;
+  fileMimeType: string;
+  fileSize: string;
   transactionId: string;
 };
 
@@ -2812,6 +2854,11 @@ function formatPeriodLabel(period: string) {
 function filterTransactionsByPeriod(transactions: AppTransaction[], period: string) {
   if (period === "ALL") return transactions;
   return transactions.filter((transaction) => transaction.transactionDate.startsWith(period));
+}
+
+function filterEvidencesByPeriod(evidences: AppEvidence[], period: string) {
+  if (period === "ALL") return evidences;
+  return evidences.filter((evidence) => evidence.issueDate?.startsWith(period) ?? false);
 }
 
 function filterJournalEntriesByPeriod(journalEntries: AppJournalEntry[], period: string) {
@@ -3036,6 +3083,29 @@ function downloadJson(fileName: string, payload: unknown) {
   URL.revokeObjectURL(url);
 }
 
+function downloadDataUrl(fileName: string, dataUrl: string) {
+  const anchor = document.createElement("a");
+  anchor.href = dataUrl;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result ?? "")));
+    reader.addEventListener("error", () => reject(reader.error ?? new Error("파일을 읽을 수 없습니다.")));
+    reader.readAsDataURL(file);
+  });
+}
+
+function formatFileSize(size: number) {
+  if (size >= 1_000_000) return `${(size / 1_000_000).toFixed(1)}MB`;
+  return `${Math.max(1, Math.round(size / 1000))}KB`;
+}
+
 function toCsv(rows: Array<Record<string, string | number>>) {
   if (rows.length === 0) return "";
   const headers = Object.keys(rows[0]);
@@ -3086,6 +3156,22 @@ function buildReviewCsv(items: ReturnType<typeof buildReviewItems>) {
   }));
 }
 
+function buildEvidenceCsv(evidences: AppEvidence[]) {
+  return evidences.map((evidence) => ({
+    발행일: evidence.issueDate ?? "",
+    유형: evidence.evidenceType,
+    거래처: evidence.counterparty ?? "",
+    사업자등록번호: evidence.businessRegistrationNumber ?? "",
+    매칭거래: evidence.transaction?.description ?? "",
+    공급가액: evidence.supplyAmount ?? "",
+    부가세: evidence.vatAmount ?? "",
+    합계: evidence.totalAmount ?? "",
+    파일명: evidence.fileName ?? "",
+    파일보관: evidence.fileDataUrl ? "DB 보관" : evidence.fileUrl ? "외부 URL" : "파일 없음",
+    파일크기: evidence.fileSize ? formatFileSize(evidence.fileSize) : ""
+  }));
+}
+
 function buildFilingPackagePayload({
   company,
   period,
@@ -3093,6 +3179,7 @@ function buildFilingPackagePayload({
   periodRange,
   summary,
   transactions,
+  evidences,
   reviews,
   filingScheduleRows,
   filingPackageRows,
@@ -3107,6 +3194,7 @@ function buildFilingPackagePayload({
   periodRange: { start: string; end: string };
   summary: ReturnType<typeof summarizeTransactions>;
   transactions: AppTransaction[];
+  evidences: AppEvidence[];
   reviews: ReturnType<typeof buildReviewItems>;
   filingScheduleRows: ReturnType<typeof buildFilingScheduleRows>;
   filingPackageRows: ReturnType<typeof buildFilingPackageRows>;
@@ -3136,6 +3224,7 @@ function buildFilingPackagePayload({
     filingPackageRows,
     tables: {
       transactions: buildTransactionCsv(transactions),
+      evidences: buildEvidenceCsv(evidences),
       vatReport: buildVatCsv(summary),
       reviewItems: buildReviewCsv(reviews),
       withholdingCandidates: withholdingRows,

@@ -93,7 +93,17 @@ function readReviewReasons(rawPayload: unknown) {
   return typeof rawPayload.reviewReason === "string" ? [rawPayload.reviewReason] : undefined;
 }
 
+function readEvidenceFile(rawPayload: unknown) {
+  if (!isRecord(rawPayload)) return {};
+  return {
+    fileDataUrl: typeof rawPayload.fileDataUrl === "string" ? rawPayload.fileDataUrl : null,
+    fileMimeType: typeof rawPayload.fileMimeType === "string" ? rawPayload.fileMimeType : null,
+    fileSize: typeof rawPayload.fileSize === "number" ? rawPayload.fileSize : null
+  };
+}
+
 export function serializeEvidence(evidence: Evidence & { transaction?: TransactionWithAccounts | null }): AppEvidence {
+  const file = readEvidenceFile(evidence.rawPayload);
   return {
     id: evidence.id,
     evidenceType: evidence.evidenceType,
@@ -105,6 +115,9 @@ export function serializeEvidence(evidence: Evidence & { transaction?: Transacti
     totalAmount: evidence.totalAmount === null ? null : Number(evidence.totalAmount),
     fileName: evidence.fileName,
     fileUrl: evidence.fileUrl,
+    fileDataUrl: file.fileDataUrl,
+    fileMimeType: file.fileMimeType,
+    fileSize: file.fileSize,
     transactionId: evidence.transactionId,
     transaction: evidence.transaction ? serializeTransaction(evidence.transaction) : null
   };
