@@ -48,6 +48,8 @@ try {
   await verifyPublicHealth();
   await verifyPageRedirect();
   await verifyUnauthorizedApi();
+  await verifyInvalidLoginPayload();
+  await verifyOversizedLoginPayload();
   await verifyWrongCode();
   await verifyRateLimit();
   const cookie = await verifyLogin();
@@ -145,6 +147,30 @@ async function verifyWrongCode() {
   assert.equal(response.status, 401, "wrong access code should be rejected");
   const body = await response.json();
   assert.equal(body.remainingAttempts, 4, "wrong code response should expose remaining attempts");
+}
+
+async function verifyInvalidLoginPayload() {
+  const response = await fetch(`${baseUrl}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-forwarded-for": "203.0.113.11" },
+    body: "{",
+    cache: "no-store"
+  });
+  assert.equal(response.status, 400, "invalid login JSON should be rejected");
+  const body = await response.json();
+  assert.equal(body.code, "INVALID_LOGIN_PAYLOAD", "invalid login JSON should return a payload code");
+}
+
+async function verifyOversizedLoginPayload() {
+  const response = await fetch(`${baseUrl}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-forwarded-for": "203.0.113.12" },
+    body: JSON.stringify({ code: "x".repeat(2_100) }),
+    cache: "no-store"
+  });
+  assert.equal(response.status, 413, "oversized login payload should be rejected");
+  const body = await response.json();
+  assert.equal(body.code, "LOGIN_PAYLOAD_TOO_LARGE", "oversized login payload should return a size code");
 }
 
 async function verifyRateLimit() {

@@ -1,6 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 import { ACCESS_COOKIE_MAX_AGE_SECONDS, ACCESS_COOKIE_NAME, createAccessToken, isAccessControlEnabled, verifyAccessCode } from "@/lib/server/access-control";
 import { clearAccessFailures, inspectAccessAttempt, recordAccessFailure } from "@/lib/server/access-attempts";
+
+const MAX_LOGIN_BODY_BYTES = 2_048;
+const loginSchema = z.object({
+  code: z.string().min(1).max(200)
+});
 
 export async function POST(request: NextRequest) {
   if (!isAccessControlEnabled()) {
@@ -12,8 +18,12 @@ export async function POST(request: NextRequest) {
     return rateLimitedResponse(attempt.retryAfterSeconds);
   }
 
-  const body = await request.json().catch(() => ({}));
-  if (!verifyAccessCode(body.code)) {
+  const body = await readLoginBody(request);
+  if (!body.ok) {
+    return body.response;
+  }
+
+  if (!verifyAccessCode(body.data.code)) {
     const failure = recordAccessFailure(request);
     if (failure.blocked) {
       return rateLimitedResponse(failure.retryAfterSeconds);
@@ -43,6 +53,44 @@ export async function POST(request: NextRequest) {
     secure: process.env.NODE_ENV === "production"
   });
   return response;
+}
+
+async function readLoginBody(request: NextRequest): Promise<{ ok: true; data: z.infer<typeof loginSchema> } | { ok: false; response: NextResponse }> {
+  const contentLength = Number(request.headers.get("content-length") ?? "0");
+  if (Number.isFinite(contentLength) && contentLength > MAX_LOGIN_BODY_BYTES) {
+    return {
+      ok: false,
+      response: NextResponse.json({ ok: false, code: "LOGIN_PAYLOAD_TOO_LARGE", message: "로그인 요청 본문이 너무 큽니다." }, { status: 413 })
+    };
+  }
+
+  const text = await request.text().catch(() => "");
+  if (new TextEncoder().encode(text).length > MAX_LOGIN_BODY_BYTES) {
+    return {
+      ok: false,
+      response: NextResponse.json({ ok: false, code: "LOGIN_PAYLOAD_TOO_LARGE", message: "로그인 요청 본문이 너무 큽니다." }, { status: 413 })
+    };
+  }
+
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return {
+      ok: false,
+      response: NextResponse.json({ ok: false, code: "INVALID_LOGIN_PAYLOAD", message: "로그인 요청 형식이 올바르지 않습니다." }, { status: 400 })
+    };
+  }
+
+  const parsed = loginSchema.safeParse(json);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      response: NextResponse.json({ ok: false, code: "INVALID_LOGIN_PAYLOAD", message: "로그인 요청 형식이 올바르지 않습니다." }, { status: 400 })
+    };
+  }
+
+  return { ok: true, data: parsed.data };
 }
 
 function rateLimitedResponse(retryAfterSeconds: number) {
