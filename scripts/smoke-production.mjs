@@ -53,6 +53,7 @@ try {
   await expectInvalidCsvImportRows();
   await expectInvalidCsvOriginalFile();
   await expectInvalidManualTransactionDate();
+  await expectInvalidManualTransactionAmounts();
   await expectInvalidTransactionPatch();
   await expectInvalidJournalDate();
   await expectInvalidJournalLines();
@@ -302,6 +303,27 @@ async function expectInvalidManualTransactionDate() {
   const body = JSON.parse(text);
   if (body.code !== "INVALID_TRANSACTION_DATE") {
     throw new Error(`/api/transactions returned unexpected date validation payload: ${text}`);
+  }
+}
+
+async function expectInvalidManualTransactionAmounts() {
+  const response = await fetch(`${baseUrl}/api/transactions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      transactionDate: "2026-06-17",
+      description: "잘못된 금액 수기 거래",
+      depositAmount: 1000,
+      withdrawalAmount: 1000
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/transactions should reject invalid manual transaction amounts, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_TRANSACTION_AMOUNTS") {
+    throw new Error(`/api/transactions returned unexpected amount validation payload: ${text}`);
   }
 }
 

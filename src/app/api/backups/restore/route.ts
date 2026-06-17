@@ -17,6 +17,7 @@ import {
   validateEvidenceFileUrl
 } from "@/lib/server/evidence-validation";
 import { MAX_ORIGINAL_FILE_TEXT_SIZE, validateOriginalFileText } from "@/lib/server/source-file-validation";
+import { validateTransactionAmounts } from "@/lib/server/transaction-validation";
 
 const sourceTypeSchema = z.enum(["BANK", "CARD", "HOMETAX_SALES", "HOMETAX_PURCHASES", "CASH_RECEIPT", "PG", "MANUAL"]);
 const accountTypeSchema = z.enum(["ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"]);
@@ -275,6 +276,19 @@ export async function POST(request: Request) {
         code: "INVALID_BACKUP_DATES",
         message: "백업 날짜 데이터가 올바르지 않습니다.",
         issues: dateIssues
+      },
+      { status: 400 }
+    );
+  }
+
+  const transactionIssues = validateBackupTransactions(parsed.data.transactions);
+  if (transactionIssues.length > 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_BACKUP_TRANSACTIONS",
+        message: "백업 거래 데이터가 올바르지 않습니다.",
+        issues: transactionIssues
       },
       { status: 400 }
     );
@@ -792,6 +806,13 @@ function validateBackupEvidences(evidences: WorkspaceBackup["evidences"]) {
   }
 
   return issues;
+}
+
+function validateBackupTransactions(transactions: WorkspaceBackup["transactions"]) {
+  return uniqueById(transactions).flatMap((transaction) => {
+    const issue = validateTransactionAmounts(transaction);
+    return issue ? [`거래 ${transaction.id}: ${issue}`] : [];
+  });
 }
 
 function validateBackupDates(backup: WorkspaceBackup) {

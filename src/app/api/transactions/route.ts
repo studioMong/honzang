@@ -7,6 +7,7 @@ import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { closedPeriodResponse, findClosedPeriodForDate } from "@/lib/server/closing-periods";
 import { serializeTransaction, serializeVendor } from "@/lib/server/serializers";
+import { validateTransactionAmounts } from "@/lib/server/transaction-validation";
 import { applyVendorDefaults, inferAccount, summarizeTransactions } from "@/lib/accounting";
 
 const manualTransactionSchema = z.object({
@@ -77,11 +78,9 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-  if (payload.depositAmount <= 0 && payload.withdrawalAmount <= 0) {
-    return NextResponse.json({ ok: false, message: "입금 또는 출금 금액을 입력해야 합니다." }, { status: 400 });
-  }
-  if (payload.depositAmount > 0 && payload.withdrawalAmount > 0) {
-    return NextResponse.json({ ok: false, message: "입금과 출금 중 하나만 입력해야 합니다." }, { status: 400 });
+  const amountIssue = validateTransactionAmounts(payload);
+  if (amountIssue) {
+    return NextResponse.json({ ok: false, code: "INVALID_TRANSACTION_AMOUNTS", message: amountIssue }, { status: 400 });
   }
 
   const db = getPrisma();

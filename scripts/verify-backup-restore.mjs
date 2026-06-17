@@ -164,6 +164,7 @@ try {
   await verifySettingsUi();
   await verifyDryRun();
   await verifyInvalidDateBackup();
+  await verifyInvalidTransactionAmountBackup();
   await verifyInvalidEvidenceBackup();
   await verifyInvalidEvidenceAmountBackup();
   await verifyInvalidJournalBackup();
@@ -283,6 +284,23 @@ async function verifyInvalidDateBackup() {
   assert.equal(body.code, "INVALID_BACKUP_DATES", "restore should return date validation code");
   assert.ok(Array.isArray(body.issues), "restore should return date validation issues");
   assert.ok(body.issues.length >= 2, "restore should report invalid date and timestamp issues");
+}
+
+async function verifyInvalidTransactionAmountBackup() {
+  const invalidBackup = structuredClone(backup);
+  invalidBackup.transactions = [
+    {
+      ...backup.transactions[0],
+      depositAmount: 1000,
+      withdrawalAmount: 1000
+    }
+  ];
+
+  const body = await postJson("/api/backups/restore", { backup: invalidBackup, dryRun: true }, 400);
+  assert.equal(body.ok, false, "restore should reject invalid transaction amount backup data");
+  assert.equal(body.code, "INVALID_BACKUP_TRANSACTIONS", "restore should return transaction validation code");
+  assert.ok(Array.isArray(body.issues), "restore should return transaction validation issues");
+  assert.ok(body.issues.some((issue) => issue.includes("입금과 출금")), "restore should report inconsistent transaction amounts");
 }
 
 async function verifyInvalidJournalBackup() {
