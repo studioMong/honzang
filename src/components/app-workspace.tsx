@@ -368,10 +368,18 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
         )}
         {activeView === "settings" && (
           <SettingsPanel
+            mode={mode}
             company={company}
             accounts={accounts}
+            csvTemplates={csvTemplates}
+            importBatches={importBatches}
+            transactions={transactions}
+            evidences={evidences}
+            journalEntries={journalEntries}
+            taxReports={taxReports}
             vendors={vendors}
             classificationRules={classificationRules}
+            reviewItems={visibleReviewItems}
             onSaved={setCompany}
             onVendorsChanged={setVendors}
             onRulesChanged={setClassificationRules}
@@ -2195,18 +2203,34 @@ function ReportsPanel({
 }
 
 function SettingsPanel({
+  mode,
   company,
   accounts,
+  csvTemplates,
+  importBatches,
+  transactions,
+  evidences,
+  journalEntries,
+  taxReports,
   vendors,
   classificationRules,
+  reviewItems,
   onSaved,
   onVendorsChanged,
   onRulesChanged
 }: {
+  mode: "sample" | "database";
   company: AppCompany;
   accounts: AppAccount[];
+  csvTemplates: CsvTemplate[];
+  importBatches: AppImportBatch[];
+  transactions: AppTransaction[];
+  evidences: AppEvidence[];
+  journalEntries: AppJournalEntry[];
+  taxReports: AppTaxReport[];
   vendors: AppVendor[];
   classificationRules: AppClassificationRule[];
+  reviewItems: ReviewItem[];
   onSaved: (company: AppCompany) => void;
   onVendorsChanged: (vendors: AppVendor[]) => void;
   onRulesChanged: (rules: AppClassificationRule[]) => void;
@@ -2229,9 +2253,24 @@ function SettingsPanel({
   const [saving, setSaving] = useState(false);
   const [savingVendor, setSavingVendor] = useState(false);
   const [savingRule, setSavingRule] = useState(false);
+  const [exportingBackup, setExportingBackup] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const setupItems = buildCompanySetupItems(form);
   const missingCount = setupItems.filter((item) => item.tone === "red").length;
+  const backupPayload = buildWorkspaceBackupPayload({
+    mode,
+    company: form,
+    accounts,
+    csvTemplates,
+    importBatches,
+    transactions,
+    evidences,
+    journalEntries,
+    taxReports,
+    vendors,
+    classificationRules,
+    reviewItems
+  });
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -2372,6 +2411,20 @@ function SettingsPanel({
       if (!response.ok) onRulesChanged(previous);
     } catch {
       onRulesChanged(previous);
+    }
+  }
+
+  function downloadWorkspaceBackupJson() {
+    downloadJson(buildWorkspaceBackupFileName("json"), backupPayload);
+  }
+
+  async function downloadWorkspaceBackupZip() {
+    setExportingBackup(true);
+    try {
+      const importSourceFiles = await buildImportSourceZipEntries(importBatches);
+      downloadWorkspaceBackupArchive(buildWorkspaceBackupFileName("zip"), backupPayload, evidences, importSourceFiles);
+    } finally {
+      setExportingBackup(false);
     }
   }
 
@@ -2680,6 +2733,34 @@ function SettingsPanel({
               ))}
             </tbody>
           </table>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="panel-title">전체 백업</h2>
+            <p className="panel-subtitle">현재 회사 데이터, 거래, 증빙, 분개, 리포트, 규칙을 파일로 보관</p>
+          </div>
+          <div className="toolbar">
+            <button className="secondary-button" onClick={downloadWorkspaceBackupJson}>
+              <Download size={16} />
+              백업 JSON
+            </button>
+            <button className="secondary-button" onClick={() => void downloadWorkspaceBackupZip()} disabled={exportingBackup}>
+              {exportingBackup ? <Loader2 size={16} className="spin" /> : <Download size={16} />}
+              백업 ZIP
+            </button>
+          </div>
+        </div>
+        <div className="panel-body">
+          <div className="review-list">
+            <ChecklistItem tone="green" title="거래" value={`${formatNumber(transactions.length)}건`} />
+            <ChecklistItem tone="green" title="증빙" value={`${formatNumber(evidences.length)}건`} />
+            <ChecklistItem tone="green" title="분개" value={`${formatNumber(journalEntries.length)}건`} />
+            <ChecklistItem tone="green" title="리포트" value={`${formatNumber(taxReports.length)}개`} />
+            <ChecklistItem tone="green" title="원본 CSV" value={`${formatNumber(importBatches.filter((batch) => batch.hasOriginalFile).length)}개`} />
+          </div>
         </div>
       </section>
     </div>
@@ -3262,6 +3343,133 @@ function toCsvFileContent(rows: Array<Record<string, string | number>>) {
   return `\uFEFF${toCsv(rows)}`;
 }
 
+function buildWorkspaceBackupFileName(extension: "json" | "zip") {
+  return `honzang-${new Date().toISOString().slice(0, 10)}-workspace-backup.${extension}`;
+}
+
+function buildWorkspaceBackupPayload({
+  mode,
+  company,
+  accounts,
+  csvTemplates,
+  importBatches,
+  transactions,
+  evidences,
+  journalEntries,
+  taxReports,
+  vendors,
+  classificationRules,
+  reviewItems
+}: {
+  mode: "sample" | "database";
+  company: AppCompany;
+  accounts: AppAccount[];
+  csvTemplates: CsvTemplate[];
+  importBatches: AppImportBatch[];
+  transactions: AppTransaction[];
+  evidences: AppEvidence[];
+  journalEntries: AppJournalEntry[];
+  taxReports: AppTaxReport[];
+  vendors: AppVendor[];
+  classificationRules: AppClassificationRule[];
+  reviewItems: ReviewItem[];
+}) {
+  return {
+    app: "혼자장부",
+    backupVersion: 1,
+    generatedAt: new Date().toISOString(),
+    mode,
+    counts: {
+      accounts: accounts.length,
+      csvTemplates: csvTemplates.length,
+      importBatches: importBatches.length,
+      transactions: transactions.length,
+      evidences: evidences.length,
+      journalEntries: journalEntries.length,
+      taxReports: taxReports.length,
+      vendors: vendors.length,
+      classificationRules: classificationRules.length,
+      reviewItems: reviewItems.length
+    },
+    company,
+    accounts,
+    csvTemplates,
+    importBatches,
+    transactions,
+    evidences,
+    journalEntries,
+    taxReports,
+    vendors,
+    classificationRules,
+    reviewItems,
+    notes: [
+      "혼자장부 전체 백업 파일입니다.",
+      "민감한 거래처, 금액, 증빙 파일 정보가 포함될 수 있으므로 안전한 위치에 보관하세요.",
+      "ZIP 백업에는 가능한 경우 원본 CSV와 DB 보관 증빙 파일이 별도 파일로 함께 포함됩니다."
+    ]
+  };
+}
+
+function downloadWorkspaceBackupArchive(
+  fileName: string,
+  payload: ReturnType<typeof buildWorkspaceBackupPayload>,
+  evidences: AppEvidence[],
+  importSourceFiles: ZipFile[]
+) {
+  const evidenceFiles = buildEvidenceFileZipEntries(evidences);
+  const files: ZipFile[] = [
+    {
+      path: "manifest.json",
+      content: JSON.stringify(
+        {
+          app: payload.app,
+          backupVersion: payload.backupVersion,
+          generatedAt: payload.generatedAt,
+          company: {
+            id: payload.company.id,
+            name: payload.company.name,
+            businessRegistrationNumber: payload.company.businessRegistrationNumber
+          },
+          counts: payload.counts,
+          files: ["workspace-backup.json"],
+          originalCsvFiles: importSourceFiles.map((file) => file.path),
+          evidenceFiles: evidenceFiles.map((file) => file.path),
+          notes: payload.notes
+        },
+        null,
+        2
+      )
+    },
+    { path: "workspace-backup.json", content: JSON.stringify(payload, null, 2) },
+    ...importSourceFiles,
+    ...evidenceFiles
+  ];
+  downloadBlob(fileName, createZipBlob(files));
+}
+
+async function buildImportSourceZipEntries(importBatches: AppImportBatch[]) {
+  const usedPaths = new Set<string>();
+  const files: ZipFile[] = [];
+
+  for (const batch of importBatches) {
+    if (!batch.hasOriginalFile) continue;
+    try {
+      const response = await fetch(`/api/imports?importBatchId=${encodeURIComponent(batch.id)}`, { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok || typeof payload.originalFileText !== "string") continue;
+      const fileName = safeArchiveFileName(payload.originalFileName ?? batch.originalFileName, `${batch.sourceType}-${batch.id}.csv`);
+      files.push({
+        path: uniqueZipPath(`imports/original-csv/${fileName}`, usedPaths),
+        content: payload.originalFileText
+      });
+    } catch {
+      // Backup still succeeds with the structured data even if one source CSV cannot be fetched.
+    }
+  }
+
+  return files;
+}
+
 function buildFilingWorkbookSheets(payload: ReturnType<typeof buildFilingPackagePayload>): XlsxSheet[] {
   return [
     { name: "요약", rows: buildFilingSummaryRows(payload) },
@@ -3336,9 +3544,13 @@ function decodeDataUrl(dataUrl: string) {
 }
 
 function buildSafeEvidenceFileName(evidence: AppEvidence, index: number) {
-  const rawName = evidence.fileName?.split(/[\\/]/).pop()?.trim() || `evidence-${index + 1}${extensionFromMimeType(evidence.fileMimeType)}`;
+  return safeArchiveFileName(evidence.fileName, `evidence-${index + 1}${extensionFromMimeType(evidence.fileMimeType)}`);
+}
+
+function safeArchiveFileName(fileName: string | null | undefined, fallback: string) {
+  const rawName = fileName?.split(/[\\/]/).pop()?.trim() || fallback;
   const cleaned = rawName.replace(/[<>:"|?*\u0000-\u001F]/g, "_").replace(/^\.+$/, "");
-  return cleaned || `evidence-${index + 1}${extensionFromMimeType(evidence.fileMimeType)}`;
+  return cleaned || fallback;
 }
 
 function extensionFromMimeType(mimeType?: string | null) {
