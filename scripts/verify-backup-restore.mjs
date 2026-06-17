@@ -12,6 +12,26 @@ const evidenceFileText = "dry-run-evidence";
 const originalCsvText = "거래일,적요,입금\n2026-06-17,dry run,1000\n";
 const oversizedJsonText = "x".repeat(500_001);
 const restoreConfirmationText = "혼자장부 전체교체";
+const filingInputSummaryRows = [
+  {
+    신고: "부가세",
+    "입력 항목": "과세 매출 공급가액",
+    값: "₩1,000",
+    근거: "과세 매출 거래 공급가액 합계",
+    상태: "집계됨",
+    톤: "green",
+    "최종 확인": "홈택스 매출 세금계산서와 통장 입금 대조"
+  },
+  {
+    신고: "법인세",
+    "입력 항목": "승인 분개/원장",
+    값: "1개 / 2행",
+    근거: "승인된 자동분개와 계정별 원장 행 수",
+    상태: "원장 있음",
+    톤: "green",
+    "최종 확인": "차변/대변과 계정별 원장 대조"
+  }
+];
 
 if (!existsSync(serverPath)) {
   console.error(`${serverPath} not found. Run npm run build before npm run verify:backup-restore.`);
@@ -115,14 +135,43 @@ const backup = {
     }
   ],
   journalEntries: [],
-  taxReports: [],
+  taxReports: [
+    {
+      id: "report-dry-run-1",
+      reportType: "CORPORATE_TAX_PREP",
+      periodStart: "2026-06-01",
+      periodEnd: "2026-06-30",
+      calculatedPayload: {
+        period: "2026-06",
+        periodLabel: "2026년 6월",
+        filingInputSummaryRows,
+        summary: {
+          revenue: 1000,
+          expense: 0,
+          profit: 1000,
+          vatOutput: 100,
+          vatInput: 0,
+          vatPayable: 100,
+          missingEvidenceAmount: 0,
+          reviewCount: 0,
+          riskCount: 0
+        }
+      },
+      createdAt: "2026-06-17T00:00:00.000Z"
+    }
+  ],
   closingPeriods: [
     {
       id: "closing-dry-run-1",
       period: "2026-06",
       periodStart: "2026-06-01",
       periodEnd: "2026-06-30",
-      summaryPayload: { transactionCount: 1 },
+      summaryPayload: {
+        transactionCount: 1,
+        report: {
+          filingInputSummaryRows
+        }
+      },
       closedAt: "2026-06-17T00:00:00.000Z",
       createdAt: "2026-06-17T00:00:00.000Z"
     }
@@ -235,6 +284,7 @@ async function verifyDryRun() {
   assert.equal(body.restoredCounts?.importBatches, 1, "dry-run should count import batches");
   assert.equal(body.restoredCounts?.originalImportFiles, 1, "dry-run should count original CSV files");
   assert.equal(body.restoredCounts?.auditEvents, 1, "dry-run should count audit events");
+  assert.equal(body.restoredCounts?.taxReports, 1, "dry-run should count tax report snapshots");
   assert.equal(body.restoredCounts?.closingPeriods, 1, "dry-run should count closing periods");
   assert.equal(body.restoredCounts?.evidences, 1, "dry-run should count evidences");
 }
