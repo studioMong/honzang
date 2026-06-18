@@ -7,6 +7,7 @@ const steps = [
   ["verify:data-sources", "Data source status calculation"],
   ["verify:billing-estimates", "Billing model estimates"],
   ["verify:file-encryption", "Stored file encryption"],
+  ["verify:database-schema-contract", "Database schema contract"],
   ["verify:period-locks", "Closing period mutation locks"],
   ["verify:product-boundaries", "Product positioning boundaries"],
   ["typecheck", "TypeScript typecheck"],

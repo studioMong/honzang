@@ -26,6 +26,11 @@ assert.equal(packageJson.scripts?.["audit:railway"], "node scripts/audit-railway
 assert.equal(packageJson.scripts?.["verify:access-control"], "node scripts/verify-access-control.mjs", "package should expose access-control verification");
 assert.equal(packageJson.scripts?.["verify:access-audit"], "tsx scripts/verify-access-audit.ts", "package should expose access-audit verification");
 assert.equal(packageJson.scripts?.["verify:period-locks"], "node scripts/verify-period-locks.mjs", "package should expose period-lock verification");
+assert.equal(
+  packageJson.scripts?.["verify:database-schema-contract"],
+  "node scripts/verify-database-schema-contract.mjs",
+  "package should expose database schema contract verification"
+);
 
 assert.equal(railwayConfig.build?.builder, "DOCKERFILE", "Railway builder should be Dockerfile");
 assert.equal(railwayConfig.build?.dockerfilePath, "Dockerfile", "Railway should use the root Dockerfile");
@@ -62,6 +67,7 @@ assert.ok(existsSync("scripts/audit-railway-deployment.mjs"), "Railway audit scr
 assert.ok(existsSync("scripts/verify-access-control.mjs"), "Access-control verification script should exist");
 assert.ok(existsSync("scripts/verify-access-audit.ts"), "Access-audit verification script should exist");
 assert.ok(existsSync("scripts/verify-period-locks.mjs"), "Period-lock verification script should exist");
+assert.ok(existsSync("scripts/verify-database-schema-contract.mjs"), "Database schema contract verification script should exist");
 assert.ok(existsSync("scripts/lib/security-headers.mjs"), "Security header verifier should exist");
 assert.ok(existsSync("prisma/schema.prisma"), "Prisma schema should exist");
 assert.ok(readdirSync("prisma/migrations").some((entry) => existsSync(path.join("prisma/migrations", entry, "migration.sql"))), "Prisma migrations should be present");
