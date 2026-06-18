@@ -5,7 +5,7 @@ import { z } from "zod";
 import { DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
 import { MAX_IMPORT_REQUEST_BYTES } from "@/lib/file-limits";
-import { applyClassificationRules, applyVendorDefaults, normalizeCsvRow, parseMoney, summarizeTransactions } from "@/lib/accounting";
+import { applyClassificationRules, applyVendorDefaults, normalizeCsvRow, parseMoney, parseSignedMoney, summarizeTransactions } from "@/lib/accounting";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { closedPeriodResponse, findClosedPeriodForDates } from "@/lib/server/closing-periods";
@@ -117,7 +117,7 @@ function validateImportRows(payload: ImportPayloadData) {
     const withdrawalAmount = parseMoney(getMappedCsvValue(sourceRow, mapping.withdrawalAmount));
     const supplyAmount = mapping.supplyAmount ? parseMoney(getMappedCsvValue(sourceRow, mapping.supplyAmount)) : null;
     const vatAmount = mapping.vatAmount ? parseMoney(getMappedCsvValue(sourceRow, mapping.vatAmount)) : null;
-    const balance = mapping.balance ? parseMoney(getMappedCsvValue(sourceRow, mapping.balance)) : null;
+    const balance = mapping.balance ? parseSignedMoney(getMappedCsvValue(sourceRow, mapping.balance)) : null;
 
     if (!parseStrictDate(String(transactionDate ?? ""))) {
       pushIssue(`${rowNumber}행 거래일 값이 비어 있거나 날짜 형식이 아닙니다.`);

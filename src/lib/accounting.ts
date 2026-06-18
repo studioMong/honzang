@@ -20,6 +20,10 @@ const separatedDatePattern = new RegExp(`^(\\d{4})[./-](\\d{1,2})[./-](\\d{1,2})
 const compactDatePattern = new RegExp(`^(\\d{4})(\\d{2})(\\d{2})${optionalTimeSuffix}$`);
 
 export function parseMoney(value: unknown): number {
+  return Math.abs(parseSignedMoney(value));
+}
+
+export function parseSignedMoney(value: unknown): number {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
   if (typeof value !== "string") return 0;
   const compact = value.trim().replace(/[,\s원₩]/g, "");
@@ -27,7 +31,7 @@ export function parseMoney(value: unknown): number {
   const trailingNegative = compact.match(/^(.+)-$/);
   const normalized = parenthesized ? `-${parenthesized[1]}` : trailingNegative ? `-${trailingNegative[1]}` : compact;
   const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? Math.abs(parsed) : 0;
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 export function parseDate(value: unknown): string {
@@ -118,7 +122,7 @@ export function normalizeCsvRow(
     withdrawalAmount,
     supplyAmount: mapping.supplyAmount ? parseMoney(get(mapping.supplyAmount)) : null,
     vatAmount: mapping.vatAmount ? parseMoney(get(mapping.vatAmount)) : null,
-    balance: mapping.balance ? parseMoney(get(mapping.balance)) : null,
+    balance: mapping.balance ? parseSignedMoney(get(mapping.balance)) : null,
     suggestedAccount: inferred.account,
     confirmedAccount: null,
     evidenceStatus: "UNCHECKED",

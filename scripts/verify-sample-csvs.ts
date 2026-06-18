@@ -2,7 +2,17 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import Papa from "papaparse";
-import { applyClassificationRules, applyVendorDefaults, generateJournalDraft, inferMapping, normalizeCsvRow, parseDate, parseMoney, summarizeTransactions } from "../src/lib/accounting";
+import {
+  applyClassificationRules,
+  applyVendorDefaults,
+  generateJournalDraft,
+  inferMapping,
+  normalizeCsvRow,
+  parseDate,
+  parseMoney,
+  parseSignedMoney,
+  summarizeTransactions
+} from "../src/lib/accounting";
 import { DEFAULT_ACCOUNTS } from "../src/lib/defaults";
 import { sanitizeCsvCellValue } from "../src/lib/export-safety";
 import { parseStrictDate } from "../src/lib/server/date-validation";
@@ -75,6 +85,10 @@ const sampleCases: SampleCase[] = [
 assert.equal(parseMoney("(1,234원)"), 1_234, "parenthesized money should parse as an absolute amount");
 assert.equal(parseMoney("1,234-"), 1_234, "trailing negative money should parse as an absolute amount");
 assert.equal(parseMoney("-1,234"), 1_234, "leading negative money should parse as an absolute amount");
+assert.equal(parseSignedMoney("(1,234원)"), -1_234, "parenthesized signed money should preserve negative amounts");
+assert.equal(parseSignedMoney("1,234-"), -1_234, "trailing negative signed money should preserve negative amounts");
+assert.equal(parseSignedMoney("-1,234.56"), -1_234.56, "leading negative signed money should preserve decimal negative amounts");
+assert.equal(parseSignedMoney("1,234.56"), 1_234.56, "signed money should preserve positive decimal amounts");
 assert.equal(parseDate("2026.6.7"), "2026-06-07", "dotted dates should normalize");
 assert.equal(parseDate("20260607"), "2026-06-07", "compact dates should normalize");
 assert.equal(parseDate("2026.6.7 13:20"), "2026-06-07", "dates with common time suffixes should normalize");
@@ -94,6 +108,29 @@ assert.equal(normalizeZipPath("../evil.csv"), "evil.csv", "ZIP exports should re
 assert.equal(normalizeZipPath("evidences/../../invoice.pdf"), "evidences/invoice.pdf", "ZIP exports should keep safe folders without traversal");
 assert.equal(normalizeZipPath("/absolute/path.txt"), "absolute/path.txt", "ZIP exports should be relative");
 assert.equal(normalizeZipPath(""), "file", "ZIP exports should use a fallback for empty paths");
+
+const negativeBalanceTransaction = normalizeCsvRow(
+  {
+    거래일: "2026-06-17",
+    적요: "마이너스 통장 잔액",
+    거래처: "은행",
+    입금: "0",
+    출금: "1000",
+    잔액: "-1,234.56"
+  },
+  {
+    transactionDate: "거래일",
+    description: "적요",
+    counterparty: "거래처",
+    depositAmount: "입금",
+    withdrawalAmount: "출금",
+    balance: "잔액"
+  },
+  "BANK",
+  0
+);
+assert.equal(negativeBalanceTransaction.withdrawalAmount, 1_000, "negative-style bank withdrawal should remain an absolute transaction amount");
+assert.equal(negativeBalanceTransaction.balance, -1_234.56, "bank balance should preserve negative signed amounts");
 
 function parseSampleCsv(filePath: string) {
   const csv = readFileSync(resolve(filePath), "utf8");
