@@ -323,7 +323,8 @@ a {
   grid-column: 1 / -1;
 }
 
-.field label {
+.field label,
+.field-label {
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;

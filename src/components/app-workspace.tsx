@@ -1269,8 +1269,9 @@ function CsvImportPanel({
             </div>
             {mappingFields.map((field) => (
               <div className="field" key={field.key}>
-                <label>{field.label}</label>
+                <label htmlFor={`csv-mapping-${field.key}`}>{field.label}</label>
                 <select
+                  id={`csv-mapping-${field.key}`}
                   value={mapping[field.key] ?? ""}
                   onChange={(event) => {
                     setMapping((current) => ({ ...current, [field.key]: event.target.value || undefined }));
@@ -1676,20 +1677,20 @@ function TransactionsPanel({
         <div className="panel-body form-grid">
           {message && <div className={`import-message status ${message.tone} field-wide`}>{message.text}</div>}
           <div className="field">
-            <label>거래일</label>
-            <input type="date" value={form.transactionDate} onChange={(event) => updateForm("transactionDate", event.target.value)} />
+            <label htmlFor="manual-transaction-date">거래일</label>
+            <input id="manual-transaction-date" type="date" value={form.transactionDate} onChange={(event) => updateForm("transactionDate", event.target.value)} />
           </div>
           <div className="field">
-            <label>내용</label>
-            <input value={form.description} onChange={(event) => updateForm("description", event.target.value)} placeholder="예: 대표자 입금" />
+            <label htmlFor="manual-transaction-description">내용</label>
+            <input id="manual-transaction-description" value={form.description} onChange={(event) => updateForm("description", event.target.value)} placeholder="예: 대표자 입금" />
           </div>
           <div className="field">
-            <label>거래처</label>
-            <input value={form.counterparty} onChange={(event) => updateForm("counterparty", event.target.value)} />
+            <label htmlFor="manual-transaction-counterparty">거래처</label>
+            <input id="manual-transaction-counterparty" value={form.counterparty} onChange={(event) => updateForm("counterparty", event.target.value)} />
           </div>
           <div className="field">
-            <label>계정과목</label>
-            <select value={form.confirmedAccountId} onChange={(event) => updateForm("confirmedAccountId", event.target.value)}>
+            <label htmlFor="manual-transaction-account-id">계정과목</label>
+            <select id="manual-transaction-account-id" value={form.confirmedAccountId} onChange={(event) => updateForm("confirmedAccountId", event.target.value)}>
               <option value="">자동 추론</option>
               {accounts.map((account) => (
                 <option key={account.id} value={account.id}>
@@ -1699,24 +1700,24 @@ function TransactionsPanel({
             </select>
           </div>
           <div className="field">
-            <label>입금</label>
-            <input type="number" min="0" step="0.01" inputMode="decimal" value={form.depositAmount} onChange={(event) => updateForm("depositAmount", event.target.value)} />
+            <label htmlFor="manual-transaction-deposit-amount">입금</label>
+            <input id="manual-transaction-deposit-amount" type="number" min="0" step="0.01" inputMode="decimal" value={form.depositAmount} onChange={(event) => updateForm("depositAmount", event.target.value)} />
           </div>
           <div className="field">
-            <label>출금</label>
-            <input type="number" min="0" step="0.01" inputMode="decimal" value={form.withdrawalAmount} onChange={(event) => updateForm("withdrawalAmount", event.target.value)} />
+            <label htmlFor="manual-transaction-withdrawal-amount">출금</label>
+            <input id="manual-transaction-withdrawal-amount" type="number" min="0" step="0.01" inputMode="decimal" value={form.withdrawalAmount} onChange={(event) => updateForm("withdrawalAmount", event.target.value)} />
           </div>
           <div className="field">
-            <label>공급가액</label>
-            <input type="number" min="0" step="0.01" inputMode="decimal" value={form.supplyAmount} onChange={(event) => updateForm("supplyAmount", event.target.value)} />
+            <label htmlFor="manual-transaction-supply-amount">공급가액</label>
+            <input id="manual-transaction-supply-amount" type="number" min="0" step="0.01" inputMode="decimal" value={form.supplyAmount} onChange={(event) => updateForm("supplyAmount", event.target.value)} />
           </div>
           <div className="field">
-            <label>부가세</label>
-            <input type="number" min="0" step="0.01" inputMode="decimal" value={form.vatAmount} onChange={(event) => updateForm("vatAmount", event.target.value)} />
+            <label htmlFor="manual-transaction-vat-amount">부가세</label>
+            <input id="manual-transaction-vat-amount" type="number" min="0" step="0.01" inputMode="decimal" value={form.vatAmount} onChange={(event) => updateForm("vatAmount", event.target.value)} />
           </div>
           <div className="field">
-            <label>증빙</label>
-            <select value={form.evidenceStatus} onChange={(event) => updateForm("evidenceStatus", event.target.value as EvidenceStatus)}>
+            <label htmlFor="manual-transaction-evidence-status">증빙</label>
+            <select id="manual-transaction-evidence-status" value={form.evidenceStatus} onChange={(event) => updateForm("evidenceStatus", event.target.value as EvidenceStatus)}>
               <option value="UNCHECKED">미확인</option>
               <option value="MISSING">누락</option>
               <option value="ATTACHED">첨부</option>
@@ -1725,8 +1726,8 @@ function TransactionsPanel({
             </select>
           </div>
           <div className="field">
-            <label>메모</label>
-            <input value={form.memo} onChange={(event) => updateForm("memo", event.target.value)} />
+            <label htmlFor="manual-transaction-memo">메모</label>
+            <input id="manual-transaction-memo" value={form.memo} onChange={(event) => updateForm("memo", event.target.value)} />
           </div>
         </div>
       </section>
@@ -2052,8 +2053,8 @@ function EvidencesPanel({
         </div>
         <div className="panel-body form-grid">
           <div className="field">
-            <label>증빙 유형</label>
-            <select value={form.evidenceType} onChange={(event) => updateField("evidenceType", event.target.value)}>
+            <label htmlFor="evidence-type">증빙 유형</label>
+            <select id="evidence-type" value={form.evidenceType} onChange={(event) => updateField("evidenceType", event.target.value)}>
               <option value="전자세금계산서">전자세금계산서</option>
               <option value="계산서">계산서</option>
               <option value="카드전표">카드전표</option>
@@ -2063,32 +2064,32 @@ function EvidencesPanel({
             </select>
           </div>
           <div className="field">
-            <label>발행일</label>
-            <input type="date" value={form.issueDate} onChange={(event) => updateField("issueDate", event.target.value)} />
+            <label htmlFor="evidence-issue-date">발행일</label>
+            <input id="evidence-issue-date" type="date" value={form.issueDate} onChange={(event) => updateField("issueDate", event.target.value)} />
           </div>
           <div className="field">
-            <label>거래처</label>
-            <input value={form.counterparty} onChange={(event) => updateField("counterparty", event.target.value)} />
+            <label htmlFor="evidence-counterparty">거래처</label>
+            <input id="evidence-counterparty" value={form.counterparty} onChange={(event) => updateField("counterparty", event.target.value)} />
           </div>
           <div className="field">
-            <label>사업자등록번호</label>
-            <input value={form.businessRegistrationNumber} onChange={(event) => updateField("businessRegistrationNumber", event.target.value)} />
+            <label htmlFor="evidence-business-registration-number">사업자등록번호</label>
+            <input id="evidence-business-registration-number" value={form.businessRegistrationNumber} onChange={(event) => updateField("businessRegistrationNumber", event.target.value)} />
           </div>
           <div className="field">
-            <label>공급가액</label>
-            <input inputMode="numeric" value={form.supplyAmount} onChange={(event) => updateField("supplyAmount", event.target.value)} />
+            <label htmlFor="evidence-supply-amount">공급가액</label>
+            <input id="evidence-supply-amount" inputMode="numeric" value={form.supplyAmount} onChange={(event) => updateField("supplyAmount", event.target.value)} />
           </div>
           <div className="field">
-            <label>부가세</label>
-            <input inputMode="numeric" value={form.vatAmount} onChange={(event) => updateField("vatAmount", event.target.value)} />
+            <label htmlFor="evidence-vat-amount">부가세</label>
+            <input id="evidence-vat-amount" inputMode="numeric" value={form.vatAmount} onChange={(event) => updateField("vatAmount", event.target.value)} />
           </div>
           <div className="field">
-            <label>합계</label>
-            <input inputMode="numeric" value={form.totalAmount} onChange={(event) => updateField("totalAmount", event.target.value)} />
+            <label htmlFor="evidence-total-amount">합계</label>
+            <input id="evidence-total-amount" inputMode="numeric" value={form.totalAmount} onChange={(event) => updateField("totalAmount", event.target.value)} />
           </div>
           <div className="field">
-            <label>거래 매칭</label>
-            <select value={form.transactionId} onChange={(event) => updateField("transactionId", event.target.value)}>
+            <label htmlFor="evidence-transaction-id">거래 매칭</label>
+            <select id="evidence-transaction-id" value={form.transactionId} onChange={(event) => updateField("transactionId", event.target.value)}>
               <option value="">매칭 안 함</option>
               {transactions.map((transaction) => (
                 <option key={transaction.id} value={transaction.id}>
@@ -2098,7 +2099,7 @@ function EvidencesPanel({
             </select>
           </div>
           <div className="field field-wide">
-            <label>추천 매칭</label>
+            <span className="field-label">추천 매칭</span>
             <div className="match-suggestions">
               {matchCandidates.length === 0 ? (
                 <span className="muted">거래처, 발행일, 합계를 입력하면 후보가 표시됩니다.</span>
@@ -2125,8 +2126,8 @@ function EvidencesPanel({
             </div>
           </div>
           <div className="field">
-            <label>파일명</label>
-            <input value={form.fileName} onChange={(event) => updateField("fileName", event.target.value)} placeholder="invoice.pdf" />
+            <label htmlFor="evidence-file-name">파일명</label>
+            <input id="evidence-file-name" value={form.fileName} onChange={(event) => updateField("fileName", event.target.value)} placeholder="invoice.pdf" />
           </div>
           <label className="file-drop">
             <input
@@ -5277,7 +5278,7 @@ function SettingsPanel({
             <input id="vendor-memo" value={vendorForm.memo} onChange={(event) => updateVendorForm("memo", event.target.value)} />
           </div>
           <div className="field">
-            <label>작업</label>
+            <span className="field-label">작업</span>
             <div className="inline-actions">
               {editingVendorId && (
                 <button className="secondary-button" onClick={resetVendorForm} disabled={savingVendor}>
@@ -5376,7 +5377,7 @@ function SettingsPanel({
             <input id="classification-rule-priority" inputMode="numeric" value={ruleForm.priority} onChange={(event) => updateRuleForm("priority", event.target.value)} />
           </div>
           <div className="field">
-            <label>작업</label>
+            <span className="field-label">작업</span>
             <div className="inline-actions">
               {editingRuleId && (
                 <button className="secondary-button" onClick={resetRuleForm} disabled={savingRule}>
