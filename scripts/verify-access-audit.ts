@@ -30,6 +30,10 @@ assert.match(loginRoute, /recordAccessAuditEvent/, "login route should write acc
 assert.match(loginRoute, /action:\s*"ACCESS_LOGIN_SUCCESS"/, "login route should audit successful logins");
 assert.match(loginRoute, /action:\s*"ACCESS_LOGIN_FAILURE"/, "login route should audit failed login attempts");
 assert.match(loginRoute, /action:\s*"ACCESS_LOGIN_LOCKED"/, "login route should audit lockout threshold events");
+assert.match(loginRoute, /reason:\s*"already_locked"/, "login route should audit attempts from already locked sources");
+assert.match(loginRoute, /auditReason:\s*"invalid_json"/, "login route should classify invalid JSON login payloads for audit");
+assert.match(loginRoute, /auditReason:\s*"invalid_schema"/, "login route should classify invalid schema login payloads for audit");
+assert.match(loginRoute, /auditReason:\s*"body_too_large"/, "login route should classify oversized login bodies for audit");
 assert.match(loginRoute, /remainingAttempts/, "login audit should capture remaining-attempt state");
 assert.doesNotMatch(loginRoute, /metadata:\s*{[\s\S]*code:\s*body\.data\.code/, "login audit metadata must not include the submitted code");
 

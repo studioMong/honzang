@@ -16,11 +16,26 @@ export async function POST(request: NextRequest) {
 
   const attempt = inspectAccessAttempt(request);
   if (attempt.blocked) {
+    await recordAccessAuditEvent(request, {
+      action: "ACCESS_LOGIN_LOCKED",
+      summary: "잠금 상태에서 접근 코드 로그인이 거부되었습니다.",
+      metadata: {
+        reason: "already_locked",
+        retryAfterSeconds: attempt.retryAfterSeconds
+      }
+    });
     return rateLimitedResponse(attempt.retryAfterSeconds);
   }
 
   const body = await readLoginBody(request);
   if (!body.ok) {
+    await recordAccessAuditEvent(request, {
+      action: "ACCESS_LOGIN_FAILURE",
+      summary: "접근 코드 로그인 요청 형식이 거부되었습니다.",
+      metadata: {
+        reason: body.auditReason
+      }
+    });
     return body.response;
   }
 
@@ -79,11 +94,14 @@ export async function POST(request: NextRequest) {
   return response;
 }
 
-async function readLoginBody(request: NextRequest): Promise<{ ok: true; data: z.infer<typeof loginSchema> } | { ok: false; response: NextResponse }> {
+async function readLoginBody(
+  request: NextRequest
+): Promise<{ ok: true; data: z.infer<typeof loginSchema> } | { ok: false; response: NextResponse; auditReason: string }> {
   const contentLength = Number(request.headers.get("content-length") ?? "0");
   if (Number.isFinite(contentLength) && contentLength > MAX_LOGIN_BODY_BYTES) {
     return {
       ok: false,
+      auditReason: "content_length_too_large",
       response: NextResponse.json({ ok: false, code: "LOGIN_PAYLOAD_TOO_LARGE", message: "로그인 요청 본문이 너무 큽니다." }, { status: 413 })
     };
   }
@@ -92,6 +110,7 @@ async function readLoginBody(request: NextRequest): Promise<{ ok: true; data: z.
   if (new TextEncoder().encode(text).length > MAX_LOGIN_BODY_BYTES) {
     return {
       ok: false,
+      auditReason: "body_too_large",
       response: NextResponse.json({ ok: false, code: "LOGIN_PAYLOAD_TOO_LARGE", message: "로그인 요청 본문이 너무 큽니다." }, { status: 413 })
     };
   }
@@ -102,6 +121,7 @@ async function readLoginBody(request: NextRequest): Promise<{ ok: true; data: z.
   } catch {
     return {
       ok: false,
+      auditReason: "invalid_json",
       response: NextResponse.json({ ok: false, code: "INVALID_LOGIN_PAYLOAD", message: "로그인 요청 형식이 올바르지 않습니다." }, { status: 400 })
     };
   }
@@ -110,6 +130,7 @@ async function readLoginBody(request: NextRequest): Promise<{ ok: true; data: z.
   if (!parsed.success) {
     return {
       ok: false,
+      auditReason: "invalid_schema",
       response: NextResponse.json({ ok: false, code: "INVALID_LOGIN_PAYLOAD", message: "로그인 요청 형식이 올바르지 않습니다." }, { status: 400 })
     };
   }
