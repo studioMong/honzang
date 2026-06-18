@@ -7829,8 +7829,7 @@ function buildFilingScheduleRows(
   const periodMonth = periodEnd.getUTCMonth() + 1;
   const periodYear = periodEnd.getUTCFullYear();
   const periodLabel = `${formatDate(periodRange.start)} - ${formatDate(periodRange.end)}`;
-  const vatDueDate = periodMonth <= 6 ? new Date(Date.UTC(periodYear, 6, 25)) : new Date(Date.UTC(periodYear + 1, 0, 25));
-  const vatHalfLabel = `${periodYear}년 ${periodMonth <= 6 ? "1기" : "2기"}`;
+  const vatFiling = buildVatFilingSchedule(periodYear, periodMonth);
   const withholdingDueDate = new Date(Date.UTC(periodYear, periodEnd.getUTCMonth() + 1, 10));
   const evidenceDueDate = endOfMonth(periodYear, periodEnd.getUTCMonth());
   const fiscalYearEndDate = getFiscalYearEndDate(periodEnd, company.fiscalYearEndMonth);
@@ -7849,12 +7848,12 @@ function buildFilingScheduleRows(
       "다음 작업": missingEvidence ? "증빙함에서 카드전표, 세금계산서, 현금영수증 매칭" : "월 마감 전 미확인 비용 증빙 점검"
     },
     {
-      신고: "부가세",
-      "대상 기간": vatHalfLabel,
-      "예상 기한": formatIsoDate(vatDueDate),
-      상태: missingEvidence ? "증빙 확인" : vatNeedsTypeReview ? "유형 검토" : scheduleStatus(vatDueDate, "준비 가능"),
-      톤: missingEvidence ? "red" : vatNeedsTypeReview ? "amber" : toneForDueDate(vatDueDate),
-      "다음 작업": vatNeedsTypeReview ? "면세/겸영 매출과 공제 가능 매입세액 구분" : "매출세액, 매입세액, 불공제 후보 확인"
+      신고: vatFiling.name,
+      "대상 기간": vatFiling.periodLabel,
+      "예상 기한": formatIsoDate(vatFiling.dueDate),
+      상태: missingEvidence ? "증빙 확인" : vatNeedsTypeReview ? "유형 검토" : scheduleStatus(vatFiling.dueDate, "준비 가능"),
+      톤: missingEvidence ? "red" : vatNeedsTypeReview ? "amber" : toneForDueDate(vatFiling.dueDate),
+      "다음 작업": vatNeedsTypeReview ? "면세/겸영 매출과 공제 가능 매입세액 구분" : `${vatFiling.phase} 신고용 매출세액, 매입세액, 불공제 후보 확인`
     },
     {
       신고: "원천세",
@@ -7873,6 +7872,39 @@ function buildFilingScheduleRows(
       "다음 작업": ledgerRows.length > 0 ? "계정별 원장, 손익, 대표자 거래 검토" : "자동분개 탭에서 기간별 분개 승인 후 원장 생성"
     }
   ];
+}
+
+function buildVatFilingSchedule(periodYear: number, periodMonth: number) {
+  if (periodMonth <= 3) {
+    return {
+      name: "부가세 예정",
+      phase: "1기 예정",
+      periodLabel: `${periodYear}년 1기 예정 (${periodYear}-01-01 - ${periodYear}-03-31)`,
+      dueDate: new Date(Date.UTC(periodYear, 3, 25))
+    };
+  }
+  if (periodMonth <= 6) {
+    return {
+      name: "부가세 확정",
+      phase: "1기 확정",
+      periodLabel: `${periodYear}년 1기 확정 (${periodYear}-04-01 - ${periodYear}-06-30)`,
+      dueDate: new Date(Date.UTC(periodYear, 6, 25))
+    };
+  }
+  if (periodMonth <= 9) {
+    return {
+      name: "부가세 예정",
+      phase: "2기 예정",
+      periodLabel: `${periodYear}년 2기 예정 (${periodYear}-07-01 - ${periodYear}-09-30)`,
+      dueDate: new Date(Date.UTC(periodYear, 9, 25))
+    };
+  }
+  return {
+    name: "부가세 확정",
+    phase: "2기 확정",
+    periodLabel: `${periodYear}년 2기 확정 (${periodYear}-10-01 - ${periodYear}-12-31)`,
+    dueDate: new Date(Date.UTC(periodYear + 1, 0, 25))
+  };
 }
 
 function parseIsoDate(value: string) {
