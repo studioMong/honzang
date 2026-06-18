@@ -5,6 +5,7 @@ import Papa from "papaparse";
 import { generateJournalDraft, inferMapping, summarizeTransactions } from "../src/lib/accounting";
 import { buildDataSourceRows } from "../src/lib/data-sources";
 import { DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "../src/lib/defaults";
+import { moneyToMinorUnits } from "../src/lib/money";
 import type {
   AppAccount,
   AppClassificationRule,
@@ -761,9 +762,9 @@ function uniqueRow(row: ParsedCsvRow, descriptionColumn: string | undefined, dat
 }
 
 function isBalanced(draft: ReturnType<typeof generateJournalDraft>) {
-  const debit = draft.lines.reduce((sum, line) => sum + line.debitAmount, 0);
-  const credit = draft.lines.reduce((sum, line) => sum + line.creditAmount, 0);
-  return draft.lines.length > 0 && Math.round(debit) === Math.round(credit);
+  const debit = draft.lines.reduce((sum, line) => sum + moneyToMinorUnits(line.debitAmount), 0);
+  const credit = draft.lines.reduce((sum, line) => sum + moneyToMinorUnits(line.creditAmount), 0);
+  return draft.lines.length > 0 && debit === credit;
 }
 
 function buildReviewSnapshotRows(items: ReviewItem[]) {

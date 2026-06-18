@@ -18,6 +18,7 @@ import {
 } from "../src/lib/accounting";
 import { DEFAULT_ACCOUNTS } from "../src/lib/defaults";
 import { sanitizeCsvCellValue } from "../src/lib/export-safety";
+import { moneyToMinorUnits } from "../src/lib/money";
 import { parseStrictDate } from "../src/lib/server/date-validation";
 import { normalizeZipPath } from "../src/lib/zip";
 import { buildEvidenceAmountReviewItems, resolveTransactionEvidenceStatus, type EvidenceAmountReviewTransaction } from "../src/lib/server/evidence-amount-reviews";
@@ -357,7 +358,7 @@ console.log("Verified evidence amount review generation.");
 console.log("Sample CSV verification passed.");
 
 function assertBalancedDraft(draft: ReturnType<typeof generateJournalDraft>, label: string) {
-  const debit = draft.lines.reduce((sum, line) => sum + line.debitAmount, 0);
-  const credit = draft.lines.reduce((sum, line) => sum + line.creditAmount, 0);
-  assert.equal(Math.round(debit), Math.round(credit), `${label} should be balanced`);
+  const debit = draft.lines.reduce((sum, line) => sum + moneyToMinorUnits(line.debitAmount), 0);
+  const credit = draft.lines.reduce((sum, line) => sum + moneyToMinorUnits(line.creditAmount), 0);
+  assert.equal(debit, credit, `${label} should be balanced to 1/100 unit precision`);
 }

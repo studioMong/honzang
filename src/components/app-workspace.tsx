@@ -52,6 +52,7 @@ import { DEFAULT_ACCOUNTS, DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/
 import { applyClassificationRules, buildReviewItems, generateJournalDraft, inferMapping, normalizeCsvRow, parseMoney, summarizeTransactions } from "@/lib/accounting";
 import { MAX_BACKUP_RESTORE_REQUEST_BYTES, MAX_EVIDENCE_FILE_SIZE, MAX_ORIGINAL_FILE_TEXT_SIZE } from "@/lib/file-limits";
 import { formatDate, formatDateTime, formatKRW, formatNumber } from "@/lib/format";
+import { moneyToMinorUnits } from "@/lib/money";
 import { sampleClosingPeriods, sampleCompany, sampleEvidences, sampleJournalEntries, sampleTaxReports, sampleTransactions } from "@/lib/sample-data";
 import { toCsvFileContent } from "@/lib/table-export";
 import {
@@ -2173,9 +2174,9 @@ function JournalDraftsPanel({
 }
 
 function isBalancedJournalDraft(draft: JournalDraft) {
-  const debit = draft.lines.reduce((sum, line) => sum + line.debitAmount, 0);
-  const credit = draft.lines.reduce((sum, line) => sum + line.creditAmount, 0);
-  return draft.lines.length > 0 && Math.round(debit) === Math.round(credit);
+  const debit = draft.lines.reduce((sum, line) => sum + moneyToMinorUnits(line.debitAmount), 0);
+  const credit = draft.lines.reduce((sum, line) => sum + moneyToMinorUnits(line.creditAmount), 0);
+  return draft.lines.length > 0 && debit === credit;
 }
 
 function ReviewsPanel({
