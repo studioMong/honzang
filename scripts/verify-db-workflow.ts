@@ -72,12 +72,12 @@ try {
   const alternateVerificationAccountId = companyPayload.accounts?.find((account) => account.id && account.id !== verificationAccount.id)?.id;
   assert.ok(alternateVerificationAccountId, "company accounts should include a second account for approved journal account guard verification");
 
-  const bankTransactions = await importSample(companyId, "BANK", "public/samples/bank-transactions.csv", 1, "primary");
-  const alternateBankTransactions = await importSample(companyId, "BANK", "public/samples/bank-transactions.csv", 1, "alternate");
-  const importedTransactions = [
-    ...bankTransactions,
-    ...(await importSample(companyId, "CARD", "public/samples/card-transactions.csv", 1, "primary"))
-  ];
+  const bankImport = await importSample(companyId, "BANK", "public/samples/bank-transactions.csv", 1, "primary");
+  const alternateBankImport = await importSample(companyId, "BANK", "public/samples/bank-transactions.csv", 1, "alternate");
+  const cardImport = await importSample(companyId, "CARD", "public/samples/card-transactions.csv", 1, "primary");
+  const bankTransactions = bankImport.transactions;
+  const alternateBankTransactions = alternateBankImport.transactions;
+  const importedTransactions = [...bankTransactions, ...cardImport.transactions];
   assert.equal(importedTransactions.length, 2, "workflow should import two sample transactions");
   const companyAfterTemplateVariants = await requestJson<{ csvTemplates?: CsvTemplate[] }>("/api/companies");
   const verifiedBankTemplateCount =
@@ -524,6 +524,22 @@ try {
   assert.equal(lockedTransactionPayload.ok, false, "locked period transaction create should fail");
   assert.equal(lockedTransactionPayload.code, "PERIOD_CLOSED", "locked period transaction create should return PERIOD_CLOSED");
 
+  const lockedImportCreatePayload = await requestJson<{ ok?: boolean; code?: string; message?: string }>("/api/imports", {
+    method: "POST",
+    expectedStatus: 409,
+    body: bankImport.importBody
+  });
+  assert.equal(lockedImportCreatePayload.ok, false, "locked period import create should fail");
+  assert.equal(lockedImportCreatePayload.code, "PERIOD_CLOSED", "locked period import create should return PERIOD_CLOSED");
+
+  const lockedImportDeletePayload = await requestJson<{ ok?: boolean; code?: string; message?: string }>("/api/imports", {
+    method: "DELETE",
+    expectedStatus: 409,
+    body: { importBatchId: bankImport.importBatchId }
+  });
+  assert.equal(lockedImportDeletePayload.ok, false, "locked period import delete should fail");
+  assert.equal(lockedImportDeletePayload.code, "PERIOD_CLOSED", "locked period import delete should return PERIOD_CLOSED");
+
   const lockedReviewPatchPayload = await requestJson<{ ok?: boolean; code?: string; message?: string }>("/api/reviews", {
     method: "PATCH",
     expectedStatus: 409,
@@ -717,7 +733,12 @@ async function importSample(companyId: string, sourceType: SourceType, filePath:
   if (payload.csvTemplate?.id && payload.csvTemplate.headerSignature?.includes(marker)) {
     cleanup.csvTemplateIds.push(payload.csvTemplate.id);
   }
-  return payload.transactions ?? [];
+  assert.ok(payload.importBatchId, `${sourceType} import should expose an import batch id for cleanup and lock verification`);
+  return {
+    importBatchId: payload.importBatchId,
+    importBody,
+    transactions: payload.transactions ?? []
+  };
 }
 
 function isSameCsvTemplate(template: CsvTemplate, sourceType: SourceType, headers: string[], mapping: CsvColumnMapping) {
