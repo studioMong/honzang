@@ -5428,7 +5428,11 @@ function auditActionLabel(action: string) {
     CLASSIFICATION_RULE_UPDATE: "규칙 수정",
     CLASSIFICATION_RULE_DELETE: "규칙 삭제",
     REVIEW_STATUS_UPDATE: "검토 처리",
-    BACKUP_RESTORE: "백업 복원"
+    BACKUP_RESTORE: "백업 복원",
+    ACCESS_LOGIN_SUCCESS: "접근 성공",
+    ACCESS_LOGIN_FAILURE: "접근 실패",
+    ACCESS_LOGIN_LOCKED: "접근 잠금",
+    ACCESS_LOGOUT: "접근 종료"
   };
   return labels[action] ?? action;
 }
@@ -5445,7 +5449,8 @@ function auditEntityLabel(entityType: string) {
     CSV_TEMPLATE: "CSV 템플릿",
     CLASSIFICATION_RULE: "자동 분류",
     REVIEW_ITEM: "검토 항목",
-    WORKSPACE_BACKUP: "워크스페이스"
+    WORKSPACE_BACKUP: "워크스페이스",
+    ACCESS_SESSION: "접근 세션"
   };
   return labels[entityType] ?? entityType;
 }

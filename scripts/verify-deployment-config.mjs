@@ -22,6 +22,7 @@ assert.equal(packageJson.scripts?.start, "HOSTNAME=0.0.0.0 node .next/standalone
 assert.equal(packageJson.scripts?.["db:deploy"], "prisma migrate deploy", "package should expose a deploy migration command");
 assert.equal(packageJson.scripts?.["audit:railway"], "node scripts/audit-railway-deployment.mjs", "package should expose a Railway deployment audit command");
 assert.equal(packageJson.scripts?.["verify:access-control"], "node scripts/verify-access-control.mjs", "package should expose access-control verification");
+assert.equal(packageJson.scripts?.["verify:access-audit"], "tsx scripts/verify-access-audit.ts", "package should expose access-audit verification");
 
 assert.equal(railwayConfig.build?.builder, "DOCKERFILE", "Railway builder should be Dockerfile");
 assert.equal(railwayConfig.build?.dockerfilePath, "Dockerfile", "Railway should use the root Dockerfile");
@@ -53,6 +54,7 @@ assert.match(dockerignore, /^\.env\.\*$/m, ".dockerignore should exclude env fil
 assert.equal(existsSync("index.html"), false, "root index.html must not exist because Railway can mis-detect a static site");
 assert.ok(existsSync("scripts/audit-railway-deployment.mjs"), "Railway audit script should exist");
 assert.ok(existsSync("scripts/verify-access-control.mjs"), "Access-control verification script should exist");
+assert.ok(existsSync("scripts/verify-access-audit.ts"), "Access-audit verification script should exist");
 assert.ok(existsSync("scripts/lib/security-headers.mjs"), "Security header verifier should exist");
 assert.ok(existsSync("prisma/schema.prisma"), "Prisma schema should exist");
 assert.ok(readdirSync("prisma/migrations").some((entry) => existsSync(path.join("prisma/migrations", entry, "migration.sql"))), "Prisma migrations should be present");
@@ -61,6 +63,7 @@ assert.match(readme, /HONZANG_ACCESS_CODE=/, "README should document the deploym
 assert.match(readme, /HONZANG_ACCESS_TOKEN_SALT=/, "README should document the access-token salt variable");
 assert.match(readme, /HONZANG_FILE_ENCRYPTION_KEY=/, "README should document the file encryption key variable");
 assert.match(readme, /프로덕션에서는 `HONZANG_ACCESS_TOKEN_SALT`도 함께 있어야/, "README should mark access-token salt as required in production");
+assert.match(readme, /접근 성공\/실패\/잠금\/로그아웃/, "README should document access audit events");
 assert.match(envExample, /HONZANG_ACCESS_CODE=/, ".env.example should include the deployment access code variable");
 assert.match(envExample, /HONZANG_ACCESS_TOKEN_SALT=/, ".env.example should include the access-token salt variable");
 assert.match(envExample, /HONZANG_FILE_ENCRYPTION_KEY=/, ".env.example should include the file encryption key variable");

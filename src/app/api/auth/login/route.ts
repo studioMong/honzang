@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { ACCESS_COOKIE_MAX_AGE_SECONDS, ACCESS_COOKIE_NAME, createAccessToken, isAccessControlEnabled, verifyAccessCode } from "@/lib/server/access-control";
 import { clearAccessFailures, inspectAccessAttempt, recordAccessFailure } from "@/lib/server/access-attempts";
+import { recordAccessAuditEvent } from "@/lib/server/security-audit";
 
 const MAX_LOGIN_BODY_BYTES = 2_048;
 const loginSchema = z.object({
@@ -26,8 +27,24 @@ export async function POST(request: NextRequest) {
   if (!verifyAccessCode(body.data.code)) {
     const failure = recordAccessFailure(request);
     if (failure.blocked) {
+      await recordAccessAuditEvent(request, {
+        action: "ACCESS_LOGIN_LOCKED",
+        summary: "접근 코드 실패 횟수 초과로 로그인이 잠금 처리되었습니다.",
+        metadata: {
+          reason: "failure_threshold",
+          retryAfterSeconds: failure.retryAfterSeconds,
+          remainingAttempts: 0
+        }
+      });
       return rateLimitedResponse(failure.retryAfterSeconds);
     }
+    await recordAccessAuditEvent(request, {
+      action: "ACCESS_LOGIN_FAILURE",
+      summary: "접근 코드 로그인이 실패했습니다.",
+      metadata: {
+        remainingAttempts: failure.remainingAttempts
+      }
+    });
     return NextResponse.json(
       {
         ok: false,
@@ -44,6 +61,13 @@ export async function POST(request: NextRequest) {
   }
 
   clearAccessFailures(request);
+  await recordAccessAuditEvent(request, {
+    action: "ACCESS_LOGIN_SUCCESS",
+    summary: "접근 코드 로그인이 성공했습니다.",
+    metadata: {
+      maxAgeSeconds: ACCESS_COOKIE_MAX_AGE_SECONDS
+    }
+  });
   const response = NextResponse.json({ ok: true, enabled: true });
   response.cookies.set(ACCESS_COOKIE_NAME, token, {
     httpOnly: true,
