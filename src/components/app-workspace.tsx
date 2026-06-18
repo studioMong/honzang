@@ -7831,10 +7831,15 @@ function buildFilingScheduleRows(
   const periodLabel = `${formatDate(periodRange.start)} - ${formatDate(periodRange.end)}`;
   const vatFiling = buildVatFilingSchedule(periodYear, periodMonth);
   const withholdingDueDate = new Date(Date.UTC(periodYear, periodEnd.getUTCMonth() + 1, 10));
+  const monthlySimpleStatementDueDate = endOfMonth(periodYear, periodEnd.getUTCMonth() + 1);
+  const payrollSimpleStatementDueDate = periodMonth <= 6 ? endOfMonth(periodYear, 6) : endOfMonth(periodYear + 1, 0);
+  const annualPaymentStatementDueDate = new Date(Date.UTC(periodYear + 1, 2, 10));
   const evidenceDueDate = endOfMonth(periodYear, periodEnd.getUTCMonth());
   const fiscalYearEndDate = getFiscalYearEndDate(periodEnd, company.fiscalYearEndMonth);
   const corporateTaxDueDate = endOfMonth(fiscalYearEndDate.getUTCFullYear(), fiscalYearEndDate.getUTCMonth() + 3);
   const hasWithholdingSetting = company.representativeSalaryEnabled || company.employeePayrollEnabled || company.contractorPaymentEnabled;
+  const hasPayrollCandidate = withholdingRows.some((row) => row.구분.includes("급여"));
+  const hasContractorCandidate = withholdingRows.some((row) => row.구분.includes("사업소득") || row.구분.includes("기타소득"));
   const vatNeedsTypeReview = company.vatType !== "GENERAL";
   const missingEvidence = summary.missingEvidenceAmount > 0;
 
@@ -7862,6 +7867,30 @@ function buildFilingScheduleRows(
       상태: withholdingRows.length > 0 ? "후보 확인" : hasWithholdingSetting ? scheduleStatus(withholdingDueDate, "지급 확인") : "미사용",
       톤: withholdingRows.length > 0 ? "amber" : hasWithholdingSetting ? toneForDueDate(withholdingDueDate) : "green",
       "다음 작업": withholdingRows.length > 0 ? "급여대장, 외주 세금계산서, 3.3% 원천세 여부 확인" : "급여/외주 지급 발생 시 지급월별 신고 대상 확인"
+    },
+    {
+      신고: "간이지급명세서(사업/기타)",
+      "대상 기간": `${periodYear}년 ${periodMonth}월 지급분`,
+      "예상 기한": formatIsoDate(monthlySimpleStatementDueDate),
+      상태: hasContractorCandidate ? "후보 확인" : company.contractorPaymentEnabled ? scheduleStatus(monthlySimpleStatementDueDate, "지급 확인") : "대상 확인",
+      톤: hasContractorCandidate ? "amber" : company.contractorPaymentEnabled ? toneForDueDate(monthlySimpleStatementDueDate) : "blue",
+      "다음 작업": hasContractorCandidate ? "사업소득/인적용역 기타소득 지급월별 제출 여부 확인" : "외주 지급 발생 시 다음 달 말일 제출 대상 확인"
+    },
+    {
+      신고: "간이지급명세서(근로)",
+      "대상 기간": `${periodYear}년 ${periodMonth <= 6 ? "1~6월" : "7~12월"} 근로소득 지급분`,
+      "예상 기한": formatIsoDate(payrollSimpleStatementDueDate),
+      상태: hasPayrollCandidate ? "후보 확인" : company.representativeSalaryEnabled || company.employeePayrollEnabled ? scheduleStatus(payrollSimpleStatementDueDate, "반기 확인") : "대상 확인",
+      톤: hasPayrollCandidate ? "amber" : company.representativeSalaryEnabled || company.employeePayrollEnabled ? toneForDueDate(payrollSimpleStatementDueDate) : "blue",
+      "다음 작업": hasPayrollCandidate ? "근로소득 반기 지급명세 자료와 급여대장 대조" : "급여 지급 발생 시 반기 다음 달 말일 제출 대상 확인"
+    },
+    {
+      신고: "지급명세서",
+      "대상 기간": `${periodYear}년 1~12월 근로·퇴직·사업소득 등 지급분`,
+      "예상 기한": formatIsoDate(annualPaymentStatementDueDate),
+      상태: withholdingRows.length > 0 ? "연간 제출 확인" : hasWithholdingSetting ? scheduleStatus(annualPaymentStatementDueDate, "연간 확인") : "대상 확인",
+      톤: withholdingRows.length > 0 ? "amber" : hasWithholdingSetting ? toneForDueDate(annualPaymentStatementDueDate) : "blue",
+      "다음 작업": withholdingRows.length > 0 ? "간이지급명세서 제출 면제 여부와 연간 지급명세서 대상 확인" : "급여·외주 지급이 생기면 연간 제출 대상 확인"
     },
     {
       신고: "법인세",
