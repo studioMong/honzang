@@ -46,6 +46,8 @@ assert.match(nextConfig, /Permissions-Policy/, "Next config should disable unuse
 assert.match(proxy, /api\/auth\/login/, "proxy should leave auth login public");
 assert.match(proxy, /api\/health/, "proxy should leave healthcheck public");
 assert.match(proxy, /isRequestAuthenticated/, "proxy should protect private routes by access cookie");
+assert.match(proxy, /INVALID_ORIGIN/, "proxy should reject cross-origin API mutations");
+assert.match(proxy, /MUTATION_METHODS/, "proxy should identify mutating API methods for origin checks");
 assert.ok(existsSync("src/app/api/operations/readiness/route.ts"), "Operations readiness API should exist");
 assert.match(dockerignore, /^\.next$/m, ".dockerignore should exclude local build output");
 assert.match(dockerignore, /^node_modules$/m, ".dockerignore should exclude local dependencies");

@@ -52,9 +52,11 @@ try {
   await verifyOversizedLoginPayload();
   await verifyWrongCode();
   await verifyRateLimit();
+  await verifyCrossOriginLogin();
   const cookie = await verifyLogin();
   await verifyAuthenticatedSession(cookie);
   await verifyAuthenticatedApi(cookie);
+  await verifyCrossOriginMutation(cookie);
   await verifyLogout(cookie);
   console.log(`Access-control verification passed at ${baseUrl}`);
 } catch (error) {
@@ -188,6 +190,18 @@ async function verifyRateLimit() {
   assert.equal(stillLimitedResponse.status, 429, "correct code from a locked source should remain rate-limited");
 }
 
+async function verifyCrossOriginLogin() {
+  const response = await fetch(`${baseUrl}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: "https://malicious.example", "x-forwarded-for": "203.0.113.25" },
+    body: JSON.stringify({ code: accessCode }),
+    cache: "no-store"
+  });
+  assert.equal(response.status, 403, "cross-origin login mutation should be rejected");
+  const body = await response.json();
+  assert.equal(body.code, "INVALID_ORIGIN", "cross-origin login should identify invalid origin");
+}
+
 async function verifyLogin() {
   const response = await postLogin(accessCode, "203.0.113.30");
   assert.equal(response.status, 200, "correct access code should be accepted");
@@ -218,10 +232,22 @@ async function verifyAuthenticatedApi(cookie) {
   );
 }
 
+async function verifyCrossOriginMutation(cookie) {
+  const response = await fetch(`${baseUrl}/api/transactions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: cookie, Origin: "https://malicious.example" },
+    body: JSON.stringify({ description: "blocked" }),
+    cache: "no-store"
+  });
+  assert.equal(response.status, 403, "cross-origin authenticated mutation should be rejected before route handling");
+  const body = await response.json();
+  assert.equal(body.code, "INVALID_ORIGIN", "cross-origin authenticated mutation should identify invalid origin");
+}
+
 async function verifyLogout(cookie) {
   const response = await fetch(`${baseUrl}/api/auth/logout`, {
     method: "POST",
-    headers: { Cookie: cookie },
+    headers: { Cookie: cookie, Origin: baseUrl },
     cache: "no-store"
   });
   assert.equal(response.status, 200, "logout should succeed");
