@@ -99,10 +99,11 @@ async function verifyOperationsReadiness() {
     const checks = new Map(body.checks.map((check) => [check.key, check]));
     assert.deepEqual(
       [...checks.keys()],
-      ["database", "accessCode", "accessSalt", "fileEncryption", "appUrl", "runtime", "railway"],
+      ["database", "databaseSchema", "accessCode", "accessSalt", "fileEncryption", "appUrl", "runtime", "railway"],
       "readiness checks should keep a stable order"
     );
     assertCheck(checks.get("database"), "Postgres 연결", "미설정", "red", "DATABASE_URL", "Railway Postgres");
+    assertCheck(checks.get("databaseSchema"), "Postgres 스키마", "대기", "blue", "DATABASE_URL", "db:deploy");
     assertCheck(checks.get("accessCode"), "접근코드 보호", "미설정", "red", "HONZANG_ACCESS_CODE", "Railway Variables");
     assertCheck(checks.get("accessSalt"), "접근 쿠키 salt", "설정됨", "green", "배포 환경 전용 salt", "salt 보관");
     assertCheck(checks.get("fileEncryption"), "파일 암호화 키", "설정됨", "green", "원본 CSV와 DB 보관 증빙 파일", "키 교체");

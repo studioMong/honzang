@@ -90,6 +90,9 @@ assert.match(operationsReadiness, /프로덕션에서는 기본 salt/, "Operatio
 assert.match(operationsReadiness, /production \? "red"/, "Operations readiness should block production deployments without access-token salt");
 assert.match(operationsReadiness, /fileEncryptionCheck/, "Operations readiness should include file encryption status");
 assert.match(operationsReadiness, /HONZANG_FILE_ENCRYPTION_KEY/, "Operations readiness should name the file encryption key variable");
+assert.match(operationsReadiness, /databaseSchemaCheck/, "Operations readiness should include database schema status");
+assert.match(operationsReadiness, /REQUIRED_DATABASE_TABLES/, "Operations readiness should enumerate required Prisma tables");
+assert.match(operationsReadiness, /information_schema\.tables/, "Operations readiness should inspect Postgres tables");
 
 console.log("Deployment config verification passed.");
 

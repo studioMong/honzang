@@ -15,11 +15,29 @@ type ReadinessCheck = {
   action: string;
 };
 
+const REQUIRED_DATABASE_TABLES = [
+  "Company",
+  "Account",
+  "CsvTemplate",
+  "ImportBatch",
+  "Transaction",
+  "Evidence",
+  "JournalEntry",
+  "JournalLine",
+  "Vendor",
+  "ClassificationRule",
+  "ReviewItem",
+  "TaxReport",
+  "AuditEvent",
+  "ClosingPeriod"
+];
+
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   const checks: ReadinessCheck[] = [];
   checks.push(await databaseCheck());
+  checks.push(await databaseSchemaCheck());
   checks.push(accessCodeCheck());
   checks.push(accessSaltCheck());
   checks.push(fileEncryptionCheck());
@@ -80,6 +98,58 @@ async function databaseCheck(): Promise<ReadinessCheck> {
       tone: "red",
       detail: error instanceof Error ? error.message : "Postgres 연결 확인에 실패했습니다.",
       action: "DATABASE_URL, Railway Postgres 연결, migration 상태 확인"
+    };
+  }
+}
+
+async function databaseSchemaCheck(): Promise<ReadinessCheck> {
+  const db = getPrisma();
+  if (!db) {
+    return {
+      key: "databaseSchema",
+      label: "Postgres 스키마",
+      status: "대기",
+      tone: "blue",
+      detail: "DATABASE_URL이 없어 Prisma 테이블 상태를 확인하지 않았습니다.",
+      action: "DATABASE_URL 연결 후 npm run db:deploy 또는 Railway preDeployCommand 확인"
+    };
+  }
+
+  try {
+    const rows = await db.$queryRaw<Array<{ table_name: string }>>`
+      SELECT table_name
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+    `;
+    const existingTables = new Set(rows.map((row) => row.table_name));
+    const missingTables = REQUIRED_DATABASE_TABLES.filter((tableName) => !existingTables.has(tableName));
+    if (missingTables.length > 0) {
+      return {
+        key: "databaseSchema",
+        label: "Postgres 스키마",
+        status: "마이그레이션 필요",
+        tone: "red",
+        detail: `누락 테이블: ${missingTables.join(", ")}`,
+        action: "Railway preDeployCommand의 npm run db:deploy 실행 로그와 Prisma migration 상태 확인"
+      };
+    }
+
+    return {
+      key: "databaseSchema",
+      label: "Postgres 스키마",
+      status: "정상",
+      tone: "green",
+      detail: `필수 테이블 ${REQUIRED_DATABASE_TABLES.length}개를 확인했습니다.`,
+      action: "마이그레이션 추가 시 readiness와 verify:db-workflow도 함께 확인"
+    };
+  } catch (error) {
+    return {
+      key: "databaseSchema",
+      label: "Postgres 스키마",
+      status: "오류",
+      tone: "red",
+      detail: error instanceof Error ? error.message : "Postgres 스키마 확인에 실패했습니다.",
+      action: "DATABASE_URL 권한, information_schema 조회 권한, Prisma migration 상태 확인"
     };
   }
 }
