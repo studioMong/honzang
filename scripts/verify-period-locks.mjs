@@ -20,7 +20,7 @@ assertMatches(importsRoute, /findClosedPeriodForDates/g, 2, "imports route shoul
 assert.match(importsRoute, /closedPeriodResponse\(closedPeriod\.period\)/, "imports route should return PERIOD_CLOSED when importing into closed periods");
 assert.match(importsRoute, /transactions\.map\(\(transaction\) => transaction\.transactionDate\)/, "import delete should check every imported transaction date");
 
-assertMatches(transactionsRoute, /findClosedPeriodForDate/g, 2, "transactions route should check closed periods for create and patch");
+assertMatches(transactionsRoute, /findClosedPeriodForDate/g, 3, "transactions route should check closed periods for create, patch, and delete");
 assertMatches(evidencesRoute, /findClosedPeriodForDate/g, 4, "evidences route should check issue and linked transaction periods for create and delete");
 assertMatches(journalsRoute, /findClosedPeriodForDate/g, 4, "journals route should check entry and linked transaction periods for create and patch");
 assert.match(reportsRoute, /findClosedPeriodOverlappingRange/, "reports route should check report ranges against closed periods");
@@ -28,8 +28,10 @@ assert.match(reviewsRoute, /findClosedPeriodForDate/, "reviews route should chec
 
 assert.match(dbWorkflow, /lockedImportCreatePayload/, "DB workflow should verify locked-period CSV import create rejection");
 assert.match(dbWorkflow, /lockedImportDeletePayload/, "DB workflow should verify locked-period import delete rejection");
+assert.match(dbWorkflow, /lockedTransactionDeletePayload/, "DB workflow should verify locked-period transaction delete rejection");
 assert.match(dbWorkflow, /locked period import create should return PERIOD_CLOSED/, "DB workflow should assert locked import create code");
 assert.match(dbWorkflow, /locked period import delete should return PERIOD_CLOSED/, "DB workflow should assert locked import delete code");
+assert.match(dbWorkflow, /locked period transaction delete should return PERIOD_CLOSED/, "DB workflow should assert locked transaction delete code");
 
 console.log("Period lock verification passed.");
 

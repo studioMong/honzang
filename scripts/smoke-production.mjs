@@ -97,6 +97,7 @@ try {
   await expectMalformedJson("/api/vendors");
   await expectMalformedJson("/api/classification-rules");
   await expectMalformedJson("/api/csv-templates", "DELETE");
+  await expectMalformedJson("/api/transactions", "DELETE");
   await expectInvalidManualTransactionDate();
   await expectInvalidManualTransactionJson();
   await expectInvalidManualTransactionAmounts();

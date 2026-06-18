@@ -98,7 +98,7 @@ export function buildDataRetentionRows({
       포함정보: "거래일, 거래처, 금액, 계정과목, 증빙 상태, 메모",
       보관위치: "Postgres Transaction, 신고 패키지 CSV/XLSX, 전체 백업",
       보관기준: "장부와 신고 근거가 되는 기간 동안 보관",
-      삭제방법: "업로드 배치 삭제 또는 백업 복원으로 교체",
+      삭제방법: "수기 거래는 거래내역에서 개별 삭제, CSV 거래는 업로드 배치 삭제",
       상태: transactions.length > 0 ? "보관 중" : "대기",
       톤: transactions.length > 0 ? "green" : "amber"
     },

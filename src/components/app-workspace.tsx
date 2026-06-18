@@ -21,6 +21,7 @@ import {
   RefreshCcw,
   Settings,
   Smartphone,
+  Trash2,
   Upload,
   WalletCards
 } from "lucide-react";
@@ -630,6 +631,10 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
             accounts={accounts}
             onCreated={(transaction) => {
               setTransactions((current) => mergeTransactions(current, [transaction]));
+              if (mode === "database") void refresh();
+            }}
+            onDeleted={(transactionId) => {
+              setTransactions((current) => current.filter((transaction) => transaction.id !== transactionId));
               if (mode === "database") void refresh();
             }}
             onUpdate={updateTransaction}
@@ -1462,11 +1467,13 @@ function TransactionsPanel({
   transactions,
   accounts,
   onCreated,
+  onDeleted,
   onUpdate
 }: {
   transactions: AppTransaction[];
   accounts: AppAccount[];
   onCreated: (transaction: AppTransaction) => void;
+  onDeleted: (transactionId: string) => void;
   onUpdate: (id: string, patch: Partial<AppTransaction> & { confirmedAccountId?: string }) => Promise<TransactionUpdateResult>;
 }) {
   const [form, setForm] = useState({
@@ -1482,6 +1489,7 @@ function TransactionsPanel({
     memo: ""
   });
   const [saving, setSaving] = useState(false);
+  const [deletingTransactionId, setDeletingTransactionId] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: "green" | "red"; text: string } | null>(null);
 
   function updateForm(key: keyof typeof form, value: string) {
@@ -1564,6 +1572,31 @@ function TransactionsPanel({
       setMessage({ tone: "red", text: "수기 거래 추가 중 오류가 발생했습니다." });
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function deleteManualTransaction(transaction: AppTransaction) {
+    if (transaction.sourceType !== "MANUAL") return;
+    if (!window.confirm(`${transaction.description} 수기 거래를 삭제할까요? 연결된 증빙과 미승인 분개는 거래에서 분리됩니다.`)) return;
+    setDeletingTransactionId(transaction.id);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/transactions", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: transaction.id })
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) {
+        setMessage({ tone: "red", text: payload.message ?? "수기 거래 삭제에 실패했습니다." });
+        return;
+      }
+      onDeleted(payload.deletedTransactionId ?? transaction.id);
+      setMessage({ tone: "green", text: "수기 거래를 삭제했습니다." });
+    } catch {
+      setMessage({ tone: "red", text: "수기 거래 삭제 중 오류가 발생했습니다." });
+    } finally {
+      setDeletingTransactionId(null);
     }
   }
 
@@ -1654,12 +1687,13 @@ function TransactionsPanel({
               <th>증빙</th>
               <th className="amount">입금</th>
               <th className="amount">출금</th>
+              <th>작업</th>
             </tr>
           </thead>
           <tbody>
             {transactions.length === 0 ? (
               <tr>
-                <td colSpan={7} className="empty-cell">아직 거래가 없습니다. 법인 통장 CSV를 업로드하거나 수기 거래를 추가하세요.</td>
+                <td colSpan={8} className="empty-cell">아직 거래가 없습니다. 법인 통장 CSV를 업로드하거나 수기 거래를 추가하세요.</td>
               </tr>
             ) : (
               transactions.map((transaction) => (
@@ -1698,6 +1732,16 @@ function TransactionsPanel({
                   </td>
                   <td className="amount">{transaction.depositAmount ? formatKRW(transaction.depositAmount) : "-"}</td>
                   <td className="amount">{transaction.withdrawalAmount ? formatKRW(transaction.withdrawalAmount) : "-"}</td>
+                  <td>
+                    {transaction.sourceType === "MANUAL" ? (
+                      <button className="ghost-button" onClick={() => void deleteManualTransaction(transaction)} disabled={deletingTransactionId === transaction.id} title="수기 거래 삭제">
+                        <Trash2 size={15} />
+                        {deletingTransactionId === transaction.id ? "삭제 중" : "삭제"}
+                      </button>
+                    ) : (
+                      <span className="muted">-</span>
+                    )}
+                  </td>
                 </tr>
               ))
             )}

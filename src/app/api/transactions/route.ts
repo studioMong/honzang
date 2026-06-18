@@ -32,6 +32,10 @@ const patchTransactionSchema = z.object({
   memo: z.string().max(500).optional().nullable()
 });
 
+const deleteTransactionSchema = z.object({
+  id: z.string().min(1)
+});
+
 export async function GET() {
   const db = getPrisma();
 
@@ -297,6 +301,115 @@ export async function PATCH(request: Request) {
   });
 
   return NextResponse.json({ ok: true, transaction: serializeTransaction(transaction), mode: "database" });
+}
+
+export async function DELETE(request: Request) {
+  const parsed = await parseJsonRequest(request, deleteTransactionSchema, { label: "거래 삭제 요청" });
+  if (!parsed.ok) return parsed.response;
+
+  const db = getPrisma();
+  if (!db) {
+    return NextResponse.json({ ok: true, mode: "sample", deletedTransactionId: parsed.data.id });
+  }
+
+  const company = await ensureDefaultCompany(db);
+  const existing = await db.transaction.findFirst({
+    where: {
+      id: parsed.data.id,
+      companyId: company.id
+    }
+  });
+  if (!existing) {
+    return NextResponse.json({ ok: false, message: "거래를 찾을 수 없습니다." }, { status: 404 });
+  }
+  const closedPeriod = await findClosedPeriodForDate(db, company.id, existing.transactionDate);
+  if (closedPeriod) return closedPeriodResponse(closedPeriod.period);
+
+  if (existing.sourceType !== "MANUAL") {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "NON_MANUAL_TRANSACTION_DELETE_BLOCKED",
+        message: "CSV로 가져온 거래는 업로드 화면에서 해당 배치를 삭제해야 합니다."
+      },
+      { status: 409 }
+    );
+  }
+
+  const approvedJournal = await db.journalEntry.findFirst({
+    where: {
+      companyId: company.id,
+      transactionId: existing.id,
+      status: "APPROVED"
+    },
+    select: { id: true }
+  });
+  if (approvedJournal) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "APPROVED_JOURNAL_TRANSACTION_DELETE_BLOCKED",
+        message: "승인된 분개가 있는 수기 거래는 삭제할 수 없습니다. 먼저 승인 취소 후 다시 삭제하세요.",
+        approvedJournalId: approvedJournal.id
+      },
+      { status: 409 }
+    );
+  }
+
+  const result = await db.$transaction(async (tx) => {
+    const detachedEvidence = await tx.evidence.updateMany({
+      where: {
+        companyId: company.id,
+        transactionId: existing.id
+      },
+      data: { transactionId: null }
+    });
+    await tx.reviewItem.deleteMany({
+      where: {
+        companyId: company.id,
+        transactionId: existing.id
+      }
+    });
+    const removableJournalEntries = await tx.journalEntry.findMany({
+      where: {
+        companyId: company.id,
+        transactionId: existing.id,
+        status: { in: ["DRAFT", "VOID"] }
+      },
+      select: { id: true }
+    });
+    const removableJournalEntryIds = removableJournalEntries.map((entry) => entry.id);
+    if (removableJournalEntryIds.length) {
+      await tx.journalLine.deleteMany({ where: { journalEntryId: { in: removableJournalEntryIds } } });
+      await tx.journalEntry.deleteMany({ where: { id: { in: removableJournalEntryIds } } });
+    }
+    await tx.transaction.delete({ where: { id: existing.id } });
+    await recordAuditEvent(tx, {
+      companyId: company.id,
+      action: "TRANSACTION_DELETE",
+      entityType: "TRANSACTION",
+      entityId: existing.id,
+      summary: `수기 거래를 삭제했습니다: ${existing.description}`,
+      metadata: {
+        transactionDate: existing.transactionDate.toISOString().slice(0, 10),
+        depositAmount: Number(existing.depositAmount),
+        withdrawalAmount: Number(existing.withdrawalAmount),
+        detachedEvidenceCount: detachedEvidence.count,
+        deletedJournalEntryCount: removableJournalEntryIds.length
+      }
+    });
+    return {
+      detachedEvidenceCount: detachedEvidence.count,
+      deletedJournalEntryCount: removableJournalEntryIds.length
+    };
+  });
+
+  return NextResponse.json({
+    ok: true,
+    mode: "database",
+    deletedTransactionId: existing.id,
+    ...result
+  });
 }
 
 function transactionUpdateMetadata(input: {
