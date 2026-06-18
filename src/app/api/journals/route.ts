@@ -7,6 +7,7 @@ import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { closedPeriodResponse, findClosedPeriodForDate } from "@/lib/server/closing-periods";
 import { parseStrictDate } from "@/lib/server/date-validation";
+import { minorUnitsToMoney, moneyToMinorUnits, validateDecimal14_2Amount } from "@/lib/server/money-validation";
 import { parseJsonRequest } from "@/lib/server/request-json";
 import { serializeJournalEntry } from "@/lib/server/serializers";
 
@@ -93,11 +94,20 @@ export async function POST(request: Request) {
     );
   }
 
-  const debit = payload.lines.reduce((sum, line) => sum + line.debitAmount, 0);
-  const credit = payload.lines.reduce((sum, line) => sum + line.creditAmount, 0);
+  const debitMinorUnits = payload.lines.reduce((sum, line) => sum + moneyToMinorUnits(line.debitAmount), 0);
+  const creditMinorUnits = payload.lines.reduce((sum, line) => sum + moneyToMinorUnits(line.creditAmount), 0);
+  const debit = minorUnitsToMoney(debitMinorUnits);
+  const credit = minorUnitsToMoney(creditMinorUnits);
 
-  if (Math.round(debit) !== Math.round(credit)) {
-    return NextResponse.json({ ok: false, message: "차변과 대변이 일치하지 않습니다." }, { status: 400 });
+  if (debitMinorUnits !== creditMinorUnits) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "UNBALANCED_JOURNAL",
+        message: "차변과 대변이 일치하지 않습니다."
+      },
+      { status: 400 }
+    );
   }
 
   const db = getPrisma();
@@ -328,8 +338,15 @@ export async function PATCH(request: Request) {
 function validateJournalLines(lines: z.infer<typeof journalSchema>["lines"]) {
   return lines.flatMap((line, index) => {
     const lineNumber = index + 1;
-    const debitPositive = line.debitAmount > 0;
-    const creditPositive = line.creditAmount > 0;
+    const issues = [
+      validateDecimal14_2Amount(line.debitAmount, `${lineNumber}번째 라인 차변`),
+      validateDecimal14_2Amount(line.creditAmount, `${lineNumber}번째 라인 대변`)
+    ].filter((issue): issue is string => Boolean(issue));
+
+    if (issues.length > 0) return issues;
+
+    const debitPositive = moneyToMinorUnits(line.debitAmount) > 0;
+    const creditPositive = moneyToMinorUnits(line.creditAmount) > 0;
     if (debitPositive === creditPositive) {
       return [`${lineNumber}번째 라인은 차변 또는 대변 중 한쪽만 0보다 커야 합니다.`];
     }

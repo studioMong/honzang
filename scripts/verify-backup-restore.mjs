@@ -228,6 +228,7 @@ try {
   await verifyInvalidAccountReferenceBackup();
   await verifyInvalidReviewItemBackup();
   await verifyInvalidJournalBackup();
+  await verifyUnbalancedJournalPrecisionBackup();
   await verifyInvalidOriginalImportFileBackup();
   await verifyConfirmGuard();
   console.log(`Backup restore verification passed at ${baseUrl}`);
@@ -610,6 +611,39 @@ async function verifyInvalidJournalBackup() {
   assert.equal(body.code, "INVALID_BACKUP_JOURNALS", "restore should return journal validation code");
   assert.ok(Array.isArray(body.issues), "restore should return journal validation issues");
   assert.ok(body.issues.length >= 4, "restore should report missing transaction, missing account, and invalid line issues");
+}
+
+async function verifyUnbalancedJournalPrecisionBackup() {
+  const invalidBackup = structuredClone(backup);
+  invalidBackup.journalEntries = [
+    {
+      id: "journal-unbalanced-precision-1",
+      transactionId: null,
+      entryDate: "2026-06-17",
+      memo: "cent-level unbalanced journal backup",
+      status: "APPROVED",
+      lines: [
+        {
+          accountCode: "101",
+          accountName: "보통예금",
+          debitAmount: 100.49,
+          creditAmount: 0
+        },
+        {
+          accountCode: "401",
+          accountName: "매출",
+          debitAmount: 0,
+          creditAmount: 100.01
+        }
+      ]
+    }
+  ];
+
+  const body = await postJson("/api/backups/restore", { backup: invalidBackup, dryRun: true }, 400);
+  assert.equal(body.ok, false, "restore should reject cent-level unbalanced journal backup data");
+  assert.equal(body.code, "INVALID_BACKUP_JOURNALS", "restore should return journal validation code");
+  assert.ok(Array.isArray(body.issues), "restore should return journal validation issues");
+  assert.ok(body.issues.some((issue) => issue.includes("차변과 대변")), "restore should report cent-level journal imbalance");
 }
 
 async function verifyInvalidOriginalImportFileBackup() {

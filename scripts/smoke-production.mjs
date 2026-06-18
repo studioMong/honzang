@@ -103,6 +103,8 @@ try {
   await expectInvalidJournalDate();
   await expectInvalidJournalJson();
   await expectInvalidJournalLines();
+  await expectInvalidJournalAmountScale();
+  await expectUnbalancedJournalPrecision();
   await expectInvalidEvidenceDate();
   await expectInvalidEvidenceJson();
   await expectInvalidEvidenceFile();
@@ -664,6 +666,74 @@ async function expectInvalidJournalLines() {
   const body = JSON.parse(text);
   if (body.code !== "INVALID_JOURNAL_LINES" || !Array.isArray(body.issues) || body.issues.length < 2) {
     throw new Error(`/api/journals returned unexpected line validation payload: ${text}`);
+  }
+}
+
+async function expectInvalidJournalAmountScale() {
+  const response = await fetch(`${baseUrl}/api/journals`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      entryDate: "2026-06-17",
+      memo: "소수 자릿수 초과 분개",
+      status: "APPROVED",
+      lines: [
+        {
+          accountCode: "103",
+          accountName: "보통예금",
+          debitAmount: 1000.001,
+          creditAmount: 0
+        },
+        {
+          accountCode: "401",
+          accountName: "매출",
+          debitAmount: 0,
+          creditAmount: 1000.001
+        }
+      ]
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/journals should reject journal amounts with too many decimal places, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_JOURNAL_LINES" || !Array.isArray(body.issues) || !body.issues.some((issue) => issue.includes("소수 둘째 자리"))) {
+    throw new Error(`/api/journals returned unexpected amount scale validation payload: ${text}`);
+  }
+}
+
+async function expectUnbalancedJournalPrecision() {
+  const response = await fetch(`${baseUrl}/api/journals`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      entryDate: "2026-06-17",
+      memo: "센트 단위 불균형 분개",
+      status: "APPROVED",
+      lines: [
+        {
+          accountCode: "103",
+          accountName: "보통예금",
+          debitAmount: 100.49,
+          creditAmount: 0
+        },
+        {
+          accountCode: "401",
+          accountName: "매출",
+          debitAmount: 0,
+          creditAmount: 100.01
+        }
+      ]
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/journals should reject cent-level unbalanced journals, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "UNBALANCED_JOURNAL") {
+    throw new Error(`/api/journals returned unexpected cent-level balance payload: ${text}`);
   }
 }
 

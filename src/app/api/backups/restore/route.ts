@@ -20,6 +20,7 @@ import {
 } from "@/lib/server/evidence-validation";
 import { encryptStoredText } from "@/lib/server/file-encryption";
 import { validateJsonPayloadSize } from "@/lib/server/json-payload-validation";
+import { moneyToMinorUnits, validateDecimal14_2Amount } from "@/lib/server/money-validation";
 import { parseJsonRequest } from "@/lib/server/request-json";
 import { MAX_ORIGINAL_FILE_TEXT_SIZE, validateOriginalFileText } from "@/lib/server/source-file-validation";
 import { validateTransactionAmounts } from "@/lib/server/transaction-validation";
@@ -1085,11 +1086,9 @@ function validateBackupJournalEntries(backup: WorkspaceBackup) {
       issues.push(`${label}: 연결 거래 ${entry.transactionId}를 백업 거래 목록에서 찾을 수 없습니다.`);
     }
 
-    const debit = entry.lines.reduce((sum, line) => sum + line.debitAmount, 0);
-    const credit = entry.lines.reduce((sum, line) => sum + line.creditAmount, 0);
-    if (Math.round(debit) !== Math.round(credit)) {
-      issues.push(`${label}: 차변과 대변이 일치하지 않습니다.`);
-    }
+    let debitMinorUnits = 0;
+    let creditMinorUnits = 0;
+    let hasAmountIssue = false;
 
     for (const [index, line] of entry.lines.entries()) {
       const lineLabel = `${label} ${index + 1}번째 라인`;
@@ -1097,11 +1096,28 @@ function validateBackupJournalEntries(backup: WorkspaceBackup) {
         issues.push(`${lineLabel}: ${line.accountCode} 계정과목을 백업 계정 목록에서 찾을 수 없습니다.`);
       }
 
-      const debitPositive = line.debitAmount > 0;
-      const creditPositive = line.creditAmount > 0;
+      const amountIssues = [
+        validateDecimal14_2Amount(line.debitAmount, "차변"),
+        validateDecimal14_2Amount(line.creditAmount, "대변")
+      ].filter((issue): issue is string => Boolean(issue));
+      issues.push(...amountIssues.map((issue) => `${lineLabel}: ${issue}`));
+      if (amountIssues.length > 0) {
+        hasAmountIssue = true;
+        continue;
+      }
+
+      debitMinorUnits += moneyToMinorUnits(line.debitAmount);
+      creditMinorUnits += moneyToMinorUnits(line.creditAmount);
+
+      const debitPositive = moneyToMinorUnits(line.debitAmount) > 0;
+      const creditPositive = moneyToMinorUnits(line.creditAmount) > 0;
       if (debitPositive === creditPositive) {
         issues.push(`${lineLabel}: 차변 또는 대변 중 한쪽만 0보다 커야 합니다.`);
       }
+    }
+
+    if (!hasAmountIssue && debitMinorUnits !== creditMinorUnits) {
+      issues.push(`${label}: 차변과 대변이 일치하지 않습니다.`);
     }
   }
 
