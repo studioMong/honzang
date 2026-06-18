@@ -13,6 +13,7 @@ const steps = [
   ["verify:closing-snapshot-exports", "Closing snapshot export packages"],
   ["verify:workspace-backup-exports", "Workspace backup export packages"],
   ["build", "Production standalone build"],
+  ["verify:workspace-backup-restore-contract", "Workspace backup restore contract"],
   ["verify:operations-readiness", "Operations readiness diagnostics"],
   ["verify:pwa", "PWA resources and install hooks"],
   ["verify:access-control", "Environment access-code protection"],
