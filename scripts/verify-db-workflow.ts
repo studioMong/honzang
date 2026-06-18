@@ -886,6 +886,10 @@ try {
   assert.ok(auditActions.has("REPORT_CREATE"), "audit log should include report creation");
   assert.ok(auditActions.has("PERIOD_CLOSE"), "audit log should include closing period lock");
   assert.ok(auditActions.has("PERIOD_REOPEN"), "audit log should include closing period reopen");
+  assert.ok(auditActions.has("VENDOR_CREATE"), "audit log should include vendor creation");
+  assert.ok(auditActions.has("VENDOR_UPDATE"), "audit log should include vendor update");
+  assert.ok(auditActions.has("CLASSIFICATION_RULE_CREATE"), "audit log should include classification rule creation");
+  assert.ok(auditActions.has("CLASSIFICATION_RULE_UPDATE"), "audit log should include classification rule update");
 
   console.log(`DB workflow verification passed at ${baseUrl}`);
 } finally {

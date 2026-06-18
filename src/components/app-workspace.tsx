@@ -4389,6 +4389,8 @@ function SettingsPanel({
   const [saving, setSaving] = useState(false);
   const [savingVendor, setSavingVendor] = useState(false);
   const [savingRule, setSavingRule] = useState(false);
+  const [editingVendorId, setEditingVendorId] = useState<string | null>(null);
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [deletingCsvTemplateId, setDeletingCsvTemplateId] = useState<string | null>(null);
   const [exportingBackup, setExportingBackup] = useState(false);
   const [restoringBackup, setRestoringBackup] = useState(false);
@@ -4471,6 +4473,50 @@ function SettingsPanel({
     setVendorForm((current) => ({ ...current, [key]: value }));
   }
 
+  function resetVendorForm() {
+    setEditingVendorId(null);
+    setVendorForm((current) => ({
+      ...current,
+      name: "",
+      businessRegistrationNumber: "",
+      memo: ""
+    }));
+  }
+
+  function editVendor(vendor: AppVendor) {
+    setEditingVendorId(vendor.id);
+    setSettingsMessage(null);
+    setVendorForm({
+      name: vendor.name,
+      businessRegistrationNumber: vendor.businessRegistrationNumber ?? "",
+      defaultAccountId: vendor.defaultAccount?.id ?? "",
+      withholdingType: vendor.withholdingType ?? "NONE",
+      memo: vendor.memo ?? ""
+    });
+  }
+
+  function resetRuleForm() {
+    setEditingRuleId(null);
+    setRuleForm((current) => ({
+      ...current,
+      name: "",
+      keyword: "",
+      priority: "100"
+    }));
+  }
+
+  function editRule(rule: AppClassificationRule) {
+    setEditingRuleId(rule.id);
+    setSettingsMessage(null);
+    setRuleForm({
+      name: rule.name,
+      keyword: rule.keyword,
+      accountCode: rule.accountCode,
+      sourceType: rule.sourceType ?? "",
+      priority: String(rule.priority)
+    });
+  }
+
   async function saveSettings() {
     setSaving(true);
     setSettingsMessage(null);
@@ -4510,20 +4556,42 @@ function SettingsPanel({
     }
   }
 
-  async function createRule() {
+  async function saveRule() {
     if (!ruleForm.keyword.trim() || !ruleForm.accountCode) return;
     setSavingRule(true);
     setSettingsMessage(null);
     try {
+      const requestBody = {
+        name: ruleForm.name.trim() || `${ruleForm.keyword.trim()} 자동 분류`,
+        keyword: ruleForm.keyword.trim(),
+        accountCode: ruleForm.accountCode,
+        sourceType: ruleForm.sourceType || null,
+        priority: Number(ruleForm.priority) || 100
+      };
+      if (editingRuleId) {
+        const response = await fetch("/api/classification-rules", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: editingRuleId,
+            ...requestBody
+          })
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.classificationRule) {
+          setSettingsMessage({ tone: "red", text: payload.message ?? "자동 분류 규칙 수정에 실패했습니다." });
+          return;
+        }
+        onRulesChanged(classificationRules.map((rule) => (rule.id === payload.classificationRule.id ? payload.classificationRule : rule)));
+        resetRuleForm();
+        setSettingsMessage({ tone: "green", text: "자동 분류 규칙을 수정했습니다." });
+        return;
+      }
       const response = await fetch("/api/classification-rules", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: ruleForm.name.trim() || `${ruleForm.keyword.trim()} 자동 분류`,
-          keyword: ruleForm.keyword.trim(),
-          accountCode: ruleForm.accountCode,
-          sourceType: ruleForm.sourceType || null,
-          priority: Number(ruleForm.priority) || 100,
+          ...requestBody,
           isActive: true
         })
       });
@@ -4533,30 +4601,50 @@ function SettingsPanel({
         return;
       }
       onRulesChanged([payload.classificationRule, ...classificationRules]);
-      setRuleForm((current) => ({ ...current, name: "", keyword: "" }));
+      resetRuleForm();
       setSettingsMessage({ tone: "green", text: "자동 분류 규칙을 추가했습니다." });
     } catch {
-      setSettingsMessage({ tone: "red", text: "자동 분류 규칙 추가 중 오류가 발생했습니다." });
+      setSettingsMessage({ tone: "red", text: editingRuleId ? "자동 분류 규칙 수정 중 오류가 발생했습니다." : "자동 분류 규칙 추가 중 오류가 발생했습니다." });
     } finally {
       setSavingRule(false);
     }
   }
 
-  async function createVendor() {
+  async function saveVendor() {
     if (!vendorForm.name.trim()) return;
     setSavingVendor(true);
     setSettingsMessage(null);
     try {
+      const requestBody = {
+        name: vendorForm.name.trim(),
+        businessRegistrationNumber: vendorForm.businessRegistrationNumber.trim() || null,
+        defaultAccountId: vendorForm.defaultAccountId || null,
+        withholdingType: vendorForm.withholdingType,
+        memo: vendorForm.memo.trim() || null
+      };
+      if (editingVendorId) {
+        const response = await fetch("/api/vendors", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: editingVendorId,
+            ...requestBody
+          })
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.vendor) {
+          setSettingsMessage({ tone: "red", text: payload.message ?? "거래처 기본값 수정에 실패했습니다." });
+          return;
+        }
+        onVendorsChanged(vendors.map((vendor) => (vendor.id === payload.vendor.id ? payload.vendor : vendor)));
+        resetVendorForm();
+        setSettingsMessage({ tone: "green", text: "거래처 기본값을 수정했습니다." });
+        return;
+      }
       const response = await fetch("/api/vendors", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: vendorForm.name.trim(),
-          businessRegistrationNumber: vendorForm.businessRegistrationNumber.trim() || null,
-          defaultAccountId: vendorForm.defaultAccountId || null,
-          withholdingType: vendorForm.withholdingType,
-          memo: vendorForm.memo.trim() || null
-        })
+        body: JSON.stringify(requestBody)
       });
       const payload = await response.json();
       if (!response.ok || !payload.vendor) {
@@ -4566,10 +4654,10 @@ function SettingsPanel({
       const defaultAccount = accounts.find((account) => account.id === vendorForm.defaultAccountId) ?? null;
       const createdVendor = { ...payload.vendor, defaultAccount: payload.vendor.defaultAccount ?? defaultAccount };
       onVendorsChanged([createdVendor, ...vendors.filter((vendor) => vendor.id !== createdVendor.id)]);
-      setVendorForm((current) => ({ ...current, name: "", businessRegistrationNumber: "", memo: "" }));
+      resetVendorForm();
       setSettingsMessage({ tone: "green", text: "거래처 기본값을 추가했습니다." });
     } catch {
-      setSettingsMessage({ tone: "red", text: "거래처 기본값 추가 중 오류가 발생했습니다." });
+      setSettingsMessage({ tone: "red", text: editingVendorId ? "거래처 기본값 수정 중 오류가 발생했습니다." : "거래처 기본값 추가 중 오류가 발생했습니다." });
     } finally {
       setSavingVendor(false);
     }
@@ -4593,6 +4681,9 @@ function SettingsPanel({
         onVendorsChanged(previous);
         setSettingsMessage({ tone: "red", text: payload.message ?? "거래처 기본값 삭제에 실패했습니다." });
         return;
+      }
+      if (editingVendorId === vendorId) {
+        resetVendorForm();
       }
       setSettingsMessage({ tone: "green", text: "거래처 기본값을 삭제했습니다." });
     } catch {
@@ -4643,6 +4734,9 @@ function SettingsPanel({
         onRulesChanged(previous);
         setSettingsMessage({ tone: "red", text: payload.message ?? "자동 분류 규칙 삭제에 실패했습니다." });
         return;
+      }
+      if (editingRuleId === ruleId) {
+        resetRuleForm();
       }
       setSettingsMessage({ tone: "green", text: "자동 분류 규칙을 삭제했습니다." });
     } catch {
@@ -5074,7 +5168,7 @@ function SettingsPanel({
       <section className="panel">
         <div className="panel-header">
           <div>
-            <h2 className="panel-title">거래처 기본값</h2>
+            <h2 className="panel-title">{editingVendorId ? "거래처 기본값 수정" : "거래처 기본값"}</h2>
             <p className="panel-subtitle">반복 거래처의 기본 계정과 원천세 확인 유형</p>
           </div>
           <span className="status blue">{formatNumber(vendors.length)}개</span>
@@ -5119,10 +5213,17 @@ function SettingsPanel({
           </div>
           <div className="field">
             <label>작업</label>
-            <button className="primary-button" onClick={() => void createVendor()} disabled={savingVendor || !vendorForm.name.trim()}>
-              {savingVendor ? <Loader2 size={17} className="spin" /> : <CheckCircle2 size={17} />}
-              거래처 추가
-            </button>
+            <div className="inline-actions">
+              {editingVendorId && (
+                <button className="secondary-button" onClick={resetVendorForm} disabled={savingVendor}>
+                  취소
+                </button>
+              )}
+              <button className="primary-button" onClick={() => void saveVendor()} disabled={savingVendor || !vendorForm.name.trim()}>
+                {savingVendor ? <Loader2 size={17} className="spin" /> : <CheckCircle2 size={17} />}
+                {editingVendorId ? "수정 저장" : "거래처 추가"}
+              </button>
+            </div>
           </div>
         </div>
         <div className="table-wrap">
@@ -5151,7 +5252,13 @@ function SettingsPanel({
                     <td>{withholdingTypeLabel(vendor.withholdingType)}</td>
                     <td>{vendor.memo ?? "-"}</td>
                     <td>
-                      <button className="ghost-button" onClick={() => void deleteVendor(vendor.id)}>삭제</button>
+                      <div className="inline-actions">
+                        <button className="ghost-button" onClick={() => editVendor(vendor)} disabled={savingVendor}>
+                          <Pencil size={15} />
+                          수정
+                        </button>
+                        <button className="ghost-button" onClick={() => void deleteVendor(vendor.id)}>삭제</button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -5164,7 +5271,7 @@ function SettingsPanel({
       <section className="panel">
         <div className="panel-header">
           <div>
-            <h2 className="panel-title">자동 분류 규칙</h2>
+            <h2 className="panel-title">{editingRuleId ? "자동 분류 규칙 수정" : "자동 분류 규칙"}</h2>
             <p className="panel-subtitle">CSV 가져오기 때 키워드가 포함된 거래의 계정과목을 우선 지정</p>
           </div>
           <span className="status blue">{formatNumber(classificationRules.length)}개</span>
@@ -5205,10 +5312,17 @@ function SettingsPanel({
           </div>
           <div className="field">
             <label>작업</label>
-            <button className="primary-button" onClick={() => void createRule()} disabled={savingRule || !ruleForm.keyword.trim()}>
-              {savingRule ? <Loader2 size={17} className="spin" /> : <CheckCircle2 size={17} />}
-              규칙 추가
-            </button>
+            <div className="inline-actions">
+              {editingRuleId && (
+                <button className="secondary-button" onClick={resetRuleForm} disabled={savingRule}>
+                  취소
+                </button>
+              )}
+              <button className="primary-button" onClick={() => void saveRule()} disabled={savingRule || !ruleForm.keyword.trim()}>
+                {savingRule ? <Loader2 size={17} className="spin" /> : <CheckCircle2 size={17} />}
+                {editingRuleId ? "수정 저장" : "규칙 추가"}
+              </button>
+            </div>
           </div>
         </div>
         <div className="table-wrap">
@@ -5244,6 +5358,10 @@ function SettingsPanel({
                     <td className="amount">{formatNumber(rule.priority)}</td>
                     <td>
                       <div className="toolbar">
+                        <button className="ghost-button" onClick={() => editRule(rule)} disabled={savingRule}>
+                          <Pencil size={15} />
+                          수정
+                        </button>
                         <button className="ghost-button" onClick={() => void toggleRule(rule)}>
                           {rule.isActive ? "중지" : "사용"}
                         </button>

@@ -138,7 +138,18 @@ try {
     ].every((text) => body.includes(text))
   );
   await expectText("/?view=settings", (body) =>
-    ["운영 준비 점검", "배포 환경 상태 확인", "과금 정책", "회당 단가", "SaaS 월 구독", "전체 백업", "데이터 보관/삭제 기준", "CSV 매핑 템플릿"].every((text) => body.includes(text))
+    [
+      "운영 준비 점검",
+      "배포 환경 상태 확인",
+      "과금 정책",
+      "회당 단가",
+      "SaaS 월 구독",
+      "전체 백업",
+      "데이터 보관/삭제 기준",
+      "CSV 매핑 템플릿",
+      "거래처 기본값",
+      "자동 분류 규칙"
+    ].every((text) => body.includes(text))
   );
   await expectText("/?view=journals", (body) =>
     ["자동분개 초안", "바로 승인", "검토 필요", "정상 초안"].every((text) => body.includes(text))
