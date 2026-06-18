@@ -4982,32 +4982,34 @@ function SettingsPanel({
         </div>
         <div className="panel-body form-grid">
           <div className="field">
-            <label>법인명</label>
-            <input value={form.name} onChange={(event) => updateForm("name", event.target.value)} />
+            <label htmlFor="company-name">법인명</label>
+            <input id="company-name" value={form.name} onChange={(event) => updateForm("name", event.target.value)} />
           </div>
           <div className="field">
-            <label>업종</label>
-            <input value={form.industry ?? ""} onChange={(event) => updateForm("industry", event.target.value)} />
+            <label htmlFor="company-industry">업종</label>
+            <input id="company-industry" value={form.industry ?? ""} onChange={(event) => updateForm("industry", event.target.value)} />
           </div>
           <div className="field">
-            <label>사업자등록번호</label>
+            <label htmlFor="company-business-registration-number">사업자등록번호</label>
             <input
+              id="company-business-registration-number"
               value={form.businessRegistrationNumber ?? ""}
               onChange={(event) => updateForm("businessRegistrationNumber", event.target.value)}
               placeholder="선택 입력"
             />
           </div>
           <div className="field">
-            <label>과세유형</label>
-            <select value={form.vatType} onChange={(event) => updateForm("vatType", event.target.value)}>
+            <label htmlFor="company-vat-type">과세유형</label>
+            <select id="company-vat-type" value={form.vatType} onChange={(event) => updateForm("vatType", event.target.value)}>
               <option value="GENERAL">일반과세</option>
               <option value="EXEMPT">면세</option>
               <option value="MIXED">겸영</option>
             </select>
           </div>
           <div className="field">
-            <label>결산월</label>
+            <label htmlFor="company-fiscal-year-end-month">결산월</label>
             <select
+              id="company-fiscal-year-end-month"
               value={form.fiscalYearEndMonth}
               onChange={(event) => updateForm("fiscalYearEndMonth", Number(event.target.value))}
             >
@@ -5019,24 +5021,24 @@ function SettingsPanel({
             </select>
           </div>
           <div className="field">
-            <label>과금 모델</label>
-            <select value={form.billingModel} onChange={(event) => updateForm("billingModel", event.target.value as AppCompany["billingModel"])}>
+            <label htmlFor="company-billing-model">과금 모델</label>
+            <select id="company-billing-model" value={form.billingModel} onChange={(event) => updateForm("billingModel", event.target.value as AppCompany["billingModel"])}>
               <option value="INTERNAL_PER_USE">내부 회당 정산</option>
               <option value="SAAS_MONTHLY">SaaS 월 구독</option>
               <option value="SAAS_ANNUAL">SaaS 연 구독</option>
             </select>
           </div>
           <div className="field">
-            <label>회당 단가</label>
-            <input inputMode="numeric" value={form.perUseUnitPrice} onChange={(event) => updateForm("perUseUnitPrice", numericInputValue(event.target.value))} />
+            <label htmlFor="company-per-use-unit-price">회당 단가</label>
+            <input id="company-per-use-unit-price" inputMode="numeric" value={form.perUseUnitPrice} onChange={(event) => updateForm("perUseUnitPrice", numericInputValue(event.target.value))} />
           </div>
           <div className="field">
-            <label>월 구독가</label>
-            <input inputMode="numeric" value={form.monthlySubscriptionPrice} onChange={(event) => updateForm("monthlySubscriptionPrice", numericInputValue(event.target.value))} />
+            <label htmlFor="company-monthly-subscription-price">월 구독가</label>
+            <input id="company-monthly-subscription-price" inputMode="numeric" value={form.monthlySubscriptionPrice} onChange={(event) => updateForm("monthlySubscriptionPrice", numericInputValue(event.target.value))} />
           </div>
           <div className="field">
-            <label>연 구독가</label>
-            <input inputMode="numeric" value={form.annualSubscriptionPrice} onChange={(event) => updateForm("annualSubscriptionPrice", numericInputValue(event.target.value))} />
+            <label htmlFor="company-annual-subscription-price">연 구독가</label>
+            <input id="company-annual-subscription-price" inputMode="numeric" value={form.annualSubscriptionPrice} onChange={(event) => updateForm("annualSubscriptionPrice", numericInputValue(event.target.value))} />
           </div>
           <ToggleField
             label="대표자 급여"
@@ -5237,20 +5239,21 @@ function SettingsPanel({
         </div>
         <div className="panel-body form-grid">
           <div className="field">
-            <label>거래처명</label>
-            <input value={vendorForm.name} onChange={(event) => updateVendorForm("name", event.target.value)} placeholder="예: 김디자인" />
+            <label htmlFor="vendor-name">거래처명</label>
+            <input id="vendor-name" value={vendorForm.name} onChange={(event) => updateVendorForm("name", event.target.value)} placeholder="예: 김디자인" />
           </div>
           <div className="field">
-            <label>사업자등록번호</label>
+            <label htmlFor="vendor-business-registration-number">사업자등록번호</label>
             <input
+              id="vendor-business-registration-number"
               value={vendorForm.businessRegistrationNumber}
               onChange={(event) => updateVendorForm("businessRegistrationNumber", event.target.value)}
               placeholder="선택 입력"
             />
           </div>
           <div className="field">
-            <label>기본 계정</label>
-            <select value={vendorForm.defaultAccountId} onChange={(event) => updateVendorForm("defaultAccountId", event.target.value)}>
+            <label htmlFor="vendor-default-account-id">기본 계정</label>
+            <select id="vendor-default-account-id" value={vendorForm.defaultAccountId} onChange={(event) => updateVendorForm("defaultAccountId", event.target.value)}>
               <option value="">자동 추론</option>
               {accounts.map((account) => (
                 <option key={account.id} value={account.id}>
@@ -5260,8 +5263,8 @@ function SettingsPanel({
             </select>
           </div>
           <div className="field">
-            <label>원천세 유형</label>
-            <select value={vendorForm.withholdingType} onChange={(event) => updateVendorForm("withholdingType", event.target.value)}>
+            <label htmlFor="vendor-withholding-type">원천세 유형</label>
+            <select id="vendor-withholding-type" value={vendorForm.withholdingType} onChange={(event) => updateVendorForm("withholdingType", event.target.value)}>
               <option value="NONE">해당 없음</option>
               <option value="TAX_INVOICE">세금계산서 수취</option>
               <option value="BUSINESS_INCOME">사업소득 3.3%</option>
@@ -5270,8 +5273,8 @@ function SettingsPanel({
             </select>
           </div>
           <div className="field">
-            <label>메모</label>
-            <input value={vendorForm.memo} onChange={(event) => updateVendorForm("memo", event.target.value)} />
+            <label htmlFor="vendor-memo">메모</label>
+            <input id="vendor-memo" value={vendorForm.memo} onChange={(event) => updateVendorForm("memo", event.target.value)} />
           </div>
           <div className="field">
             <label>작업</label>
@@ -5340,16 +5343,16 @@ function SettingsPanel({
         </div>
         <div className="panel-body form-grid">
           <div className="field">
-            <label>규칙명</label>
-            <input value={ruleForm.name} onChange={(event) => updateRuleForm("name", event.target.value)} placeholder="예: AWS 비용" />
+            <label htmlFor="classification-rule-name">규칙명</label>
+            <input id="classification-rule-name" value={ruleForm.name} onChange={(event) => updateRuleForm("name", event.target.value)} placeholder="예: AWS 비용" />
           </div>
           <div className="field">
-            <label>키워드</label>
-            <input value={ruleForm.keyword} onChange={(event) => updateRuleForm("keyword", event.target.value)} placeholder="예: aws" />
+            <label htmlFor="classification-rule-keyword">키워드</label>
+            <input id="classification-rule-keyword" value={ruleForm.keyword} onChange={(event) => updateRuleForm("keyword", event.target.value)} placeholder="예: aws" />
           </div>
           <div className="field">
-            <label>자료 유형</label>
-            <select value={ruleForm.sourceType} onChange={(event) => updateRuleForm("sourceType", event.target.value)}>
+            <label htmlFor="classification-rule-source-type">자료 유형</label>
+            <select id="classification-rule-source-type" value={ruleForm.sourceType} onChange={(event) => updateRuleForm("sourceType", event.target.value)}>
               <option value="">전체</option>
               {sourceOptions.map((option) => (
                 <option key={option} value={option}>
@@ -5359,8 +5362,8 @@ function SettingsPanel({
             </select>
           </div>
           <div className="field">
-            <label>계정과목</label>
-            <select value={ruleForm.accountCode} onChange={(event) => updateRuleForm("accountCode", event.target.value)}>
+            <label htmlFor="classification-rule-account-code">계정과목</label>
+            <select id="classification-rule-account-code" value={ruleForm.accountCode} onChange={(event) => updateRuleForm("accountCode", event.target.value)}>
               {accounts.map((account) => (
                 <option key={account.id} value={account.code}>
                   {account.code} {account.name}
@@ -5369,8 +5372,8 @@ function SettingsPanel({
             </select>
           </div>
           <div className="field">
-            <label>우선순위</label>
-            <input inputMode="numeric" value={ruleForm.priority} onChange={(event) => updateRuleForm("priority", event.target.value)} />
+            <label htmlFor="classification-rule-priority">우선순위</label>
+            <input id="classification-rule-priority" inputMode="numeric" value={ruleForm.priority} onChange={(event) => updateRuleForm("priority", event.target.value)} />
           </div>
           <div className="field">
             <label>작업</label>
