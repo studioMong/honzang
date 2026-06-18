@@ -10,6 +10,7 @@ const steps = [
   ["lint", "ESLint"],
   ["verify:samples", "CSV sample parsing and classification"],
   ["verify:closing-snapshot-exports", "Closing snapshot export packages"],
+  ["verify:workspace-backup-exports", "Workspace backup export packages"],
   ["build", "Production standalone build"],
   ["verify:operations-readiness", "Operations readiness diagnostics"],
   ["verify:pwa", "PWA resources and install hooks"],
