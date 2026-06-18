@@ -8,6 +8,7 @@ import { DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "../src/lib/defaults";
 import { moneyToMinorUnits } from "../src/lib/money";
 import type {
   AppAccount,
+  AppEvidence,
   AppClassificationRule,
   AppImportBatch,
   AppJournalEntry,
@@ -404,6 +405,51 @@ try {
     "review snapshot rows should preserve the evidence mismatch reason"
   );
 
+  const updatedEvidenceTransaction = importedTransactions[1];
+  assert.ok(updatedEvidenceTransaction?.id, "workflow should include a second transaction for evidence patch verification");
+  const evidencePatchPayload = await requestJson<{
+    ok?: boolean;
+    mode?: string;
+    evidence?: AppEvidence;
+    transactionUpdates?: Array<{ transactionId: string; evidenceStatus: string }>;
+  }>("/api/evidences", {
+    method: "PATCH",
+    body: {
+      id: evidencePayload.evidence.id,
+      evidenceType: "검증 세금계산서 수정",
+      issueDate: "2026-06-17",
+      counterparty: `${marker} 수정 증빙`,
+      businessRegistrationNumber: "123-45-67890",
+      supplyAmount: 100000,
+      vatAmount: 10000,
+      totalAmount: 110000,
+      transactionId: updatedEvidenceTransaction.id
+    }
+  });
+  assert.equal(evidencePatchPayload.ok, true, "evidence patch should succeed");
+  assert.equal(evidencePatchPayload.mode, "database", "evidence patch should use database mode");
+  assert.equal(evidencePatchPayload.evidence?.id, evidencePayload.evidence.id, "evidence patch should keep the evidence id");
+  assert.equal(evidencePatchPayload.evidence?.evidenceType, "검증 세금계산서 수정", "evidence patch should update evidence type");
+  assert.equal(evidencePatchPayload.evidence?.counterparty, `${marker} 수정 증빙`, "evidence patch should update counterparty");
+  assert.equal(evidencePatchPayload.evidence?.businessRegistrationNumber, "123-45-67890", "evidence patch should update business registration number");
+  assert.equal(evidencePatchPayload.evidence?.supplyAmount, 100000, "evidence patch should update supply amount");
+  assert.equal(evidencePatchPayload.evidence?.vatAmount, 10000, "evidence patch should update VAT amount");
+  assert.equal(evidencePatchPayload.evidence?.totalAmount, 110000, "evidence patch should update total amount");
+  assert.equal(evidencePatchPayload.evidence?.transactionId, updatedEvidenceTransaction.id, "evidence patch should relink to the selected transaction");
+  assert.ok(
+    evidencePatchPayload.transactionUpdates?.some((update) => update.transactionId === importedTransactions[0]?.id && update.evidenceStatus === "UNCHECKED"),
+    "evidence patch should restore the previous linked transaction evidence status"
+  );
+  assert.ok(
+    evidencePatchPayload.transactionUpdates?.some((update) => update.transactionId === updatedEvidenceTransaction.id && update.evidenceStatus === "MATCHED"),
+    "evidence patch should update the newly linked transaction evidence status"
+  );
+  const transactionsAfterEvidencePatch = await requestJson<{ transactions?: AppTransaction[] }>("/api/transactions");
+  const previousEvidenceTransaction = transactionsAfterEvidencePatch.transactions?.find((transaction) => transaction.id === importedTransactions[0]?.id);
+  const patchedEvidenceTransaction = transactionsAfterEvidencePatch.transactions?.find((transaction) => transaction.id === updatedEvidenceTransaction.id);
+  assert.equal(previousEvidenceTransaction?.evidenceStatus, "UNCHECKED", "evidence patch should persist the previous linked transaction status");
+  assert.equal(patchedEvidenceTransaction?.evidenceStatus, "MATCHED", "evidence patch should persist the newly linked transaction status");
+
   const approvedEntries: AppJournalEntry[] = [];
   for (const transaction of importedTransactions) {
     const draft = generateJournalDraft(transaction);
@@ -755,6 +801,17 @@ try {
   assert.equal(lockedRangeReportCreatePayload.ok, false, "report create spanning a locked period should fail");
   assert.equal(lockedRangeReportCreatePayload.code, "PERIOD_CLOSED", "report create spanning a locked period should return PERIOD_CLOSED");
 
+  const lockedEvidencePatchPayload = await requestJson<{ ok?: boolean; code?: string; message?: string }>("/api/evidences", {
+    method: "PATCH",
+    expectedStatus: 409,
+    body: {
+      id: evidencePayload.evidence.id,
+      counterparty: `${marker} locked evidence patch should fail`
+    }
+  });
+  assert.equal(lockedEvidencePatchPayload.ok, false, "locked period evidence patch should fail");
+  assert.equal(lockedEvidencePatchPayload.code, "PERIOD_CLOSED", "locked period evidence patch should return PERIOD_CLOSED");
+
   const lockedEvidenceDeletePayload = await requestJson<{ ok?: boolean; code?: string; message?: string }>("/api/evidences", {
     method: "DELETE",
     expectedStatus: 409,
@@ -788,8 +845,8 @@ try {
   assert.equal(evidenceDeletePayload.ok, true, "evidence delete should succeed after reopening period");
   assert.equal(evidenceDeletePayload.mode, "database", "evidence delete should use database mode");
   assert.equal(evidenceDeletePayload.deletedEvidenceId, evidencePayload.evidence.id, "evidence delete should return deleted id");
-  assert.equal(evidenceDeletePayload.transactionId, importedTransactions[0]?.id, "evidence delete should report linked transaction");
-  assert.equal(evidenceDeletePayload.evidenceStatus, "UNCHECKED", "deleting the only linked evidence should restore unchecked status for deposit transactions");
+  assert.equal(evidenceDeletePayload.transactionId, updatedEvidenceTransaction.id, "evidence delete should report linked transaction");
+  assert.equal(evidenceDeletePayload.evidenceStatus, "MISSING", "deleting the only linked evidence should restore missing status for expense transactions");
   cleanup.evidenceIds = cleanup.evidenceIds.filter((id) => id !== evidencePayload.evidence?.id);
 
   const auditEvents = await requestJson<{ auditEvents?: Array<{ action: string; entityId?: string | null }> }>("/api/audit-events");
@@ -799,6 +856,7 @@ try {
   assert.ok(auditActions.has("TRANSACTION_UPDATE"), "audit log should include manual transaction update");
   assert.ok(auditActions.has("TRANSACTION_DELETE"), "audit log should include manual transaction deletion");
   assert.ok(auditActions.has("EVIDENCE_CREATE"), "audit log should include evidence creation");
+  assert.ok(auditActions.has("EVIDENCE_UPDATE"), "audit log should include evidence update");
   assert.ok(auditActions.has("EVIDENCE_DELETE"), "audit log should include evidence deletion");
   assert.ok(auditActions.has("JOURNAL_CREATE"), "audit log should include journal creation");
   assert.ok(auditActions.has("REPORT_CREATE"), "audit log should include report creation");

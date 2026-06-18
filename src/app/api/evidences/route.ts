@@ -23,18 +23,30 @@ import { serializeEvidence } from "@/lib/server/serializers";
 
 const evidenceSchema = z.object({
   companyId: z.string().default(DEFAULT_COMPANY_ID),
-  evidenceType: z.string().min(1).max(80),
+  evidenceType: z.string().trim().min(1).max(80),
   issueDate: z.string().optional().nullable(),
-  counterparty: z.string().max(120).optional().nullable(),
-  businessRegistrationNumber: z.string().max(40).optional().nullable(),
+  counterparty: z.string().trim().max(120).optional().nullable(),
+  businessRegistrationNumber: z.string().trim().max(40).optional().nullable(),
   supplyAmount: z.coerce.number().nonnegative().optional().nullable(),
   vatAmount: z.coerce.number().nonnegative().optional().nullable(),
   totalAmount: z.coerce.number().nonnegative().optional().nullable(),
-  fileName: z.string().max(240).optional().nullable(),
-  fileUrl: z.string().max(500).optional().nullable(),
+  fileName: z.string().trim().max(240).optional().nullable(),
+  fileUrl: z.string().trim().max(500).optional().nullable(),
   fileDataUrl: z.string().max(MAX_EVIDENCE_FILE_DATA_URL_LENGTH).optional().nullable(),
-  fileMimeType: z.string().max(120).optional().nullable(),
+  fileMimeType: z.string().trim().max(120).optional().nullable(),
   fileSize: z.coerce.number().int().nonnegative().max(MAX_EVIDENCE_FILE_SIZE).optional().nullable(),
+  transactionId: z.string().optional().nullable()
+});
+
+const patchEvidenceSchema = z.object({
+  id: z.string().min(1),
+  evidenceType: z.string().trim().min(1).max(80).optional(),
+  issueDate: z.string().optional().nullable(),
+  counterparty: z.string().trim().max(120).optional().nullable(),
+  businessRegistrationNumber: z.string().trim().max(40).optional().nullable(),
+  supplyAmount: z.coerce.number().nonnegative().optional().nullable(),
+  vatAmount: z.coerce.number().nonnegative().optional().nullable(),
+  totalAmount: z.coerce.number().nonnegative().optional().nullable(),
   transactionId: z.string().optional().nullable()
 });
 
@@ -209,6 +221,169 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json({ ok: true, evidence: serializeEvidence(evidence), mode: "database" });
+}
+
+export async function PATCH(request: Request) {
+  const parsed = await parseJsonRequest(request, patchEvidenceSchema, { label: "증빙 수정 요청" });
+  if (!parsed.ok) return parsed.response;
+
+  const payload = parsed.data;
+  const hasEvidenceType = Object.prototype.hasOwnProperty.call(payload, "evidenceType");
+  const hasIssueDate = Object.prototype.hasOwnProperty.call(payload, "issueDate");
+  const hasCounterparty = Object.prototype.hasOwnProperty.call(payload, "counterparty");
+  const hasBusinessRegistrationNumber = Object.prototype.hasOwnProperty.call(payload, "businessRegistrationNumber");
+  const hasSupplyAmount = Object.prototype.hasOwnProperty.call(payload, "supplyAmount");
+  const hasVatAmount = Object.prototype.hasOwnProperty.call(payload, "vatAmount");
+  const hasTotalAmount = Object.prototype.hasOwnProperty.call(payload, "totalAmount");
+  const hasTransactionId = Object.prototype.hasOwnProperty.call(payload, "transactionId");
+  if (
+    !hasEvidenceType &&
+    !hasIssueDate &&
+    !hasCounterparty &&
+    !hasBusinessRegistrationNumber &&
+    !hasSupplyAmount &&
+    !hasVatAmount &&
+    !hasTotalAmount &&
+    !hasTransactionId
+  ) {
+    return NextResponse.json({ ok: false, message: "수정할 증빙 항목이 없습니다." }, { status: 400 });
+  }
+
+  const db = getPrisma();
+  if (!db) {
+    return NextResponse.json({ ok: true, mode: "sample", evidence: payload });
+  }
+
+  const company = await ensureDefaultCompany(db);
+  const existing = await db.evidence.findFirst({
+    where: {
+      id: payload.id,
+      companyId: company.id
+    },
+    include: {
+      transaction: true
+    }
+  });
+  if (!existing) {
+    return NextResponse.json({ ok: false, message: "증빙을 찾을 수 없습니다." }, { status: 404 });
+  }
+
+  const nextIssueDate = hasIssueDate ? parseStrictEvidenceDate(payload.issueDate) : existing.issueDate?.toISOString().slice(0, 10) ?? null;
+  if (payload.issueDate && !nextIssueDate) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_EVIDENCE_DATE",
+        message: "증빙 발행일은 유효한 날짜여야 합니다."
+      },
+      { status: 400 }
+    );
+  }
+  const nextSupplyAmount = hasSupplyAmount ? payload.supplyAmount ?? null : existing.supplyAmount === null ? null : Number(existing.supplyAmount);
+  const nextVatAmount = hasVatAmount ? payload.vatAmount ?? null : existing.vatAmount === null ? null : Number(existing.vatAmount);
+  const nextTotalAmount = hasTotalAmount ? payload.totalAmount ?? null : existing.totalAmount === null ? null : Number(existing.totalAmount);
+  const amountIssue = validateEvidenceAmounts({
+    supplyAmount: nextSupplyAmount,
+    vatAmount: nextVatAmount,
+    totalAmount: nextTotalAmount
+  });
+  if (amountIssue) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_EVIDENCE_AMOUNTS",
+        message: amountIssue
+      },
+      { status: 400 }
+    );
+  }
+
+  const nextTransaction = hasTransactionId && payload.transactionId
+    ? await db.transaction.findFirst({
+        where: {
+          id: payload.transactionId,
+          companyId: company.id
+        }
+      })
+    : null;
+  if (hasTransactionId && payload.transactionId && !nextTransaction) {
+    return NextResponse.json({ ok: false, message: "거래를 찾을 수 없습니다." }, { status: 404 });
+  }
+
+  const closedCurrentIssuePeriod = await findClosedPeriodForDate(db, company.id, existing.issueDate);
+  if (closedCurrentIssuePeriod) return closedPeriodResponse(closedCurrentIssuePeriod.period);
+  const closedNextIssuePeriod = await findClosedPeriodForDate(db, company.id, nextIssueDate);
+  if (closedNextIssuePeriod) return closedPeriodResponse(closedNextIssuePeriod.period);
+  const closedCurrentTransactionPeriod = await findClosedPeriodForDate(db, company.id, existing.transaction?.transactionDate);
+  if (closedCurrentTransactionPeriod) return closedPeriodResponse(closedCurrentTransactionPeriod.period);
+  const closedNextTransactionPeriod = await findClosedPeriodForDate(db, company.id, nextTransaction?.transactionDate);
+  if (closedNextTransactionPeriod) return closedPeriodResponse(closedNextTransactionPeriod.period);
+
+  const nextTransactionId = hasTransactionId ? payload.transactionId || null : existing.transactionId;
+  const updateData: Prisma.EvidenceUncheckedUpdateInput = {};
+  if (hasEvidenceType) updateData.evidenceType = payload.evidenceType;
+  if (hasIssueDate) updateData.issueDate = nextIssueDate ? new Date(nextIssueDate) : null;
+  if (hasCounterparty) updateData.counterparty = payload.counterparty || null;
+  if (hasBusinessRegistrationNumber) updateData.businessRegistrationNumber = payload.businessRegistrationNumber || null;
+  if (hasSupplyAmount) updateData.supplyAmount = nextSupplyAmount;
+  if (hasVatAmount) updateData.vatAmount = nextVatAmount;
+  if (hasTotalAmount) updateData.totalAmount = nextTotalAmount;
+  if (hasTransactionId) updateData.transactionId = nextTransactionId;
+
+  const result = await db.$transaction(async (tx) => {
+    const updated = await tx.evidence.update({
+      where: { id: existing.id },
+      data: updateData
+    });
+
+    const transactionUpdates: Array<{ transactionId: string; evidenceStatus: string }> = [];
+    if (existing.transactionId && existing.transaction) {
+      const evidenceStatus = await updateLinkedTransactionEvidenceStatus(tx, company.id, existing.transaction);
+      transactionUpdates.push({ transactionId: existing.transactionId, evidenceStatus });
+    }
+    if (nextTransactionId && nextTransaction && nextTransactionId !== existing.transactionId) {
+      const evidenceStatus = await updateLinkedTransactionEvidenceStatus(tx, company.id, nextTransaction);
+      transactionUpdates.push({ transactionId: nextTransactionId, evidenceStatus });
+    }
+
+    await recordAuditEvent(tx, {
+      companyId: company.id,
+      action: "EVIDENCE_UPDATE",
+      entityType: "EVIDENCE",
+      entityId: updated.id,
+      summary: `증빙을 수정했습니다: ${updated.evidenceType}`,
+      metadata: {
+        previousTransactionId: existing.transactionId,
+        transactionId: nextTransactionId,
+        counterparty: updated.counterparty,
+        totalAmount: updated.totalAmount ? Number(updated.totalAmount) : null
+      }
+    });
+
+    const evidence = await tx.evidence.findUniqueOrThrow({
+      where: { id: updated.id },
+      include: {
+        transaction: {
+          include: {
+            suggestedAccount: true,
+            confirmedAccount: true
+          }
+        }
+      }
+    });
+
+    return {
+      evidence,
+      transactionUpdates
+    };
+  });
+
+  return NextResponse.json({
+    ok: true,
+    evidence: serializeEvidence(result.evidence),
+    transactionUpdates: result.transactionUpdates,
+    mode: "database"
+  });
 }
 
 export async function DELETE(request: Request) {

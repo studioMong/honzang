@@ -128,6 +128,7 @@ async function verifyUnauthorizedApi() {
     { path: "/api/operations/readiness", method: "GET" },
     { path: "/api/classification-rules", method: "DELETE", body: { id: "verify-rule" } },
     { path: "/api/csv-templates", method: "DELETE", body: { id: "verify-template" } },
+    { path: "/api/evidences", method: "PATCH", body: { id: "verify-evidence", evidenceType: "영수증" } },
     { path: "/api/transactions", method: "DELETE", body: { id: "verify-transaction" } },
     { path: "/api/backups/restore", method: "POST", body: { backup: {}, dryRun: true } }
   ];

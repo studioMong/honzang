@@ -178,6 +178,7 @@ assert.ok(payload.notes.some((note) => note.includes("민감한 거래처")), "w
 const retentionRows = buildDataRetentionRows(input);
 assert.ok(retentionRows.some((row) => row.데이터 === "원본 CSV" && row.상태 === "보관 중"), "data retention rows should include original CSV state");
 assert.ok(retentionRows.some((row) => row.데이터 === "거래내역" && row.삭제방법.includes("수기 거래")), "data retention rows should document manual transaction deletion");
+assert.ok(retentionRows.some((row) => row.데이터 === "증빙 파일" && row.삭제방법.includes("메타데이터 수정")), "data retention rows should document evidence metadata editing");
 assert.ok(retentionRows.some((row) => row.데이터 === "백업 파일" && row.상태 === "민감정보 포함"), "data retention rows should flag sensitive backup files");
 
 const readinessRows = buildBackupReadinessRows(input);

@@ -651,8 +651,20 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
               if (evidence.transactionId) {
                 setTransactions((current) =>
                   current.map((transaction) =>
-                    transaction.id === evidence.transactionId ? { ...transaction, evidenceStatus: "MATCHED" } : transaction
+                    transaction.id === evidence.transactionId ? { ...transaction, evidenceStatus: evidence.transaction?.evidenceStatus ?? "MATCHED" } : transaction
                   )
+                );
+              }
+              if (mode === "database") void refresh();
+            }}
+            onUpdated={(evidence, transactionUpdates) => {
+              setEvidences((current) => [evidence, ...current.filter((item) => item.id !== evidence.id)]);
+              if (transactionUpdates?.length) {
+                setTransactions((current) =>
+                  current.map((transaction) => {
+                    const update = transactionUpdates.find((item) => item.transactionId === transaction.id);
+                    return update ? { ...transaction, evidenceStatus: update.evidenceStatus } : transaction;
+                  })
                 );
               }
               if (mode === "database") void refresh();
@@ -1807,12 +1819,14 @@ function EvidencesPanel({
   evidences,
   transactions,
   onCreated,
+  onUpdated,
   onDeleted
 }: {
   companyId: string;
   evidences: AppEvidence[];
   transactions: AppTransaction[];
   onCreated: (evidence: AppEvidence) => void;
+  onUpdated: (evidence: AppEvidence, transactionUpdates?: Array<{ transactionId: string; evidenceStatus: EvidenceStatus }>) => void;
   onDeleted: (evidenceId: string, transactionUpdate?: { transactionId: string; evidenceStatus: EvidenceStatus } | null) => void;
 }) {
   const [form, setForm] = useState<EvidenceFormState>({
@@ -1830,6 +1844,7 @@ function EvidencesPanel({
     transactionId: ""
   });
   const [saving, setSaving] = useState(false);
+  const [editingEvidenceId, setEditingEvidenceId] = useState<string | null>(null);
   const [deletingEvidenceId, setDeletingEvidenceId] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const matchCandidates = useMemo(() => buildEvidenceMatchCandidates(form, transactions), [form, transactions]);
@@ -1856,26 +1871,88 @@ function EvidencesPanel({
     }));
   }
 
-  async function createEvidence() {
+  function resetEvidenceForm() {
+    setEditingEvidenceId(null);
+    setForm((current) => ({
+      ...current,
+      counterparty: "",
+      businessRegistrationNumber: "",
+      supplyAmount: "",
+      vatAmount: "",
+      totalAmount: "",
+      fileName: "",
+      fileDataUrl: "",
+      fileMimeType: "",
+      fileSize: "",
+      transactionId: ""
+    }));
+  }
+
+  function editEvidence(evidence: AppEvidence) {
+    setEditingEvidenceId(evidence.id);
+    setFileError(null);
+    setForm({
+      evidenceType: evidence.evidenceType,
+      issueDate: evidence.issueDate ?? "",
+      counterparty: evidence.counterparty ?? "",
+      businessRegistrationNumber: evidence.businessRegistrationNumber ?? "",
+      supplyAmount: evidence.supplyAmount === null || evidence.supplyAmount === undefined ? "" : String(evidence.supplyAmount),
+      vatAmount: evidence.vatAmount === null || evidence.vatAmount === undefined ? "" : String(evidence.vatAmount),
+      totalAmount: evidence.totalAmount === null || evidence.totalAmount === undefined ? "" : String(evidence.totalAmount),
+      fileName: evidence.fileName ?? "",
+      fileDataUrl: evidence.fileDataUrl ?? "",
+      fileMimeType: evidence.fileMimeType ?? "",
+      fileSize: evidence.fileSize === null || evidence.fileSize === undefined ? "" : String(evidence.fileSize),
+      transactionId: evidence.transactionId ?? ""
+    });
+  }
+
+  async function saveEvidence() {
     setSaving(true);
     try {
+      const requestBody = {
+        evidenceType: form.evidenceType,
+        issueDate: form.issueDate || null,
+        counterparty: form.counterparty || null,
+        businessRegistrationNumber: form.businessRegistrationNumber || null,
+        supplyAmount: form.supplyAmount ? Number(form.supplyAmount) : null,
+        vatAmount: form.vatAmount ? Number(form.vatAmount) : null,
+        totalAmount: form.totalAmount ? Number(form.totalAmount) : null,
+        transactionId: form.transactionId || null
+      };
+      if (editingEvidenceId) {
+        const response = await fetch("/api/evidences", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: editingEvidenceId,
+            ...requestBody
+          })
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          setFileError(payload.message ?? "증빙 수정에 실패했습니다.");
+          return;
+        }
+        if (payload.evidence) {
+          onUpdated(payload.evidence, payload.transactionUpdates);
+          resetEvidenceForm();
+          setFileError(null);
+        } else {
+          setFileError("증빙 수정 결과를 확인할 수 없습니다.");
+        }
+        return;
+      }
       const response = await fetch("/api/evidences", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           companyId,
-          evidenceType: form.evidenceType,
-          issueDate: form.issueDate,
-          counterparty: form.counterparty || null,
-          businessRegistrationNumber: form.businessRegistrationNumber || null,
-          supplyAmount: form.supplyAmount ? Number(form.supplyAmount) : null,
-          vatAmount: form.vatAmount ? Number(form.vatAmount) : null,
-          totalAmount: form.totalAmount ? Number(form.totalAmount) : null,
+          ...requestBody,
           fileName: form.fileName || null,
           fileDataUrl: form.fileDataUrl || null,
           fileMimeType: form.fileMimeType || null,
-          fileSize: form.fileSize ? Number(form.fileSize) : null,
-          transactionId: form.transactionId || null
+          fileSize: form.fileSize ? Number(form.fileSize) : null
         })
       });
       const payload = await response.json();
@@ -1885,25 +1962,13 @@ function EvidencesPanel({
       }
       if (payload.evidence) {
         onCreated(payload.evidence);
-        setForm((current) => ({
-          ...current,
-          counterparty: "",
-          businessRegistrationNumber: "",
-          supplyAmount: "",
-          vatAmount: "",
-          totalAmount: "",
-          fileName: "",
-          fileDataUrl: "",
-          fileMimeType: "",
-          fileSize: "",
-          transactionId: ""
-        }));
+        resetEvidenceForm();
         setFileError(null);
       } else {
         setFileError("증빙 저장 결과를 확인할 수 없습니다.");
       }
     } catch {
-      setFileError("증빙 저장 중 오류가 발생했습니다.");
+      setFileError(editingEvidenceId ? "증빙 수정 중 오류가 발생했습니다." : "증빙 저장 중 오류가 발생했습니다.");
     } finally {
       setSaving(false);
     }
@@ -1925,6 +1990,9 @@ function EvidencesPanel({
         window.alert(payload.message ?? "증빙 삭제에 실패했습니다.");
         return;
       }
+      if (editingEvidenceId === evidence.id) {
+        resetEvidenceForm();
+      }
 
       onDeleted(
         payload.deletedEvidenceId ?? evidence.id,
@@ -1941,11 +2009,18 @@ function EvidencesPanel({
     <div className="content">
       <section className="panel">
         <div className="panel-header">
-          <h2 className="panel-title">증빙 추가</h2>
-          <button className="primary-button" onClick={() => void createEvidence()} disabled={saving}>
-            {saving ? <Loader2 size={17} className="spin" /> : <CheckCircle2 size={17} />}
-            저장
-          </button>
+          <h2 className="panel-title">{editingEvidenceId ? "증빙 수정" : "증빙 추가"}</h2>
+          <div className="inline-actions">
+            {editingEvidenceId && (
+              <button className="secondary-button" onClick={resetEvidenceForm} disabled={saving}>
+                취소
+              </button>
+            )}
+            <button className="primary-button" onClick={() => void saveEvidence()} disabled={saving}>
+              {saving ? <Loader2 size={17} className="spin" /> : <CheckCircle2 size={17} />}
+              {editingEvidenceId ? "수정 저장" : "저장"}
+            </button>
+          </div>
         </div>
         <div className="panel-body form-grid">
           <div className="field">
@@ -2028,6 +2103,7 @@ function EvidencesPanel({
           <label className="file-drop">
             <input
               type="file"
+              disabled={Boolean(editingEvidenceId)}
               onChange={(event) => void handleEvidenceFile(event.target.files?.[0])}
             />
             <span>
@@ -2083,9 +2159,15 @@ function EvidencesPanel({
                       )}
                     </td>
                     <td>
-                      <button className="ghost-button" onClick={() => void deleteEvidence(evidence)} disabled={deletingEvidenceId === evidence.id}>
-                        {deletingEvidenceId === evidence.id ? "삭제 중" : "삭제"}
-                      </button>
+                      <div className="inline-actions">
+                        <button className="ghost-button" onClick={() => editEvidence(evidence)} disabled={deletingEvidenceId === evidence.id || saving}>
+                          <Pencil size={15} />
+                          수정
+                        </button>
+                        <button className="ghost-button" onClick={() => void deleteEvidence(evidence)} disabled={deletingEvidenceId === evidence.id}>
+                          {deletingEvidenceId === evidence.id ? "삭제 중" : "삭제"}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -5587,6 +5669,7 @@ function auditActionLabel(action: string) {
     TRANSACTION_CREATE: "거래 추가",
     TRANSACTION_UPDATE: "거래 수정",
     EVIDENCE_CREATE: "증빙 추가",
+    EVIDENCE_UPDATE: "증빙 수정",
     EVIDENCE_DELETE: "증빙 삭제",
     JOURNAL_CREATE: "분개 저장",
     JOURNAL_STATUS_UPDATE: "분개 상태",

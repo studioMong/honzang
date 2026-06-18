@@ -112,6 +112,7 @@ try {
   await expectUnbalancedJournalPrecision();
   await expectInvalidEvidenceDate();
   await expectInvalidEvidenceJson();
+  await expectMalformedJson("/api/evidences", "PATCH");
   await expectInvalidEvidenceFile();
   await expectInvalidEvidenceFileUrl();
   await expectInvalidEvidenceAmountScale();
