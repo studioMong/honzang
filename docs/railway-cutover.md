@@ -10,6 +10,7 @@
 - Pre-deploy Command: `npm run db:deploy`
 - Postgres: 앱 서비스 Variables의 `DATABASE_URL`이 Railway Postgres 참조 변수로 연결됨
 - 접근 보호: `HONZANG_ACCESS_CODE`와 `HONZANG_ACCESS_TOKEN_SALT` 설정
+- 파일 보호: `HONZANG_FILE_ENCRYPTION_KEY` 설정
 
 ## Railway Dashboard 점검 순서
 1. GitHub 저장소 `studioMong/honzang`가 앱 서비스에 연결되어 있는지 확인한다.
@@ -23,6 +24,7 @@
    - `NEXT_PUBLIC_APP_URL`: `https://honzang-production.up.railway.app`
    - `HONZANG_ACCESS_CODE`: 운영 접근 코드
    - `HONZANG_ACCESS_TOKEN_SALT`: 긴 랜덤 문자열
+   - `HONZANG_FILE_ENCRYPTION_KEY`: 원본 CSV와 DB 보관 증빙 파일 암호화용 긴 랜덤 문자열
 5. Public Networking 또는 Domains에서 `honzang-production.up.railway.app`가 최신 Next.js 앱 서비스에 붙어 있는지 확인한다.
 6. 같은 도메인이 이전 static/legacy 서비스에 남아 있으면 해당 연결을 제거하거나 도메인을 최신 앱 서비스로 이동한다.
 7. 최신 `main` 커밋으로 앱 서비스를 재배포한다.
