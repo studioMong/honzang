@@ -200,6 +200,9 @@ PWA 리소스와 service worker 등록 상태는 프로덕션 빌드 후 아래 
 npm run build
 npm run verify:pwa
 npm run verify:access-control
+npm run verify:access-salt
 ```
+
+`verify:access-salt`는 프로덕션 모드에서 `HONZANG_ACCESS_CODE`만 있고 `HONZANG_ACCESS_TOKEN_SALT`가 빠진 배포가 접근 쿠키를 발급하지 않는지 확인합니다.
 
 DB 연결 모드에서는 거래/증빙이 0건이어도 샘플 데이터로 대체하지 않습니다. CSV를 여러 번 가져오면 새 배치를 기존 화면 상태와 병합합니다.

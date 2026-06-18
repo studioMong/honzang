@@ -21,6 +21,7 @@ const steps = [
   ["verify:operations-readiness", "Operations readiness diagnostics"],
   ["verify:pwa", "PWA resources and install hooks"],
   ["verify:access-control", "Environment access-code protection"],
+  ["verify:access-salt", "Production access-token salt guard"],
   ["verify:access-audit", "Access security audit contract"],
   ["verify:backup-restore", "Backup restore dry-run"],
   ["smoke:prod", "Production API/UI smoke test"]
