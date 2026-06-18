@@ -28,9 +28,11 @@ assert.match(reviewsRoute, /findClosedPeriodForDate/, "reviews route should chec
 
 assert.match(dbWorkflow, /lockedImportCreatePayload/, "DB workflow should verify locked-period CSV import create rejection");
 assert.match(dbWorkflow, /lockedImportDeletePayload/, "DB workflow should verify locked-period import delete rejection");
+assert.match(dbWorkflow, /lockedTransactionPatchPayload/, "DB workflow should verify locked-period transaction patch rejection");
 assert.match(dbWorkflow, /lockedTransactionDeletePayload/, "DB workflow should verify locked-period transaction delete rejection");
 assert.match(dbWorkflow, /locked period import create should return PERIOD_CLOSED/, "DB workflow should assert locked import create code");
 assert.match(dbWorkflow, /locked period import delete should return PERIOD_CLOSED/, "DB workflow should assert locked import delete code");
+assert.match(dbWorkflow, /locked period transaction patch should return PERIOD_CLOSED/, "DB workflow should assert locked transaction patch code");
 assert.match(dbWorkflow, /locked period transaction delete should return PERIOD_CLOSED/, "DB workflow should assert locked transaction delete code");
 
 console.log("Period lock verification passed.");

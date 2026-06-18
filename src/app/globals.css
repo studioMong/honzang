@@ -163,6 +163,13 @@ a {
   justify-content: flex-end;
 }
 
+.inline-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
 .icon-button,
 .primary-button,
 .secondary-button,

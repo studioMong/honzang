@@ -100,6 +100,7 @@ try {
   await expectMalformedJson("/api/transactions", "DELETE");
   await expectInvalidManualTransactionDate();
   await expectInvalidManualTransactionJson();
+  await expectInvalidManualTransactionBlankDescription();
   await expectInvalidManualTransactionAmounts();
   await expectInvalidManualTransactionAmountScale();
   await expectInvalidManualTransactionTaxAmounts();
@@ -604,6 +605,27 @@ async function expectInvalidManualTransactionJson() {
   const body = JSON.parse(text);
   if (body.code !== "INVALID_JSON_PAYLOAD") {
     throw new Error(`/api/transactions returned unexpected invalid JSON payload: ${text}`);
+  }
+}
+
+async function expectInvalidManualTransactionBlankDescription() {
+  const response = await fetch(`${baseUrl}/api/transactions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      transactionDate: "2026-06-17",
+      description: "   ",
+      depositAmount: 1000,
+      withdrawalAmount: 0
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/transactions should reject blank manual transaction descriptions, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (!body.errors?.fieldErrors?.description?.length) {
+    throw new Error(`/api/transactions returned unexpected blank description validation payload: ${text}`);
   }
 }
 

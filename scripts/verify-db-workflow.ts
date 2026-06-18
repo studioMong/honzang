@@ -244,10 +244,48 @@ try {
   assert.equal(manualTaxTransaction.vatAmount, 100.05, "manual taxable transaction should preserve VAT amount");
   assert.equal(manualTaxTransaction.suggestedAccount?.code, "401", "manual taxable revenue should infer revenue account");
 
-  const manualTaxDraft = generateJournalDraft(manualTaxTransaction);
+  const manualTaxUpdatePayload = await requestJson<{ ok?: boolean; mode?: string; transaction?: AppTransaction }>("/api/transactions", {
+    method: "PATCH",
+    body: {
+      id: manualTaxTransaction.id,
+      transactionDate: "2026-06-17",
+      description: `${marker} 수기 매출 세액 검증 수정`,
+      counterparty: `${marker} 수정 고객`,
+      depositAmount: 2200.5,
+      withdrawalAmount: 0,
+      supplyAmount: 2000.4,
+      vatAmount: 200.1,
+      evidenceStatus: "NOT_REQUIRED",
+      memo: `${marker} 수기 수정 메모`
+    }
+  });
+  assert.equal(manualTaxUpdatePayload.ok, true, "manual taxable transaction update should succeed");
+  assert.equal(manualTaxUpdatePayload.mode, "database", "manual taxable transaction update should use database mode");
+  const updatedManualTaxTransaction = manualTaxUpdatePayload.transaction;
+  assert.ok(updatedManualTaxTransaction?.id, "manual taxable transaction update should return a transaction");
+  assert.equal(updatedManualTaxTransaction.id, manualTaxTransaction.id, "manual taxable transaction update should keep the transaction id");
+  assert.equal(updatedManualTaxTransaction.description, `${marker} 수기 매출 세액 검증 수정`, "manual taxable transaction update should preserve description");
+  assert.equal(updatedManualTaxTransaction.depositAmount, 2200.5, "manual taxable transaction update should preserve deposit amount");
+  assert.equal(updatedManualTaxTransaction.supplyAmount, 2000.4, "manual taxable transaction update should preserve supply amount");
+  assert.equal(updatedManualTaxTransaction.vatAmount, 200.1, "manual taxable transaction update should preserve VAT amount");
+  assert.equal(updatedManualTaxTransaction.memo, `${marker} 수기 수정 메모`, "manual taxable transaction update should preserve memo");
+  assert.equal(updatedManualTaxTransaction.suggestedAccount?.code, "401", "manual taxable transaction update should keep revenue inference");
+
+  const importedTransactionSourcePatchPayload = await requestJson<{ ok?: boolean; code?: string; message?: string }>("/api/transactions", {
+    method: "PATCH",
+    expectedStatus: 409,
+    body: {
+      id: importedTransactions[0]?.id,
+      description: `${marker} imported source patch should fail`
+    }
+  });
+  assert.equal(importedTransactionSourcePatchPayload.ok, false, "CSV imported transaction source patch should fail");
+  assert.equal(importedTransactionSourcePatchPayload.code, "NON_MANUAL_TRANSACTION_PATCH_BLOCKED", "CSV imported transaction source patch should return a source guard code");
+
+  const manualTaxDraft = generateJournalDraft(updatedManualTaxTransaction);
   assert.ok(isBalanced(manualTaxDraft), "manual taxable transaction journal draft should be balanced");
-  assert.equal(manualTaxDraft.lines.find((line) => line.accountCode === "401")?.creditAmount, 1000.2, "manual taxable draft should credit supply amount as revenue");
-  assert.equal(manualTaxDraft.lines.find((line) => line.accountCode === "255")?.creditAmount, 100.05, "manual taxable draft should credit VAT payable");
+  assert.equal(manualTaxDraft.lines.find((line) => line.accountCode === "401")?.creditAmount, 2000.4, "manual taxable draft should credit updated supply amount as revenue");
+  assert.equal(manualTaxDraft.lines.find((line) => line.accountCode === "255")?.creditAmount, 200.1, "manual taxable draft should credit updated VAT payable");
   const manualTaxJournalPayload = await requestJson<{ ok?: boolean; mode?: string; journalEntry?: AppJournalEntry }>("/api/journals", {
     method: "POST",
     body: {
@@ -279,18 +317,18 @@ try {
     deletedJournalEntryCount?: number;
   }>("/api/transactions", {
     method: "DELETE",
-    body: { id: manualTaxTransaction.id }
+    body: { id: updatedManualTaxTransaction.id }
   });
   assert.equal(manualTaxDeletePayload.ok, true, "manual taxable transaction delete should succeed");
   assert.equal(manualTaxDeletePayload.mode, "database", "manual taxable transaction delete should use database mode");
-  assert.equal(manualTaxDeletePayload.deletedTransactionId, manualTaxTransaction.id, "manual taxable transaction delete should return the deleted id");
+  assert.equal(manualTaxDeletePayload.deletedTransactionId, updatedManualTaxTransaction.id, "manual taxable transaction delete should return the deleted id");
   assert.equal(manualTaxDeletePayload.deletedJournalEntryCount, 1, "manual taxable transaction delete should remove draft journals");
-  cleanup.transactionIds = cleanup.transactionIds.filter((transactionId) => transactionId !== manualTaxTransaction.id);
+  cleanup.transactionIds = cleanup.transactionIds.filter((transactionId) => transactionId !== updatedManualTaxTransaction.id);
   cleanup.journalEntryIds = cleanup.journalEntryIds.filter((journalEntryId) => journalEntryId !== manualTaxJournalId);
 
   const transactionsAfterManualDelete = await requestJson<{ transactions?: AppTransaction[] }>("/api/transactions");
   assert.equal(
-    transactionsAfterManualDelete.transactions?.some((transaction) => transaction.id === manualTaxTransaction.id),
+    transactionsAfterManualDelete.transactions?.some((transaction) => transaction.id === updatedManualTaxTransaction.id),
     false,
     "manual taxable transaction should be absent after delete"
   );
@@ -623,6 +661,17 @@ try {
   assert.equal(lockedTransactionPayload.ok, false, "locked period transaction create should fail");
   assert.equal(lockedTransactionPayload.code, "PERIOD_CLOSED", "locked period transaction create should return PERIOD_CLOSED");
 
+  const lockedTransactionPatchPayload = await requestJson<{ ok?: boolean; code?: string; message?: string }>("/api/transactions", {
+    method: "PATCH",
+    expectedStatus: 409,
+    body: {
+      id: lockedManualTransactionId,
+      description: `${marker} locked manual patch should fail`
+    }
+  });
+  assert.equal(lockedTransactionPatchPayload.ok, false, "locked period transaction patch should fail");
+  assert.equal(lockedTransactionPatchPayload.code, "PERIOD_CLOSED", "locked period transaction patch should return PERIOD_CLOSED");
+
   const lockedTransactionDeletePayload = await requestJson<{ ok?: boolean; code?: string; message?: string }>("/api/transactions", {
     method: "DELETE",
     expectedStatus: 409,
@@ -747,6 +796,7 @@ try {
   const auditActions = new Set(auditEvents.auditEvents?.map((event) => event.action));
   assert.ok(auditActions.has("IMPORT_CREATE"), "audit log should include import creation");
   assert.ok(auditActions.has("TRANSACTION_CREATE"), "audit log should include manual transaction creation");
+  assert.ok(auditActions.has("TRANSACTION_UPDATE"), "audit log should include manual transaction update");
   assert.ok(auditActions.has("TRANSACTION_DELETE"), "audit log should include manual transaction deletion");
   assert.ok(auditActions.has("EVIDENCE_CREATE"), "audit log should include evidence creation");
   assert.ok(auditActions.has("EVIDENCE_DELETE"), "audit log should include evidence deletion");

@@ -16,6 +16,7 @@ import {
   ListChecks,
   Loader2,
   LogOut,
+  Pencil,
   Printer,
   ReceiptText,
   RefreshCcw,
@@ -465,7 +466,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
     window.location.assign("/access");
   }
 
-  async function updateTransaction(id: string, patch: Partial<AppTransaction> & { confirmedAccountId?: string }): Promise<TransactionUpdateResult> {
+  async function updateTransaction(id: string, patch: Partial<AppTransaction> & { confirmedAccountId?: string | null }): Promise<TransactionUpdateResult> {
     const previousTransactions = transactions;
     const hasConfirmedAccountId = Object.prototype.hasOwnProperty.call(patch, "confirmedAccountId");
     const confirmedAccount = hasConfirmedAccountId && patch.confirmedAccountId ? accounts.find((account) => account.id === patch.confirmedAccountId) ?? null : null;
@@ -1474,7 +1475,7 @@ function TransactionsPanel({
   accounts: AppAccount[];
   onCreated: (transaction: AppTransaction) => void;
   onDeleted: (transactionId: string) => void;
-  onUpdate: (id: string, patch: Partial<AppTransaction> & { confirmedAccountId?: string }) => Promise<TransactionUpdateResult>;
+  onUpdate: (id: string, patch: Partial<AppTransaction> & { confirmedAccountId?: string | null }) => Promise<TransactionUpdateResult>;
 }) {
   const [form, setForm] = useState({
     transactionDate: new Date().toISOString().slice(0, 10),
@@ -1489,6 +1490,7 @@ function TransactionsPanel({
     memo: ""
   });
   const [saving, setSaving] = useState(false);
+  const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
   const [deletingTransactionId, setDeletingTransactionId] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: "green" | "red"; text: string } | null>(null);
 
@@ -1496,7 +1498,7 @@ function TransactionsPanel({
     setForm((current) => ({ ...current, [key]: value }));
   }
 
-  async function updateExistingTransaction(id: string, patch: Partial<AppTransaction> & { confirmedAccountId?: string }) {
+  async function updateExistingTransaction(id: string, patch: Partial<AppTransaction> & { confirmedAccountId?: string | null }) {
     setMessage(null);
     const result = await onUpdate(id, patch);
     if (!result.ok) {
@@ -1504,7 +1506,39 @@ function TransactionsPanel({
     }
   }
 
-  async function createManualTransaction() {
+  function resetManualForm() {
+    setEditingTransactionId(null);
+    setForm((current) => ({
+      ...current,
+      description: "",
+      counterparty: "",
+      depositAmount: "",
+      withdrawalAmount: "",
+      supplyAmount: "",
+      vatAmount: "",
+      memo: ""
+    }));
+  }
+
+  function editManualTransaction(transaction: AppTransaction) {
+    if (transaction.sourceType !== "MANUAL") return;
+    setEditingTransactionId(transaction.id);
+    setMessage(null);
+    setForm({
+      transactionDate: transaction.transactionDate,
+      description: transaction.description,
+      counterparty: transaction.counterparty ?? "",
+      depositAmount: transaction.depositAmount ? String(transaction.depositAmount) : "",
+      withdrawalAmount: transaction.withdrawalAmount ? String(transaction.withdrawalAmount) : "",
+      supplyAmount: transaction.supplyAmount === null || transaction.supplyAmount === undefined ? "" : String(transaction.supplyAmount),
+      vatAmount: transaction.vatAmount === null || transaction.vatAmount === undefined ? "" : String(transaction.vatAmount),
+      confirmedAccountId: transaction.confirmedAccount?.id ?? "",
+      evidenceStatus: transaction.evidenceStatus,
+      memo: transaction.memo ?? ""
+    });
+  }
+
+  async function saveManualTransaction() {
     if (!form.description.trim()) return;
     const depositResult = parseManualMoneyInput(form.depositAmount, "입금");
     const withdrawalResult = parseManualMoneyInput(form.withdrawalAmount, "출금");
@@ -1532,44 +1566,46 @@ function TransactionsPanel({
       setMessage({ tone: "red", text: taxIssue });
       return;
     }
+    const requestBody = {
+      transactionDate: form.transactionDate,
+      description: form.description.trim(),
+      counterparty: form.counterparty.trim() || null,
+      depositAmount,
+      withdrawalAmount,
+      supplyAmount,
+      vatAmount,
+      confirmedAccountId: form.confirmedAccountId || null,
+      evidenceStatus: form.evidenceStatus,
+      memo: form.memo.trim() || null
+    };
     setSaving(true);
     setMessage(null);
     try {
+      if (editingTransactionId) {
+        const result = await onUpdate(editingTransactionId, requestBody);
+        if (!result.ok) {
+          setMessage({ tone: "red", text: result.message ?? "수기 거래 수정에 실패했습니다." });
+          return;
+        }
+        resetManualForm();
+        setMessage({ tone: "green", text: "수기 거래를 수정했습니다." });
+        return;
+      }
       const response = await fetch("/api/transactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          transactionDate: form.transactionDate,
-          description: form.description.trim(),
-          counterparty: form.counterparty.trim() || null,
-          depositAmount,
-          withdrawalAmount,
-          supplyAmount,
-          vatAmount,
-          confirmedAccountId: form.confirmedAccountId || null,
-          evidenceStatus: form.evidenceStatus,
-          memo: form.memo.trim() || null
-        })
+        body: JSON.stringify(requestBody)
       });
       const payload = await response.json();
       if (payload.transaction) {
         onCreated(payload.transaction);
         setMessage({ tone: "green", text: "수기 거래를 추가했습니다." });
-        setForm((current) => ({
-          ...current,
-          description: "",
-          counterparty: "",
-          depositAmount: "",
-          withdrawalAmount: "",
-          supplyAmount: "",
-          vatAmount: "",
-          memo: ""
-        }));
+        resetManualForm();
       } else {
         setMessage({ tone: "red", text: payload.message ?? "수기 거래 추가에 실패했습니다." });
       }
     } catch {
-      setMessage({ tone: "red", text: "수기 거래 추가 중 오류가 발생했습니다." });
+      setMessage({ tone: "red", text: editingTransactionId ? "수기 거래 수정 중 오류가 발생했습니다." : "수기 거래 추가 중 오류가 발생했습니다." });
     } finally {
       setSaving(false);
     }
@@ -1606,12 +1642,19 @@ function TransactionsPanel({
         <div className="panel-header">
           <div>
             <h2 className="panel-title">수기 거래</h2>
-            <p className="panel-subtitle">CSV에 없는 대표자 입출금, 현금 거래, 조정분 입력</p>
+            <p className="panel-subtitle">{editingTransactionId ? "선택한 수기 거래의 날짜, 금액, 세액, 메모 수정" : "CSV에 없는 대표자 입출금, 현금 거래, 조정분 입력"}</p>
           </div>
-          <button className="primary-button" onClick={() => void createManualTransaction()} disabled={saving || !form.description.trim()}>
-            {saving ? <Loader2 size={17} className="spin" /> : <CheckCircle2 size={17} />}
-            추가
-          </button>
+          <div className="inline-actions">
+            {editingTransactionId && (
+              <button className="secondary-button" onClick={resetManualForm} disabled={saving}>
+                취소
+              </button>
+            )}
+            <button className="primary-button" onClick={() => void saveManualTransaction()} disabled={saving || !form.description.trim()}>
+              {saving ? <Loader2 size={17} className="spin" /> : <CheckCircle2 size={17} />}
+              {editingTransactionId ? "수정 저장" : "추가"}
+            </button>
+          </div>
         </div>
         <div className="panel-body form-grid">
           {message && <div className={`import-message status ${message.tone} field-wide`}>{message.text}</div>}
@@ -1734,10 +1777,16 @@ function TransactionsPanel({
                   <td className="amount">{transaction.withdrawalAmount ? formatKRW(transaction.withdrawalAmount) : "-"}</td>
                   <td>
                     {transaction.sourceType === "MANUAL" ? (
-                      <button className="ghost-button" onClick={() => void deleteManualTransaction(transaction)} disabled={deletingTransactionId === transaction.id} title="수기 거래 삭제">
-                        <Trash2 size={15} />
-                        {deletingTransactionId === transaction.id ? "삭제 중" : "삭제"}
-                      </button>
+                      <div className="inline-actions">
+                        <button className="ghost-button" onClick={() => editManualTransaction(transaction)} disabled={deletingTransactionId === transaction.id || saving} title="수기 거래 수정">
+                          <Pencil size={15} />
+                          수정
+                        </button>
+                        <button className="ghost-button" onClick={() => void deleteManualTransaction(transaction)} disabled={deletingTransactionId === transaction.id} title="수기 거래 삭제">
+                          <Trash2 size={15} />
+                          {deletingTransactionId === transaction.id ? "삭제 중" : "삭제"}
+                        </button>
+                      </div>
                     ) : (
                       <span className="muted">-</span>
                     )}

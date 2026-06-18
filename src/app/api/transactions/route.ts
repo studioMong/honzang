@@ -14,22 +14,29 @@ import { applyVendorDefaults, inferAccount, summarizeTransactions } from "@/lib/
 
 const manualTransactionSchema = z.object({
   transactionDate: z.string().min(1),
-  description: z.string().min(1).max(240),
-  counterparty: z.string().max(120).optional().nullable(),
+  description: z.string().trim().min(1).max(240),
+  counterparty: z.string().trim().max(120).optional().nullable(),
   depositAmount: z.coerce.number().nonnegative().default(0),
   withdrawalAmount: z.coerce.number().nonnegative().default(0),
   supplyAmount: z.coerce.number().nonnegative().optional().nullable(),
   vatAmount: z.coerce.number().nonnegative().optional().nullable(),
   confirmedAccountId: z.string().optional().nullable(),
   evidenceStatus: z.enum(["UNCHECKED", "MISSING", "ATTACHED", "MATCHED", "NOT_REQUIRED"]).default("UNCHECKED"),
-  memo: z.string().max(500).optional().nullable()
+  memo: z.string().trim().max(500).optional().nullable()
 });
 
 const patchTransactionSchema = z.object({
   id: z.string().min(1),
+  transactionDate: z.string().min(1).optional(),
+  description: z.string().trim().min(1).max(240).optional(),
+  counterparty: z.string().trim().max(120).optional().nullable(),
+  depositAmount: z.coerce.number().nonnegative().optional(),
+  withdrawalAmount: z.coerce.number().nonnegative().optional(),
+  supplyAmount: z.coerce.number().nonnegative().optional().nullable(),
+  vatAmount: z.coerce.number().nonnegative().optional().nullable(),
   confirmedAccountId: z.string().optional().nullable(),
   evidenceStatus: z.enum(["UNCHECKED", "MISSING", "ATTACHED", "MATCHED", "NOT_REQUIRED"]).optional(),
-  memo: z.string().max(500).optional().nullable()
+  memo: z.string().trim().max(500).optional().nullable()
 });
 
 const deleteTransactionSchema = z.object({
@@ -205,7 +212,16 @@ export async function PATCH(request: Request) {
   const hasConfirmedAccountId = Object.prototype.hasOwnProperty.call(payload, "confirmedAccountId");
   const hasEvidenceStatus = Object.prototype.hasOwnProperty.call(payload, "evidenceStatus");
   const hasMemo = Object.prototype.hasOwnProperty.call(payload, "memo");
-  if (!hasConfirmedAccountId && !hasEvidenceStatus && !hasMemo) {
+  const hasTransactionDate = Object.prototype.hasOwnProperty.call(payload, "transactionDate");
+  const hasDescription = Object.prototype.hasOwnProperty.call(payload, "description");
+  const hasCounterparty = Object.prototype.hasOwnProperty.call(payload, "counterparty");
+  const hasDepositAmount = Object.prototype.hasOwnProperty.call(payload, "depositAmount");
+  const hasWithdrawalAmount = Object.prototype.hasOwnProperty.call(payload, "withdrawalAmount");
+  const hasSupplyAmount = Object.prototype.hasOwnProperty.call(payload, "supplyAmount");
+  const hasVatAmount = Object.prototype.hasOwnProperty.call(payload, "vatAmount");
+  const hasManualSourcePatch =
+    hasTransactionDate || hasDescription || hasCounterparty || hasDepositAmount || hasWithdrawalAmount || hasSupplyAmount || hasVatAmount;
+  if (!hasConfirmedAccountId && !hasEvidenceStatus && !hasMemo && !hasManualSourcePatch) {
     return NextResponse.json({ ok: false, message: "수정할 거래 항목이 없습니다." }, { status: 400 });
   }
 
@@ -227,9 +243,52 @@ export async function PATCH(request: Request) {
   }
   const closedPeriod = await findClosedPeriodForDate(db, company.id, existing.transactionDate);
   if (closedPeriod) return closedPeriodResponse(closedPeriod.period);
+  const nextTransactionDateText = hasTransactionDate ? parseStrictDate(payload.transactionDate) : existing.transactionDate.toISOString().slice(0, 10);
+  if (!nextTransactionDateText) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_TRANSACTION_DATE",
+        message: "거래일은 유효한 날짜여야 합니다."
+      },
+      { status: 400 }
+    );
+  }
+  if (hasTransactionDate) {
+    const nextClosedPeriod = await findClosedPeriodForDate(db, company.id, nextTransactionDateText);
+    if (nextClosedPeriod) return closedPeriodResponse(nextClosedPeriod.period);
+  }
+
+  if (hasManualSourcePatch && existing.sourceType !== "MANUAL") {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "NON_MANUAL_TRANSACTION_PATCH_BLOCKED",
+        message: "CSV로 가져온 거래의 원천 날짜, 내용, 금액은 직접 수정할 수 없습니다. 업로드 배치를 삭제한 뒤 다시 가져오세요."
+      },
+      { status: 409 }
+    );
+  }
+
+  const nextDepositAmount = hasDepositAmount ? payload.depositAmount ?? 0 : Number(existing.depositAmount);
+  const nextWithdrawalAmount = hasWithdrawalAmount ? payload.withdrawalAmount ?? 0 : Number(existing.withdrawalAmount);
+  const nextSupplyAmount = hasSupplyAmount ? payload.supplyAmount ?? null : existing.supplyAmount === null ? null : Number(existing.supplyAmount);
+  const nextVatAmount = hasVatAmount ? payload.vatAmount ?? null : existing.vatAmount === null ? null : Number(existing.vatAmount);
+  if (hasManualSourcePatch) {
+    const amountIssue = validateTransactionAmounts({
+      depositAmount: nextDepositAmount,
+      withdrawalAmount: nextWithdrawalAmount,
+      supplyAmount: nextSupplyAmount,
+      vatAmount: nextVatAmount
+    });
+    if (amountIssue) {
+      return NextResponse.json({ ok: false, code: "INVALID_TRANSACTION_AMOUNTS", message: amountIssue }, { status: 400 });
+    }
+  }
 
   const nextConfirmedAccountId = hasConfirmedAccountId ? payload.confirmedAccountId || null : existing.confirmedAccountId;
-  if (hasConfirmedAccountId && nextConfirmedAccountId !== existing.confirmedAccountId) {
+  const approvedJournalSensitivePatch = hasManualSourcePatch || (hasConfirmedAccountId && nextConfirmedAccountId !== existing.confirmedAccountId);
+  if (approvedJournalSensitivePatch) {
     const approvedJournal = await db.journalEntry.findFirst({
       where: {
         companyId: company.id,
@@ -242,6 +301,17 @@ export async function PATCH(request: Request) {
     });
 
     if (approvedJournal) {
+      if (hasManualSourcePatch) {
+        return NextResponse.json(
+          {
+            ok: false,
+            code: "APPROVED_JOURNAL_TRANSACTION_CHANGE_BLOCKED",
+            message: "승인된 분개가 있는 수기 거래는 날짜, 내용, 금액을 변경할 수 없습니다. 먼저 승인 취소 후 다시 수정하세요.",
+            approvedJournalId: approvedJournal.id
+          },
+          { status: 409 }
+        );
+      }
       return NextResponse.json(
         {
           ok: false,
@@ -267,8 +337,49 @@ export async function PATCH(request: Request) {
   if (nextConfirmedAccountId && !confirmedAccount) {
     return NextResponse.json({ ok: false, message: "계정과목을 찾을 수 없습니다." }, { status: 404 });
   }
+  const nextDescription = hasDescription ? payload.description?.trim() ?? "" : existing.description;
+  const nextCounterparty = hasCounterparty ? payload.counterparty?.trim() || null : existing.counterparty;
+  const inferred = hasManualSourcePatch ? inferAccount(nextDescription, nextCounterparty) : null;
+  const vendorApplied = hasManualSourcePatch
+    ? applyVendorDefaults(
+        {
+          counterparty: nextCounterparty,
+          suggestedAccount: inferred?.account,
+          reviewReasons: inferred?.reason ? [inferred.reason] : []
+        },
+        (await db.vendor.findMany({
+          where: { companyId: company.id },
+          include: { defaultAccount: true }
+        })).map(serializeVendor)
+      )
+    : null;
+  const suggestedAccount =
+    hasManualSourcePatch && vendorApplied?.suggestedAccount
+      ? await db.account.findFirst({
+          where: {
+            companyId: company.id,
+            code: vendorApplied.suggestedAccount.code,
+            isActive: true
+          }
+        })
+      : null;
 
   const updateData: Prisma.TransactionUncheckedUpdateInput = {};
+  if (hasTransactionDate) updateData.transactionDate = new Date(nextTransactionDateText);
+  if (hasDescription) updateData.description = nextDescription;
+  if (hasCounterparty) updateData.counterparty = nextCounterparty;
+  if (hasDepositAmount) updateData.depositAmount = nextDepositAmount;
+  if (hasWithdrawalAmount) updateData.withdrawalAmount = nextWithdrawalAmount;
+  if (hasDepositAmount || hasWithdrawalAmount) updateData.direction = nextDepositAmount > 0 ? "DEPOSIT" : "WITHDRAWAL";
+  if (hasSupplyAmount) updateData.supplyAmount = nextSupplyAmount;
+  if (hasVatAmount) updateData.vatAmount = nextVatAmount;
+  if (hasManualSourcePatch) {
+    updateData.suggestedAccountId = suggestedAccount?.id ?? null;
+    updateData.rawPayload = {
+      manual: true,
+      reviewReasons: vendorApplied?.reviewReasons ?? []
+    };
+  }
   if (hasConfirmedAccountId) updateData.confirmedAccountId = nextConfirmedAccountId;
   if (hasEvidenceStatus && payload.evidenceStatus) updateData.evidenceStatus = payload.evidenceStatus;
   if (hasMemo) updateData.memo = payload.memo ?? null;
@@ -293,6 +404,7 @@ export async function PATCH(request: Request) {
       metadata: transactionUpdateMetadata({
         hasConfirmedAccountId,
         confirmedAccountId: payload.confirmedAccountId,
+        sourceChanged: hasManualSourcePatch,
         evidenceStatus: payload.evidenceStatus,
         memoChanged: hasMemo
       })
@@ -415,10 +527,12 @@ export async function DELETE(request: Request) {
 function transactionUpdateMetadata(input: {
   hasConfirmedAccountId: boolean;
   confirmedAccountId?: string | null;
+  sourceChanged: boolean;
   evidenceStatus?: string;
   memoChanged: boolean;
 }): Prisma.InputJsonObject {
   return {
+    sourceChanged: input.sourceChanged,
     evidenceStatus: input.evidenceStatus ?? null,
     memoChanged: input.memoChanged,
     ...(input.hasConfirmedAccountId ? { confirmedAccountId: input.confirmedAccountId ?? null } : {})
