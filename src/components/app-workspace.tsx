@@ -108,6 +108,8 @@ type FilingSubmissionGuideRow = {
   톤: StatusTone;
   "입력 기준": string;
   "마감 전 확인": string;
+  근거: string;
+  "근거 링크": string;
 };
 
 type FilingInputSummaryRow = {
@@ -222,6 +224,14 @@ const sampleCsvLinks: Record<SourceType, { label: string; href: string }> = {
   PG: { label: "PG 정산 샘플", href: "/samples/pg-settlements.csv" },
   MANUAL: { label: "수기 샘플", href: "/samples/bank-transactions.csv" }
 };
+
+const TAX_SOURCE_LINKS = {
+  VAT: "https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7693&mi=2401",
+  WITHHOLDING: "https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7702&mi=2414",
+  PAYMENT_STATEMENTS: "https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=8631&mi=12309",
+  CORPORATE_TAX_DUE: "https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7745&mi=2371",
+  CORPORATE_TAX_PROCEDURE: "https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7975&mi=6549"
+} as const;
 
 const csvPreparationGuides: Record<SourceType, { required: string[]; optional: string[]; masking: string; source: string }> = {
   BANK: {
@@ -3049,6 +3059,7 @@ function ReportsPanel({
                 <th>예상 기한</th>
                 <th>상태</th>
                 <th>다음 작업</th>
+                <th>근거</th>
               </tr>
             </thead>
             <tbody>
@@ -3061,6 +3072,9 @@ function ReportsPanel({
                     <span className={`status ${row.톤}`}>{row.상태}</span>
                   </td>
                   <td>{row["다음 작업"]}</td>
+                  <td>
+                    <SourceReference label={row.근거} href={row["근거 링크"]} />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -3093,6 +3107,7 @@ function ReportsPanel({
                 <th>상태</th>
                 <th>입력 기준</th>
                 <th>마감 전 확인</th>
+                <th>근거</th>
               </tr>
             </thead>
             <tbody>
@@ -3107,6 +3122,9 @@ function ReportsPanel({
                   </td>
                   <td>{row["입력 기준"]}</td>
                   <td>{row["마감 전 확인"]}</td>
+                  <td>
+                    <SourceReference label={row.근거} href={row["근거 링크"]} />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -3656,12 +3674,13 @@ function ReportsPanel({
                   <th>예상 기한</th>
                   <th>상태</th>
                   <th>다음 작업</th>
+                  <th>근거</th>
                 </tr>
               </thead>
               <tbody>
                 {selectedPayload.filingScheduleRows.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="empty-cell">저장된 신고 일정이 없습니다.</td>
+                    <td colSpan={6} className="empty-cell">저장된 신고 일정이 없습니다.</td>
                   </tr>
                 ) : (
                   selectedPayload.filingScheduleRows.map((row) => (
@@ -3673,6 +3692,9 @@ function ReportsPanel({
                         <span className={`status ${row.톤}`}>{row.상태}</span>
                       </td>
                       <td>{row["다음 작업"]}</td>
+                      <td>
+                        <SourceReference label={row.근거} href={row["근거 링크"]} />
+                      </td>
                     </tr>
                   ))
                 )}
@@ -3691,12 +3713,13 @@ function ReportsPanel({
                   <th>상태</th>
                   <th>입력 기준</th>
                   <th>마감 전 확인</th>
+                  <th>근거</th>
                 </tr>
               </thead>
               <tbody>
                 {selectedPayload.submissionGuideRows.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="empty-cell">저장된 홈택스 제출 전 입력 가이드가 없습니다.</td>
+                    <td colSpan={8} className="empty-cell">저장된 홈택스 제출 전 입력 가이드가 없습니다.</td>
                   </tr>
                 ) : (
                   selectedPayload.submissionGuideRows.map((row) => (
@@ -3710,6 +3733,9 @@ function ReportsPanel({
                       </td>
                       <td>{row["입력 기준"]}</td>
                       <td>{row["마감 전 확인"]}</td>
+                      <td>
+                        <SourceReference label={row.근거} href={row["근거 링크"]} />
+                      </td>
                     </tr>
                   ))
                 )}
@@ -6548,6 +6574,17 @@ function downloadDataUrl(fileName: string, dataUrl: string) {
   anchor.remove();
 }
 
+function SourceReference({ label, href }: { label?: string | number; href?: string | number }) {
+  const text = typeof label === "string" && label.trim().length > 0 ? label : "-";
+  const url = typeof href === "string" ? href.trim() : "";
+  if (!url) return <span>{text}</span>;
+  return (
+    <a className="source-link" href={url} target="_blank" rel="noreferrer">
+      {text}
+    </a>
+  );
+}
+
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -7560,7 +7597,9 @@ function buildFilingSubmissionGuideRows({
       상태: setupReadiness?.상태 ?? "확인 필요",
       톤: setupReadiness?.톤 ?? "amber",
       "입력 기준": `${company.name} · ${formatBusinessRegistrationNumber(company.businessRegistrationNumber)} · ${company.industry || "업종 미입력"} · ${vatTypeLabel(company.vatType)}`,
-      "마감 전 확인": setupReadiness?.["다음 작업"] ?? "사업자등록번호, 업종, 과세유형, 결산월 확인"
+      "마감 전 확인": setupReadiness?.["다음 작업"] ?? "사업자등록번호, 업종, 과세유형, 결산월 확인",
+      근거: "혼자장부 설정 기준",
+      "근거 링크": ""
     },
     {
       순서: 2,
@@ -7570,7 +7609,9 @@ function buildFilingSubmissionGuideRows({
       상태: sourceReadiness?.상태 ?? "확인 필요",
       톤: sourceReadiness?.톤 ?? "amber",
       "입력 기준": `확인 필요 자료 ${formatNumber(dataMissingCount)}개`,
-      "마감 전 확인": sourceReadiness?.["다음 작업"] ?? "신고 대상 기간 자료 업로드"
+      "마감 전 확인": sourceReadiness?.["다음 작업"] ?? "신고 대상 기간 자료 업로드",
+      근거: "혼자장부 자료수집 기준",
+      "근거 링크": ""
     },
     {
       순서: 3,
@@ -7580,7 +7621,9 @@ function buildFilingSubmissionGuideRows({
       상태: vatTone === "red" ? "차단" : vatTone === "amber" ? "대조 필요" : "입력 가능",
       톤: vatTone,
       "입력 기준": `매출세액 ${formatKRW(summary.vatOutput)} · 매입세액 ${formatKRW(summary.vatInput)} · 예상 ${formatKRW(summary.vatPayable)}`,
-      "마감 전 확인": vatSchedule ? `${vatSchedule["예상 기한"]} 전 ${vatSchedule["다음 작업"]}` : "매출/매입세액과 공제 보류 후보 대조"
+      "마감 전 확인": vatSchedule ? `${vatSchedule["예상 기한"]} 전 ${vatSchedule["다음 작업"]}` : "매출/매입세액과 공제 보류 후보 대조",
+      근거: "국세청 부가세",
+      "근거 링크": TAX_SOURCE_LINKS.VAT
     },
     {
       순서: 4,
@@ -7590,7 +7633,9 @@ function buildFilingSubmissionGuideRows({
       상태: withholdingRows.length > 0 ? "후보 확인" : payrollEnabled ? "대상 없음" : "설정 선택",
       톤: withholdingTone,
       "입력 기준": `원천세 후보 ${formatNumber(withholdingRows.length)}건`,
-      "마감 전 확인": withholdingSchedule ? `${withholdingSchedule["예상 기한"]} 전 ${withholdingSchedule["다음 작업"]}` : "급여, 외주비, 기타소득 지급 여부 확인"
+      "마감 전 확인": withholdingSchedule ? `${withholdingSchedule["예상 기한"]} 전 ${withholdingSchedule["다음 작업"]}` : "급여, 외주비, 기타소득 지급 여부 확인",
+      근거: "국세청 원천세",
+      "근거 링크": TAX_SOURCE_LINKS.WITHHOLDING
     },
     {
       순서: 5,
@@ -7600,7 +7645,9 @@ function buildFilingSubmissionGuideRows({
       상태: corporateTone === "red" || bankBalanceStatus.tone === "red" ? "차단" : corporateTone === "green" ? "준비 가능" : "원장 대기",
       톤: corporateTone === "red" || bankBalanceStatus.tone === "red" ? "red" : corporateTone,
       "입력 기준": `원장 ${formatNumber(ledgerRows.length)}행 · 재무제표 ${formatNumber(financialStatementRows.length)}개 계정 · 현금 순증감 ${formatKRW(cashFlowTotals.net)} · 잔액 차이 ${formatReportAmount(bankBalanceStatus.difference)}`,
-      "마감 전 확인": bankBalanceStatus.tone === "red" ? bankBalanceStatus.nextAction : corporateSchedule ? `${corporateSchedule["예상 기한"]} 전 ${corporateSchedule["다음 작업"]}` : "승인 분개 기준 재무제표와 원장 확인"
+      "마감 전 확인": bankBalanceStatus.tone === "red" ? bankBalanceStatus.nextAction : corporateSchedule ? `${corporateSchedule["예상 기한"]} 전 ${corporateSchedule["다음 작업"]}` : "승인 분개 기준 재무제표와 원장 확인",
+      근거: "국세청 법인세 신고절차",
+      "근거 링크": TAX_SOURCE_LINKS.CORPORATE_TAX_PROCEDURE
     },
     {
       순서: 6,
@@ -7610,7 +7657,9 @@ function buildFilingSubmissionGuideRows({
       상태: evidenceReadiness?.톤 === "red" ? "차단" : "보관 가능",
       톤: evidenceReadiness?.톤 === "red" ? "red" : "green",
       "입력 기준": `증빙 누락 ${formatKRW(summary.missingEvidenceAmount)} · 검토 ${formatNumber(summary.reviewCount)}건`,
-      "마감 전 확인": evidenceReadiness?.["다음 작업"] ?? "세금계산서, 카드전표, 현금영수증 원본 보관"
+      "마감 전 확인": evidenceReadiness?.["다음 작업"] ?? "세금계산서, 카드전표, 현금영수증 원본 보관",
+      근거: "혼자장부 증빙 기준",
+      "근거 링크": ""
     },
     {
       순서: 7,
@@ -7620,7 +7669,9 @@ function buildFilingSubmissionGuideRows({
       상태: !canClosePeriod ? "기간 선택" : isPeriodClosed ? "마감됨" : "마감 필요",
       톤: closeTone,
       "입력 기준": `분류 ${classificationReadiness?.상태 ?? "-"} · 분개 ${journalReadiness?.상태 ?? "-"}`,
-      "마감 전 확인": isPeriodClosed ? "잠금 후 변경 차단됨" : "스냅샷 저장 후 마감 잠금"
+      "마감 전 확인": isPeriodClosed ? "잠금 후 변경 차단됨" : "스냅샷 저장 후 마감 잠금",
+      근거: "혼자장부 마감 기준",
+      "근거 링크": ""
     }
   ];
 }
@@ -7855,7 +7906,9 @@ function buildFilingScheduleRows(
       "예상 기한": formatIsoDate(evidenceDueDate),
       상태: missingEvidence ? "누락" : scheduleStatus(evidenceDueDate, "정리 가능"),
       톤: missingEvidence ? "red" : toneForDueDate(evidenceDueDate),
-      "다음 작업": missingEvidence ? "증빙함에서 카드전표, 세금계산서, 현금영수증 매칭" : "월 마감 전 미확인 비용 증빙 점검"
+      "다음 작업": missingEvidence ? "증빙함에서 카드전표, 세금계산서, 현금영수증 매칭" : "월 마감 전 미확인 비용 증빙 점검",
+      근거: "혼자장부 마감 기준",
+      "근거 링크": ""
     },
     {
       신고: vatFiling.name,
@@ -7863,7 +7916,9 @@ function buildFilingScheduleRows(
       "예상 기한": formatIsoDate(vatFiling.dueDate),
       상태: missingEvidence ? "증빙 확인" : vatNeedsTypeReview ? "유형 검토" : scheduleStatus(vatFiling.dueDate, "준비 가능"),
       톤: missingEvidence ? "red" : vatNeedsTypeReview ? "amber" : toneForDueDate(vatFiling.dueDate),
-      "다음 작업": vatNeedsTypeReview ? "면세/겸영 매출과 공제 가능 매입세액 구분" : `${vatFiling.phase} 신고용 매출세액, 매입세액, 불공제 후보 확인`
+      "다음 작업": vatNeedsTypeReview ? "면세/겸영 매출과 공제 가능 매입세액 구분" : `${vatFiling.phase} 신고용 매출세액, 매입세액, 불공제 후보 확인`,
+      근거: "국세청 부가세",
+      "근거 링크": TAX_SOURCE_LINKS.VAT
     },
     {
       신고: "원천세",
@@ -7871,7 +7926,9 @@ function buildFilingScheduleRows(
       "예상 기한": formatIsoDate(withholdingDueDate),
       상태: withholdingRows.length > 0 ? "후보 확인" : hasWithholdingSetting ? scheduleStatus(withholdingDueDate, "지급 확인") : "미사용",
       톤: withholdingRows.length > 0 ? "amber" : hasWithholdingSetting ? toneForDueDate(withholdingDueDate) : "green",
-      "다음 작업": withholdingRows.length > 0 ? "급여대장, 외주 세금계산서, 3.3% 원천세 여부 확인" : "급여/외주 지급 발생 시 지급월별 신고 대상 확인"
+      "다음 작업": withholdingRows.length > 0 ? "급여대장, 외주 세금계산서, 3.3% 원천세 여부 확인" : "급여/외주 지급 발생 시 지급월별 신고 대상 확인",
+      근거: "국세청 원천세",
+      "근거 링크": TAX_SOURCE_LINKS.WITHHOLDING
     },
     {
       신고: "간이지급명세서(사업/기타)",
@@ -7879,7 +7936,9 @@ function buildFilingScheduleRows(
       "예상 기한": formatIsoDate(paymentStatementSchedule.monthlyBusinessOtherDueDate),
       상태: hasContractorCandidate ? "후보 확인" : company.contractorPaymentEnabled ? scheduleStatus(paymentStatementSchedule.monthlyBusinessOtherDueDate, "지급 확인") : "대상 확인",
       톤: hasContractorCandidate ? "amber" : company.contractorPaymentEnabled ? toneForDueDate(paymentStatementSchedule.monthlyBusinessOtherDueDate) : "blue",
-      "다음 작업": hasContractorCandidate ? "사업소득/인적용역 기타소득 지급월별 제출 여부 확인" : "외주 지급 발생 시 다음 달 말일 제출 대상 확인"
+      "다음 작업": hasContractorCandidate ? "사업소득/인적용역 기타소득 지급월별 제출 여부 확인" : "외주 지급 발생 시 다음 달 말일 제출 대상 확인",
+      근거: "국세청 지급명세서",
+      "근거 링크": TAX_SOURCE_LINKS.PAYMENT_STATEMENTS
     },
     {
       신고: "간이지급명세서(근로)",
@@ -7887,7 +7946,9 @@ function buildFilingScheduleRows(
       "예상 기한": formatIsoDate(paymentStatementSchedule.payrollSimpleDueDate),
       상태: hasPayrollCandidate ? "후보 확인" : company.representativeSalaryEnabled || company.employeePayrollEnabled ? scheduleStatus(paymentStatementSchedule.payrollSimpleDueDate, "반기 확인") : "대상 확인",
       톤: hasPayrollCandidate ? "amber" : company.representativeSalaryEnabled || company.employeePayrollEnabled ? toneForDueDate(paymentStatementSchedule.payrollSimpleDueDate) : "blue",
-      "다음 작업": hasPayrollCandidate ? "근로소득 반기 지급명세 자료와 급여대장 대조" : "급여 지급 발생 시 반기 다음 달 말일 제출 대상 확인"
+      "다음 작업": hasPayrollCandidate ? "근로소득 반기 지급명세 자료와 급여대장 대조" : "급여 지급 발생 시 반기 다음 달 말일 제출 대상 확인",
+      근거: "국세청 지급명세서",
+      "근거 링크": TAX_SOURCE_LINKS.PAYMENT_STATEMENTS
     },
     {
       신고: "지급명세서",
@@ -7895,7 +7956,9 @@ function buildFilingScheduleRows(
       "예상 기한": formatIsoDate(paymentStatementSchedule.annualPaymentStatementDueDate),
       상태: withholdingRows.length > 0 ? "연간 제출 확인" : hasWithholdingSetting ? scheduleStatus(paymentStatementSchedule.annualPaymentStatementDueDate, "연간 확인") : "대상 확인",
       톤: withholdingRows.length > 0 ? "amber" : hasWithholdingSetting ? toneForDueDate(paymentStatementSchedule.annualPaymentStatementDueDate) : "blue",
-      "다음 작업": withholdingRows.length > 0 ? "간이지급명세서 제출 면제 여부와 연간 지급명세서 대상 확인" : "급여·외주 지급이 생기면 연간 제출 대상 확인"
+      "다음 작업": withholdingRows.length > 0 ? "간이지급명세서 제출 면제 여부와 연간 지급명세서 대상 확인" : "급여·외주 지급이 생기면 연간 제출 대상 확인",
+      근거: "국세청 지급명세서",
+      "근거 링크": TAX_SOURCE_LINKS.PAYMENT_STATEMENTS
     },
     {
       신고: "법인세",
@@ -7903,7 +7966,9 @@ function buildFilingScheduleRows(
       "예상 기한": formatIsoDate(corporateTaxDueDate),
       상태: ledgerRows.length > 0 ? scheduleStatus(corporateTaxDueDate, "원장 있음") : "분개 승인",
       톤: ledgerRows.length > 0 ? toneForDueDate(corporateTaxDueDate) : "amber",
-      "다음 작업": ledgerRows.length > 0 ? "계정별 원장, 손익, 대표자 거래 검토" : "자동분개 탭에서 기간별 분개 승인 후 원장 생성"
+      "다음 작업": ledgerRows.length > 0 ? "계정별 원장, 손익, 대표자 거래 검토" : "자동분개 탭에서 기간별 분개 승인 후 원장 생성",
+      근거: "국세청 법인세",
+      "근거 링크": TAX_SOURCE_LINKS.CORPORATE_TAX_DUE
     }
   ];
 }
