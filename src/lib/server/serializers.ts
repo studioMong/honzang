@@ -27,6 +27,7 @@ import type {
   AppTaxReport,
   AppTransaction
 } from "@/types";
+import { decryptStoredText } from "@/lib/server/file-encryption";
 
 type TransactionWithAccounts = Transaction & {
   suggestedAccount?: Account | null;
@@ -130,8 +131,9 @@ function readReviewReasons(rawPayload: unknown) {
 
 function readEvidenceFile(rawPayload: unknown) {
   if (!isRecord(rawPayload)) return {};
+  const fileDataUrl = typeof rawPayload.fileDataUrl === "string" ? decryptStoredText(rawPayload.fileDataUrl) : null;
   return {
-    fileDataUrl: typeof rawPayload.fileDataUrl === "string" ? rawPayload.fileDataUrl : null,
+    fileDataUrl,
     fileMimeType: typeof rawPayload.fileMimeType === "string" ? rawPayload.fileMimeType : null,
     fileSize: typeof rawPayload.fileSize === "number" ? rawPayload.fileSize : null
   };

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
 import { isAccessControlEnabled, isAccessTokenSaltConfigured } from "@/lib/server/access-control";
+import { isFileEncryptionConfigured } from "@/lib/server/file-encryption";
 import packageInfo from "../../../../../package.json";
 
 type ReadinessTone = "green" | "amber" | "red" | "blue";
@@ -21,6 +22,7 @@ export async function GET() {
   checks.push(await databaseCheck());
   checks.push(accessCodeCheck());
   checks.push(accessSaltCheck());
+  checks.push(fileEncryptionCheck());
   checks.push(appUrlCheck());
   checks.push(runtimeCheck());
   checks.push(railwayCheck());
@@ -109,6 +111,21 @@ function accessSaltCheck(): ReadinessCheck {
         ? "프로덕션에서는 기본 salt로 접근 쿠키를 생성하지 않습니다."
         : "개발 환경에서만 기본 salt를 사용 중입니다.",
     action: configured ? "장기 운영 전 salt 보관 위치 확인" : "Railway Variables에 긴 랜덤 HONZANG_ACCESS_TOKEN_SALT 추가"
+  };
+}
+
+function fileEncryptionCheck(): ReadinessCheck {
+  const configured = isFileEncryptionConfigured();
+  const production = process.env.NODE_ENV === "production";
+  return {
+    key: "fileEncryption",
+    label: "파일 암호화 키",
+    status: configured ? "설정됨" : production ? "필수 누락" : "미설정",
+    tone: configured ? "green" : production ? "red" : "amber",
+    detail: configured
+      ? "원본 CSV와 DB 보관 증빙 파일을 암호화 저장합니다."
+      : "HONZANG_FILE_ENCRYPTION_KEY가 없어 신규 원본 CSV와 DB 보관 증빙 파일을 평문 저장합니다.",
+    action: configured ? "키 교체 전 기존 백업과 복원 계획 확인" : "Railway Variables에 긴 랜덤 HONZANG_FILE_ENCRYPTION_KEY 추가"
   };
 }
 

@@ -6,6 +6,7 @@ const steps = [
   ["verify:limits", "File/request limit policy"],
   ["verify:data-sources", "Data source status calculation"],
   ["verify:billing-estimates", "Billing model estimates"],
+  ["verify:file-encryption", "Stored file encryption"],
   ["verify:product-boundaries", "Product positioning boundaries"],
   ["typecheck", "TypeScript typecheck"],
   ["lint", "ESLint"],

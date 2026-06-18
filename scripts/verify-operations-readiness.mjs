@@ -22,6 +22,7 @@ const serverEnv = {
   PORT: port,
   DATABASE_URL: "",
   HONZANG_ACCESS_TOKEN_SALT: "verify-operations-readiness-salt",
+  HONZANG_FILE_ENCRYPTION_KEY: "verify-operations-readiness-file-encryption-key",
   NEXT_PUBLIC_APP_URL: appUrl,
   RAILWAY_GIT_COMMIT_SHA: commitSha,
   RAILWAY_GIT_BRANCH: "main",
@@ -89,17 +90,22 @@ async function verifyOperationsReadiness() {
     assert.match(body.generatedAt, /^\d{4}-\d{2}-\d{2}T/, "readiness response should include an ISO timestamp");
     assert.equal(body.summary?.blockers, 2, "readiness summary should block missing database and access code");
     assert.equal(body.summary?.warnings, 0, "readiness summary should not warn when app URL, salt, runtime, and Railway metadata are set");
-    assert.equal(body.summary?.passes, 4, "readiness summary should count green checks");
+    assert.equal(body.summary?.passes, 5, "readiness summary should count green checks");
     assert.equal(body.railway?.commitSha, commitSha, "readiness response should expose Railway commit metadata");
     assert.equal(body.railway?.branch, "main", "readiness response should expose Railway branch metadata");
     assert.equal(body.railway?.service, "honzang", "readiness response should expose Railway service metadata");
     assert.equal(body.railway?.environment, "production", "readiness response should expose Railway environment metadata");
 
     const checks = new Map(body.checks.map((check) => [check.key, check]));
-    assert.deepEqual([...checks.keys()], ["database", "accessCode", "accessSalt", "appUrl", "runtime", "railway"], "readiness checks should keep a stable order");
+    assert.deepEqual(
+      [...checks.keys()],
+      ["database", "accessCode", "accessSalt", "fileEncryption", "appUrl", "runtime", "railway"],
+      "readiness checks should keep a stable order"
+    );
     assertCheck(checks.get("database"), "Postgres 연결", "미설정", "red", "DATABASE_URL", "Railway Postgres");
     assertCheck(checks.get("accessCode"), "접근코드 보호", "미설정", "red", "HONZANG_ACCESS_CODE", "Railway Variables");
     assertCheck(checks.get("accessSalt"), "접근 쿠키 salt", "설정됨", "green", "배포 환경 전용 salt", "salt 보관");
+    assertCheck(checks.get("fileEncryption"), "파일 암호화 키", "설정됨", "green", "원본 CSV와 DB 보관 증빙 파일", "키 교체");
     assertCheck(checks.get("appUrl"), "공개 앱 URL", "설정됨", "green", appUrl, "public domain");
     assertCheck(checks.get("runtime"), "서버 런타임", "production", "green", "프로덕션 빌드", "standalone 서버");
     assertCheck(checks.get("railway"), "Railway 메타데이터", "감지됨", "green", "service=honzang branch=main", "Deploy source commit");

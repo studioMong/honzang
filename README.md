@@ -44,9 +44,12 @@ DATABASE_URL=postgresql://...
 NEXT_PUBLIC_APP_URL=https://honzang-production.up.railway.app
 HONZANG_ACCESS_CODE=배포_접근_코드
 HONZANG_ACCESS_TOKEN_SALT=쿠키_서명용_긴_랜덤값
+HONZANG_FILE_ENCRYPTION_KEY=원본_CSV_증빙_암호화용_긴_랜덤값
 ```
 
 `HONZANG_ACCESS_CODE`가 설정된 배포 환경에서는 `/access`에서 코드를 입력해야 앱과 장부 API에 접근할 수 있습니다. 프로덕션에서는 `HONZANG_ACCESS_TOKEN_SALT`도 함께 있어야 접근 쿠키를 발급합니다. `/api/health`, `/api/version`, PWA 리소스, 샘플 CSV는 배포 점검과 설치를 위해 공개 상태를 유지합니다. 접근 쿠키는 HTTP-only로 7일간 유지되며, 코드를 바꾸거나 salt를 바꾸면 기존 쿠키는 무효화됩니다. 같은 접속 출처에서 접근코드를 5회 틀리면 10분간 로그인을 제한합니다.
+
+`HONZANG_FILE_ENCRYPTION_KEY`가 설정되면 신규 원본 CSV와 DB 보관 증빙 파일은 Railway Postgres에 저장하기 전에 암호화됩니다. 키가 없으면 기존 로컬 개발처럼 평문 저장하지만, 프로덕션 운영 준비 점검에서는 필수 누락으로 표시됩니다. 키를 교체하기 전에는 기존 암호화 파일을 백업 JSON/ZIP으로 내려받아 복구 계획을 먼저 확인해야 합니다.
 
 ## 배포
 
@@ -147,6 +150,12 @@ RAILWAY_AUDIT_SOFT=1 npm run audit:railway
 - 일반 설정/장부 API 요청: JSON body 750KB 이하
 
 위 한도는 `src/lib/file-limits.ts`와 `src/lib/server/request-json.ts`에 고정되어 있습니다. 더 큰 원본, 증빙, 백업을 다뤄야 하면 Postgres 직접 보관이 아니라 오브젝트 스토리지와 스트리밍 업로드를 별도 도입합니다.
+
+원본 CSV와 증빙 파일 암호화 동작은 아래 명령으로 확인합니다.
+
+```bash
+npm run verify:file-encryption
+```
 
 ## CSV 샘플 제공 방식
 

@@ -10,6 +10,7 @@ import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { closedPeriodResponse, findClosedPeriodForDates } from "@/lib/server/closing-periods";
 import { parseStrictDate } from "@/lib/server/date-validation";
+import { decryptStoredText, encryptedTextUnavailableMessage, encryptStoredText } from "@/lib/server/file-encryption";
 import { parseJsonRequest } from "@/lib/server/request-json";
 import { MAX_ORIGINAL_FILE_TEXT_SIZE, validateOriginalFileText } from "@/lib/server/source-file-validation";
 import { validateTransactionTaxAmounts } from "@/lib/server/transaction-validation";
@@ -173,6 +174,10 @@ export async function GET(request: Request) {
     if (!importBatch.originalFileText) {
       return NextResponse.json({ ok: false, message: "보관된 원본 CSV가 없습니다." }, { status: 404 });
     }
+    const originalFileText = decryptStoredText(importBatch.originalFileText);
+    if (!originalFileText) {
+      return NextResponse.json({ ok: false, message: encryptedTextUnavailableMessage() }, { status: 409 });
+    }
 
     return NextResponse.json({
       ok: true,
@@ -182,7 +187,7 @@ export async function GET(request: Request) {
       originalFileHash: importBatch.originalFileHash,
       originalFileMimeType: importBatch.originalFileMimeType,
       originalFileSize: importBatch.originalFileSize,
-      originalFileText: importBatch.originalFileText
+      originalFileText
     });
   }
 
@@ -404,7 +409,7 @@ export async function POST(request: Request) {
           ? await tx.importBatch.update({
               where: { id: existingBatch.id },
               data: {
-                originalFileText: payload.originalFileText,
+                originalFileText: encryptStoredText(payload.originalFileText),
                 originalFileMimeType: payload.originalFileMimeType ?? "text/csv",
                 originalFileSize: payload.originalFileSize ?? payload.originalFileText.length
               }
@@ -466,7 +471,7 @@ export async function POST(request: Request) {
         sourceType: payload.sourceType,
         originalFileName: payload.originalFileName,
         originalFileHash,
-        originalFileText: payload.originalFileText ?? null,
+        originalFileText: encryptStoredText(payload.originalFileText),
         originalFileMimeType: payload.originalFileMimeType ?? (payload.originalFileText ? "text/csv" : null),
         originalFileSize: payload.originalFileSize ?? payload.originalFileText?.length ?? null,
         rowCount: classified.length,

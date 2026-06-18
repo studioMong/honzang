@@ -17,6 +17,7 @@ import {
   validateEvidenceFileUrl
 } from "@/lib/server/evidence-validation";
 import { resolveTransactionEvidenceStatus } from "@/lib/server/evidence-amount-reviews";
+import { encryptStoredText } from "@/lib/server/file-encryption";
 import { parseJsonRequest } from "@/lib/server/request-json";
 import { serializeEvidence } from "@/lib/server/serializers";
 
@@ -170,7 +171,7 @@ export async function POST(request: Request) {
         fileName: payload.fileName,
         fileUrl,
         rawPayload: {
-          fileDataUrl: payload.fileDataUrl ?? null,
+          fileDataUrl: encryptStoredText(payload.fileDataUrl),
           fileMimeType: payload.fileMimeType ?? null,
           fileSize: payload.fileSize ?? null
         }

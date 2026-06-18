@@ -59,9 +59,11 @@ assert.ok(readdirSync("prisma/migrations").some((entry) => existsSync(path.join(
 
 assert.match(readme, /HONZANG_ACCESS_CODE=/, "README should document the deployment access code variable");
 assert.match(readme, /HONZANG_ACCESS_TOKEN_SALT=/, "README should document the access-token salt variable");
+assert.match(readme, /HONZANG_FILE_ENCRYPTION_KEY=/, "README should document the file encryption key variable");
 assert.match(readme, /프로덕션에서는 `HONZANG_ACCESS_TOKEN_SALT`도 함께 있어야/, "README should mark access-token salt as required in production");
 assert.match(envExample, /HONZANG_ACCESS_CODE=/, ".env.example should include the deployment access code variable");
 assert.match(envExample, /HONZANG_ACCESS_TOKEN_SALT=/, ".env.example should include the access-token salt variable");
+assert.match(envExample, /HONZANG_FILE_ENCRYPTION_KEY=/, ".env.example should include the file encryption key variable");
 assert.match(readme, /docs\/railway-cutover\.md/, "README should link to the Railway cutover checklist");
 assert.match(railwayCutoverDoc, /honzang-production\.up\.railway\.app/, "Railway cutover checklist should name the production domain");
 assert.match(railwayCutoverDoc, /\/api\/version/, "Railway cutover checklist should include version endpoint verification");
@@ -79,6 +81,8 @@ assert.match(accessControl, /isAccessTokenSaltConfigured/, "Access control shoul
 assert.match(accessControl, /process\.env\.NODE_ENV !== "production"/, "Access control should only allow default salt outside production");
 assert.match(operationsReadiness, /프로덕션에서는 기본 salt/, "Operations readiness should warn when production salt is missing");
 assert.match(operationsReadiness, /production \? "red"/, "Operations readiness should block production deployments without access-token salt");
+assert.match(operationsReadiness, /fileEncryptionCheck/, "Operations readiness should include file encryption status");
+assert.match(operationsReadiness, /HONZANG_FILE_ENCRYPTION_KEY/, "Operations readiness should name the file encryption key variable");
 
 console.log("Deployment config verification passed.");
 

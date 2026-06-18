@@ -18,6 +18,7 @@ import {
   validateEvidenceFile,
   validateEvidenceFileUrl
 } from "@/lib/server/evidence-validation";
+import { encryptStoredText } from "@/lib/server/file-encryption";
 import { validateJsonPayloadSize } from "@/lib/server/json-payload-validation";
 import { parseJsonRequest } from "@/lib/server/request-json";
 import { MAX_ORIGINAL_FILE_TEXT_SIZE, validateOriginalFileText } from "@/lib/server/source-file-validation";
@@ -585,7 +586,7 @@ async function restoreImportBatches(
         originalFileHash: originalFile?.originalFileHash ?? batch.originalFileHash ?? null,
         originalFileMimeType: originalFile?.originalFileMimeType ?? batch.originalFileMimeType ?? null,
         originalFileSize: originalFile?.originalFileSize ?? batch.originalFileSize ?? originalFile?.originalFileText.length ?? null,
-        originalFileText: originalFile?.originalFileText ?? null,
+        originalFileText: encryptStoredText(originalFile?.originalFileText),
         rowCount: batch.rowCount,
         mapping: Prisma.JsonNull,
         importedAt: dateTimeOrNow(batch.importedAt)
@@ -667,7 +668,7 @@ async function restoreEvidences(
         fileUrl,
         rawPayload: {
           restoredFromBackup: true,
-          fileDataUrl: evidence.fileDataUrl ?? null,
+          fileDataUrl: encryptStoredText(evidence.fileDataUrl),
           fileMimeType: evidence.fileMimeType ?? null,
           fileSize: evidence.fileSize ?? null
         }
