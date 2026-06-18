@@ -53,6 +53,7 @@ import { DATA_SOURCE_TYPES, buildDataSourceRows } from "@/lib/data-sources";
 import { DEFAULT_ACCOUNTS, DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/defaults";
 import { applyClassificationRules, buildReviewItems, generateJournalDraft, inferMapping, normalizeCsvRow, parseMoney, summarizeTransactions } from "@/lib/accounting";
 import { MAX_BACKUP_RESTORE_REQUEST_BYTES, MAX_EVIDENCE_FILE_SIZE, MAX_ORIGINAL_FILE_TEXT_SIZE } from "@/lib/file-limits";
+import { buildPaymentStatementSchedule, buildVatFilingSchedule } from "@/lib/filing-schedule";
 import { formatDate, formatDateTime, formatKRW, formatNumber } from "@/lib/format";
 import { hasAtMostTwoDecimalPlaces, MAX_DECIMAL_14_2_AMOUNT, minorUnitsToMoney, moneyToMinorUnits } from "@/lib/money";
 import { sampleClosingPeriods, sampleCompany, sampleEvidences, sampleJournalEntries, sampleTaxReports, sampleTransactions } from "@/lib/sample-data";
@@ -7836,10 +7837,8 @@ function buildFilingScheduleRows(
   const periodYear = periodEnd.getUTCFullYear();
   const periodLabel = `${formatDate(periodRange.start)} - ${formatDate(periodRange.end)}`;
   const vatFiling = buildVatFilingSchedule(periodYear, periodMonth);
+  const paymentStatementSchedule = buildPaymentStatementSchedule(periodYear, periodMonth);
   const withholdingDueDate = new Date(Date.UTC(periodYear, periodEnd.getUTCMonth() + 1, 10));
-  const monthlySimpleStatementDueDate = endOfMonth(periodYear, periodEnd.getUTCMonth() + 1);
-  const payrollSimpleStatementDueDate = periodMonth <= 6 ? endOfMonth(periodYear, 6) : endOfMonth(periodYear + 1, 0);
-  const annualPaymentStatementDueDate = new Date(Date.UTC(periodYear + 1, 2, 10));
   const evidenceDueDate = endOfMonth(periodYear, periodEnd.getUTCMonth());
   const fiscalYearEndDate = getFiscalYearEndDate(periodEnd, company.fiscalYearEndMonth);
   const corporateTaxDueDate = endOfMonth(fiscalYearEndDate.getUTCFullYear(), fiscalYearEndDate.getUTCMonth() + 3);
@@ -7877,25 +7876,25 @@ function buildFilingScheduleRows(
     {
       신고: "간이지급명세서(사업/기타)",
       "대상 기간": `${periodYear}년 ${periodMonth}월 지급분`,
-      "예상 기한": formatIsoDate(monthlySimpleStatementDueDate),
-      상태: hasContractorCandidate ? "후보 확인" : company.contractorPaymentEnabled ? scheduleStatus(monthlySimpleStatementDueDate, "지급 확인") : "대상 확인",
-      톤: hasContractorCandidate ? "amber" : company.contractorPaymentEnabled ? toneForDueDate(monthlySimpleStatementDueDate) : "blue",
+      "예상 기한": formatIsoDate(paymentStatementSchedule.monthlyBusinessOtherDueDate),
+      상태: hasContractorCandidate ? "후보 확인" : company.contractorPaymentEnabled ? scheduleStatus(paymentStatementSchedule.monthlyBusinessOtherDueDate, "지급 확인") : "대상 확인",
+      톤: hasContractorCandidate ? "amber" : company.contractorPaymentEnabled ? toneForDueDate(paymentStatementSchedule.monthlyBusinessOtherDueDate) : "blue",
       "다음 작업": hasContractorCandidate ? "사업소득/인적용역 기타소득 지급월별 제출 여부 확인" : "외주 지급 발생 시 다음 달 말일 제출 대상 확인"
     },
     {
       신고: "간이지급명세서(근로)",
       "대상 기간": `${periodYear}년 ${periodMonth <= 6 ? "1~6월" : "7~12월"} 근로소득 지급분`,
-      "예상 기한": formatIsoDate(payrollSimpleStatementDueDate),
-      상태: hasPayrollCandidate ? "후보 확인" : company.representativeSalaryEnabled || company.employeePayrollEnabled ? scheduleStatus(payrollSimpleStatementDueDate, "반기 확인") : "대상 확인",
-      톤: hasPayrollCandidate ? "amber" : company.representativeSalaryEnabled || company.employeePayrollEnabled ? toneForDueDate(payrollSimpleStatementDueDate) : "blue",
+      "예상 기한": formatIsoDate(paymentStatementSchedule.payrollSimpleDueDate),
+      상태: hasPayrollCandidate ? "후보 확인" : company.representativeSalaryEnabled || company.employeePayrollEnabled ? scheduleStatus(paymentStatementSchedule.payrollSimpleDueDate, "반기 확인") : "대상 확인",
+      톤: hasPayrollCandidate ? "amber" : company.representativeSalaryEnabled || company.employeePayrollEnabled ? toneForDueDate(paymentStatementSchedule.payrollSimpleDueDate) : "blue",
       "다음 작업": hasPayrollCandidate ? "근로소득 반기 지급명세 자료와 급여대장 대조" : "급여 지급 발생 시 반기 다음 달 말일 제출 대상 확인"
     },
     {
       신고: "지급명세서",
       "대상 기간": `${periodYear}년 1~12월 근로·퇴직·사업소득 등 지급분`,
-      "예상 기한": formatIsoDate(annualPaymentStatementDueDate),
-      상태: withholdingRows.length > 0 ? "연간 제출 확인" : hasWithholdingSetting ? scheduleStatus(annualPaymentStatementDueDate, "연간 확인") : "대상 확인",
-      톤: withholdingRows.length > 0 ? "amber" : hasWithholdingSetting ? toneForDueDate(annualPaymentStatementDueDate) : "blue",
+      "예상 기한": formatIsoDate(paymentStatementSchedule.annualPaymentStatementDueDate),
+      상태: withholdingRows.length > 0 ? "연간 제출 확인" : hasWithholdingSetting ? scheduleStatus(paymentStatementSchedule.annualPaymentStatementDueDate, "연간 확인") : "대상 확인",
+      톤: withholdingRows.length > 0 ? "amber" : hasWithholdingSetting ? toneForDueDate(paymentStatementSchedule.annualPaymentStatementDueDate) : "blue",
       "다음 작업": withholdingRows.length > 0 ? "간이지급명세서 제출 면제 여부와 연간 지급명세서 대상 확인" : "급여·외주 지급이 생기면 연간 제출 대상 확인"
     },
     {
@@ -7907,39 +7906,6 @@ function buildFilingScheduleRows(
       "다음 작업": ledgerRows.length > 0 ? "계정별 원장, 손익, 대표자 거래 검토" : "자동분개 탭에서 기간별 분개 승인 후 원장 생성"
     }
   ];
-}
-
-function buildVatFilingSchedule(periodYear: number, periodMonth: number) {
-  if (periodMonth <= 3) {
-    return {
-      name: "부가세 예정",
-      phase: "1기 예정",
-      periodLabel: `${periodYear}년 1기 예정 (${periodYear}-01-01 - ${periodYear}-03-31)`,
-      dueDate: new Date(Date.UTC(periodYear, 3, 25))
-    };
-  }
-  if (periodMonth <= 6) {
-    return {
-      name: "부가세 확정",
-      phase: "1기 확정",
-      periodLabel: `${periodYear}년 1기 확정 (${periodYear}-04-01 - ${periodYear}-06-30)`,
-      dueDate: new Date(Date.UTC(periodYear, 6, 25))
-    };
-  }
-  if (periodMonth <= 9) {
-    return {
-      name: "부가세 예정",
-      phase: "2기 예정",
-      periodLabel: `${periodYear}년 2기 예정 (${periodYear}-07-01 - ${periodYear}-09-30)`,
-      dueDate: new Date(Date.UTC(periodYear, 9, 25))
-    };
-  }
-  return {
-    name: "부가세 확정",
-    phase: "2기 확정",
-    periodLabel: `${periodYear}년 2기 확정 (${periodYear}-10-01 - ${periodYear}-12-31)`,
-    dueDate: new Date(Date.UTC(periodYear + 1, 0, 25))
-  };
 }
 
 function parseIsoDate(value: string) {

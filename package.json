@@ -15,6 +15,7 @@
     "verify:limits": "node scripts/verify-file-limits.mjs",
     "verify:data-sources": "tsx scripts/verify-data-sources.ts",
     "verify:billing-estimates": "tsx scripts/verify-billing-estimates.ts",
+    "verify:filing-schedules": "tsx scripts/verify-filing-schedules.ts",
     "verify:file-encryption": "tsx scripts/verify-file-encryption.ts",
     "verify:database-schema-contract": "node scripts/verify-database-schema-contract.mjs",
     "verify:period-locks": "node scripts/verify-period-locks.mjs",

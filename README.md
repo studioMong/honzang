@@ -159,6 +159,12 @@ RAILWAY_AUDIT_SOFT=1 npm run audit:railway
 npm run verify:file-encryption
 ```
 
+신고 일정의 부가세 예정/확정, 지급명세서/간이지급명세서 기한 계산은 아래 명령으로 확인합니다.
+
+```bash
+npm run verify:filing-schedules
+```
+
 ## CSV 샘플 제공 방식
 
 실제 은행/카드/홈택스에서 내려받은 CSV를 사용합니다. 계좌번호, 사업자번호, 거래처명, 카드번호는 마스킹해도 됩니다. 중요한 것은 실제 컬럼 구조를 유지하는 것입니다.

@@ -6,6 +6,7 @@ const steps = [
   ["verify:limits", "File/request limit policy"],
   ["verify:data-sources", "Data source status calculation"],
   ["verify:billing-estimates", "Billing model estimates"],
+  ["verify:filing-schedules", "Filing schedule due dates"],
   ["verify:file-encryption", "Stored file encryption"],
   ["verify:database-schema-contract", "Database schema contract"],
   ["verify:period-locks", "Closing period mutation locks"],
