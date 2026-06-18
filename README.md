@@ -95,6 +95,10 @@ RAILWAY_AUDIT_SOFT=1 npm run audit:railway
 
 공개 도메인이 이전 static/legacy 서비스에 연결되어 `/api/version`, `/api/health`, `/manifest.webmanifest`가 404로 응답하면 [Railway 배포 전환 체크리스트](docs/railway-cutover.md)를 따라 도메인 연결 대상 서비스를 최신 Next.js 앱으로 전환합니다.
 
+## 제품 경계
+
+혼자장부는 대표가 직접 장부를 정리하고 신고 준비자료를 만드는 도구입니다. 세무 범위는 신고 준비자료 생성까지입니다. 홈택스 자동 제출, 신고 대행, 세무대리, 절세 자문, 법인세 신고서 자동 확정은 MVP 범위에서 제외합니다. 앱이 보여주는 금액과 표는 신고 전 대조자료이며, 최종 판단과 제출은 사용자가 홈택스와 국세청 공지 기준으로 직접 확인합니다.
+
 ## MVP 범위
 
 - 회사 기본 설정

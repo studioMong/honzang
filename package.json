@@ -14,6 +14,7 @@
     "verify:deployment-config": "node scripts/verify-deployment-config.mjs",
     "verify:limits": "node scripts/verify-file-limits.mjs",
     "verify:data-sources": "tsx scripts/verify-data-sources.ts",
+    "verify:product-boundaries": "node scripts/verify-product-boundaries.mjs",
     "verify:closing-snapshot-exports": "tsx scripts/verify-closing-snapshot-exports.ts",
     "verify:pwa": "node scripts/verify-pwa.mjs",
     "verify:operations-readiness": "node scripts/verify-operations-readiness.mjs",

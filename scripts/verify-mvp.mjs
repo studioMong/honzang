@@ -5,6 +5,7 @@ const steps = [
   ["verify:deployment-config", "Railway/standalone deployment config"],
   ["verify:limits", "File/request limit policy"],
   ["verify:data-sources", "Data source status calculation"],
+  ["verify:product-boundaries", "Product positioning boundaries"],
   ["typecheck", "TypeScript typecheck"],
   ["lint", "ESLint"],
   ["verify:samples", "CSV sample parsing and classification"],
