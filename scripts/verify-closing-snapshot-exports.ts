@@ -12,6 +12,7 @@ assert.ok(closingPeriod, "sample closing period should include 2026-05");
 
 const reportPayload = extractReportPayload(closingPeriod.summaryPayload);
 const exportPayload = buildClosingSnapshotExportPayload(closingPeriod, reportPayload, GENERATED_AT);
+const sourceUrl = "https://www.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7693&mi=2401";
 
 assert.equal(exportPayload.app, "혼자장부", "closing snapshot export should identify the app");
 assert.equal(exportPayload.exportType, "closing-period-snapshot", "closing snapshot export should identify the export type");
@@ -46,6 +47,52 @@ assert.ok(filingInputCsv.content.startsWith("\uFEFF"), "closing snapshot CSV sho
 assert.ok(filingInputCsv.content.includes("과세 매출 공급가액"), "closing snapshot CSV should include filing input labels");
 assert.ok(filingInputCsv.content.includes("승인 분개/원장"), "closing snapshot CSV should include ledger filing input labels");
 
+const sourceLinkedPayload = buildClosingSnapshotExportPayload(
+  closingPeriod,
+  {
+    ...reportPayload,
+    filingScheduleRows: [
+      {
+        신고: "부가세 확정",
+        "대상 기간": "2026년 1기 확정",
+        "예상 기한": "2026-07-25",
+        상태: "준비 가능",
+        톤: "green",
+        "다음 작업": "매출세액, 매입세액, 불공제 후보 확인",
+        근거: "국세청 부가세",
+        "근거 링크": sourceUrl
+      }
+    ],
+    submissionGuideRows: [
+      {
+        순서: 3,
+        신고: "부가세",
+        "홈택스/제출 위치": "부가가치세 신고서",
+        "혼자장부에서 볼 것": "부가세 입력 전 정리표",
+        상태: "입력 가능",
+        톤: "green",
+        "입력 기준": "매출세액 200,000원",
+        "마감 전 확인": "2026-07-25 전 신고 입력값 대조",
+        근거: "국세청 부가세",
+        "근거 링크": sourceUrl
+      }
+    ]
+  },
+  GENERATED_AT
+);
+const sourceZipFiles = buildClosingSnapshotZipFiles(sourceLinkedPayload);
+const sourceJsonFile = sourceZipFiles.find((file) => file.path === "closing-snapshot.json");
+assert.ok(sourceJsonFile && typeof sourceJsonFile.content === "string", "source-linked snapshot should include JSON");
+assert.ok(sourceJsonFile.content.includes(sourceUrl), "closing snapshot JSON should preserve source URLs");
+const filingScheduleCsv = sourceZipFiles.find((file) => file.path === "csv/filing-schedule.csv");
+assert.ok(filingScheduleCsv && typeof filingScheduleCsv.content === "string", "source-linked snapshot should include filing schedule CSV");
+assert.ok(filingScheduleCsv.content.includes("근거 링크"), "filing schedule CSV should include the source URL column");
+assert.ok(filingScheduleCsv.content.includes(sourceUrl), "filing schedule CSV should preserve source URLs");
+const submissionGuideCsv = sourceZipFiles.find((file) => file.path === "csv/submission-guide.csv");
+assert.ok(submissionGuideCsv && typeof submissionGuideCsv.content === "string", "source-linked snapshot should include submission guide CSV");
+assert.ok(submissionGuideCsv.content.includes("국세청 부가세"), "submission guide CSV should preserve source labels");
+assert.ok(submissionGuideCsv.content.includes(sourceUrl), "submission guide CSV should preserve source URLs");
+
 assert.equal(
   toCsvFileContent([{ 항목: "CSV 보안", 값: "=1+1" }]),
   "\uFEFF항목,값\nCSV 보안,'=1+1",
@@ -58,6 +105,8 @@ for (const fileName of ["manifest.json", "closing-snapshot.json", "csv/filing-in
 }
 assert.ok(zipText.includes("월 마감 스냅샷"), "closing snapshot ZIP bytes should contain summary CSV content");
 assert.ok(zipText.includes("과세 매출 공급가액"), "closing snapshot ZIP bytes should contain filing input CSV content");
+const sourceZipText = decodeBytes(createZipBytes(sourceZipFiles));
+assert.ok(sourceZipText.includes(sourceUrl), "closing snapshot ZIP bytes should preserve source URLs");
 
 const workbookSheets = buildClosingSnapshotWorkbookSheets(exportPayload);
 assert.deepEqual(
@@ -72,6 +121,10 @@ assert.ok(xlsxText.includes("xl/workbook.xml"), "closing snapshot XLSX bytes sho
 assert.ok(xlsxText.includes("name=\"입력값요약\""), "closing snapshot XLSX workbook should include the filing input sheet");
 assert.ok(xlsxText.includes("xl/worksheets/sheet15.xml"), "closing snapshot XLSX bytes should include the ledger worksheet");
 assert.ok(xlsxText.includes("과세 매출 공급가액"), "closing snapshot XLSX sheet XML should include filing input labels");
+const sourceWorkbookSheets = buildClosingSnapshotWorkbookSheets(sourceLinkedPayload);
+const sourceXlsxText = decodeBytes(createXlsxBytes(sourceWorkbookSheets));
+assert.ok(sourceXlsxText.includes("국세청 부가세"), "closing snapshot XLSX bytes should preserve source labels");
+assert.ok(sourceXlsxText.includes(sourceUrl.replaceAll("&", "&amp;")), "closing snapshot XLSX bytes should preserve source URLs");
 
 console.log("Closing snapshot export verification passed.");
 
