@@ -7337,6 +7337,12 @@ function buildCorporateTaxRows(
       값: formatReportAmount(bankBalanceStatus.difference),
       상태: bankBalanceStatus.status,
       확인: bankBalanceStatus.nextAction
+    },
+    {
+      항목: "외부조정 검토",
+      값: formatKRW(summary.revenue),
+      상태: summary.revenue >= 7_000_000_000 ? "전문가 확인" : summary.revenue >= 300_000_000 ? "조건 확인" : "자가점검",
+      확인: "수입금액, 조세특례, 준비금, 신설 2년 이내, 외부감사, 합병/분할, 국외사업장·외국자회사 여부 확인"
     }
   ];
 }
