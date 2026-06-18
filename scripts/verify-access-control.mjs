@@ -126,6 +126,7 @@ async function verifyUnauthorizedApi() {
     { path: "/api/audit-events", method: "GET" },
     { path: "/api/closing-periods", method: "GET" },
     { path: "/api/operations/readiness", method: "GET" },
+    { path: "/api/reviews", method: "PATCH", body: { id: "verify-review", status: "RESOLVED" } },
     { path: "/api/vendors", method: "PATCH", body: { id: "verify-vendor", name: "거래처" } },
     { path: "/api/classification-rules", method: "PATCH", body: { id: "verify-rule", keyword: "aws" } },
     { path: "/api/classification-rules", method: "DELETE", body: { id: "verify-rule" } },

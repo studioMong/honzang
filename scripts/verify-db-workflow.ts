@@ -404,6 +404,17 @@ try {
     reviewSnapshotRows.some((row) => String(row.사유).includes(evidenceAmountMismatchReason)),
     "review snapshot rows should preserve the evidence mismatch reason"
   );
+  const resolvedReviewPayload = await requestJson<{ ok?: boolean; mode?: string; reviewItem?: ReviewItem }>("/api/reviews", {
+    method: "PATCH",
+    body: {
+      id: mismatchReviewId,
+      status: "RESOLVED"
+    }
+  });
+  assert.equal(resolvedReviewPayload.ok, true, "review status update should succeed before closing");
+  assert.equal(resolvedReviewPayload.mode, "database", "review status update should use database mode");
+  assert.equal(resolvedReviewPayload.reviewItem?.id, mismatchReviewId, "review status update should return the updated item");
+  assert.equal(resolvedReviewPayload.reviewItem?.status, "RESOLVED", "review status update should persist the target status");
 
   const updatedEvidenceTransaction = importedTransactions[1];
   assert.ok(updatedEvidenceTransaction?.id, "workflow should include a second transaction for evidence patch verification");
@@ -771,7 +782,7 @@ try {
     expectedStatus: 409,
     body: {
       id: mismatchReviewId,
-      status: "RESOLVED"
+      status: "IGNORED"
     }
   });
   assert.equal(lockedReviewPatchPayload.ok, false, "locked period review status update should fail");
@@ -886,6 +897,7 @@ try {
   assert.ok(auditActions.has("REPORT_CREATE"), "audit log should include report creation");
   assert.ok(auditActions.has("PERIOD_CLOSE"), "audit log should include closing period lock");
   assert.ok(auditActions.has("PERIOD_REOPEN"), "audit log should include closing period reopen");
+  assert.ok(auditActions.has("REVIEW_STATUS_UPDATE"), "audit log should include review status update");
   assert.ok(auditActions.has("VENDOR_CREATE"), "audit log should include vendor creation");
   assert.ok(auditActions.has("VENDOR_UPDATE"), "audit log should include vendor update");
   assert.ok(auditActions.has("CLASSIFICATION_RULE_CREATE"), "audit log should include classification rule creation");

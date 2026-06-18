@@ -74,6 +74,7 @@ export type ViewKey = "dashboard" | "imports" | "transactions" | "evidences" | "
 type StatusTone = "green" | "amber" | "red" | "blue";
 type JournalDraft = ReturnType<typeof generateJournalDraft>;
 type JournalDraftFilter = "ALL" | "READY" | "REVIEW" | "APPROVED";
+type ReviewFilter = "ALL" | ReviewItem["status"];
 type PanelMessage = {
   tone: "green" | "amber" | "red";
   text: string;
@@ -505,7 +506,7 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
   async function updateReviewStatus(id: string, status: ReviewItem["status"]) {
     if (mode === "sample") {
       setReviewStatusOverrides((current) => ({ ...current, [id]: status }));
-      return;
+      return { ok: true };
     }
 
     const previous = reviewItems;
@@ -519,11 +520,15 @@ export function AppWorkspace({ initialView = "dashboard" }: { initialView?: View
       const payload = await response.json();
       if (payload.reviewItem?.reason) {
         setReviewItems((current) => current.map((item) => (item.id === id ? payload.reviewItem : item)));
+        return { ok: true };
       } else if (!response.ok) {
         setReviewItems(previous);
+        return { ok: false, message: payload.message ?? "검토 상태 변경에 실패했습니다." };
       }
+      return { ok: true };
     } catch {
       setReviewItems(previous);
+      return { ok: false, message: "검토 상태 변경 중 오류가 발생했습니다." };
     }
   }
 
@@ -2464,21 +2469,74 @@ function ReviewsPanel({
   onStatusChange
 }: {
   items: ReviewItem[];
-  onStatusChange: (id: string, status: ReviewItem["status"]) => void;
+  onStatusChange: (id: string, status: ReviewItem["status"]) => Promise<TransactionUpdateResult>;
 }) {
   const openCount = items.filter((item) => item.status === "OPEN").length;
+  const resolvedCount = items.filter((item) => item.status === "RESOLVED").length;
+  const ignoredCount = items.filter((item) => item.status === "IGNORED").length;
+  const [reviewFilter, setReviewFilter] = useState<ReviewFilter>("OPEN");
+  const [changingReviewId, setChangingReviewId] = useState<string | null>(null);
+  const [reviewMessage, setReviewMessage] = useState<PanelMessage | null>(null);
+  const visibleItems = reviewFilter === "ALL" ? items : items.filter((item) => item.status === reviewFilter);
+  const filterOptions: Array<{ key: ReviewFilter; label: string; count: number; tone: StatusTone; hint: string }> = [
+    { key: "OPEN", label: "열림", count: openCount, tone: "amber", hint: "처리할 검토" },
+    { key: "RESOLVED", label: "완료", count: resolvedCount, tone: "green", hint: "처리 완료" },
+    { key: "IGNORED", label: "무시", count: ignoredCount, tone: "blue", hint: "신고 영향 없음" },
+    { key: "ALL", label: "전체", count: items.length, tone: "blue", hint: "상태 전체" }
+  ];
+
+  async function changeStatus(item: ReviewItem, status: ReviewItem["status"]) {
+    setChangingReviewId(item.id);
+    setReviewMessage(null);
+    try {
+      const result = await onStatusChange(item.id, status);
+      if (!result.ok) {
+        setReviewMessage({ tone: "red", text: result.message ?? "검토 상태 변경에 실패했습니다." });
+        return;
+      }
+      setReviewMessage({ tone: "green", text: `검토 항목을 ${reviewStatusLabel(status)} 상태로 변경했습니다.` });
+    } finally {
+      setChangingReviewId(null);
+    }
+  }
+
   return (
     <section className="panel">
       <div className="panel-header">
-        <h2 className="panel-title">검토함</h2>
-        <span className={openCount > 0 ? "status amber" : "status green"}>{formatNumber(openCount)}건 열림</span>
+        <div>
+          <h2 className="panel-title">검토함</h2>
+          <p className="panel-subtitle">신고 전 확인 항목의 처리 상태 관리</p>
+        </div>
+        <div className="toolbar">
+          <span className={openCount > 0 ? "status amber" : "status green"}>{formatNumber(openCount)}건 열림</span>
+          <span className="status green">{formatNumber(resolvedCount)}건 완료</span>
+        </div>
       </div>
+      {reviewMessage && <div className={`import-message status ${reviewMessage.tone}`}>{reviewMessage.text}</div>}
       <div className="panel-body">
+        <div className="journal-summary-grid">
+          {filterOptions.map((option) => (
+            <button
+              key={option.key}
+              type="button"
+              className="journal-summary-card"
+              data-tone={option.tone}
+              data-active={reviewFilter === option.key}
+              onClick={() => setReviewFilter(option.key)}
+            >
+              <span>{option.label}</span>
+              <strong>{formatNumber(option.count)}건</strong>
+              <small>{option.hint}</small>
+            </button>
+          ))}
+        </div>
         {items.length === 0 ? (
           <div className="empty">열린 검토 항목 없음</div>
+        ) : visibleItems.length === 0 ? (
+          <div className="empty">선택한 상태의 검토 항목 없음</div>
         ) : (
           <div className="review-list">
-            {items.map((item) => (
+            {visibleItems.map((item) => (
               <article key={item.id} className="review-item" data-severity={item.severity}>
                 <div className="review-row">
                   <strong>{item.reason}</strong>
@@ -2496,11 +2554,15 @@ function ReviewsPanel({
                 <div className="toolbar">
                   {item.status === "OPEN" ? (
                     <>
-                      <button className="ghost-button" onClick={() => onStatusChange(item.id, "RESOLVED")}>처리 완료</button>
-                      <button className="ghost-button" onClick={() => onStatusChange(item.id, "IGNORED")}>무시</button>
+                      <button className="ghost-button" onClick={() => void changeStatus(item, "RESOLVED")} disabled={changingReviewId === item.id}>
+                        {changingReviewId === item.id ? "처리 중" : "처리 완료"}
+                      </button>
+                      <button className="ghost-button" onClick={() => void changeStatus(item, "IGNORED")} disabled={changingReviewId === item.id}>무시</button>
                     </>
                   ) : (
-                    <button className="ghost-button" onClick={() => onStatusChange(item.id, "OPEN")}>다시 열기</button>
+                    <button className="ghost-button" onClick={() => void changeStatus(item, "OPEN")} disabled={changingReviewId === item.id}>
+                      {changingReviewId === item.id ? "처리 중" : "다시 열기"}
+                    </button>
                   )}
                 </div>
               </article>
