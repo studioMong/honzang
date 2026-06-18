@@ -1,8 +1,9 @@
 export function formatKRW(value: number) {
+  const hasFraction = Number.isFinite(value) && Math.abs(value - Math.trunc(value)) > 0.000001;
   return new Intl.NumberFormat("ko-KR", {
     style: "currency",
     currency: "KRW",
-    maximumFractionDigits: 0
+    maximumFractionDigits: hasFraction ? 2 : 0
   }).format(value);
 }
 

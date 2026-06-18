@@ -52,7 +52,7 @@ import { DEFAULT_ACCOUNTS, DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/
 import { applyClassificationRules, buildReviewItems, generateJournalDraft, inferMapping, normalizeCsvRow, parseMoney, summarizeTransactions } from "@/lib/accounting";
 import { MAX_BACKUP_RESTORE_REQUEST_BYTES, MAX_EVIDENCE_FILE_SIZE, MAX_ORIGINAL_FILE_TEXT_SIZE } from "@/lib/file-limits";
 import { formatDate, formatDateTime, formatKRW, formatNumber } from "@/lib/format";
-import { moneyToMinorUnits } from "@/lib/money";
+import { minorUnitsToMoney, moneyToMinorUnits } from "@/lib/money";
 import { sampleClosingPeriods, sampleCompany, sampleEvidences, sampleJournalEntries, sampleTaxReports, sampleTransactions } from "@/lib/sample-data";
 import { toCsvFileContent } from "@/lib/table-export";
 import {
@@ -7460,28 +7460,32 @@ function buildJournalIntegrityRows(
 ): JournalIntegrityRow[] {
   const approvedEntries = journalEntries.filter((entry) => entry.status === "APPROVED");
   const approvedLines = approvedEntries.flatMap((entry) => entry.lines);
-  const totalDebit = approvedLines.reduce((sum, line) => sum + line.debitAmount, 0);
-  const totalCredit = approvedLines.reduce((sum, line) => sum + line.creditAmount, 0);
-  const journalDifference = Math.round(totalDebit - totalCredit);
+  const totalDebitMinorUnits = approvedLines.reduce((sum, line) => sum + moneyToMinorUnits(line.debitAmount), 0);
+  const totalCreditMinorUnits = approvedLines.reduce((sum, line) => sum + moneyToMinorUnits(line.creditAmount), 0);
+  const totalDebit = minorUnitsToMoney(totalDebitMinorUnits);
+  const totalCredit = minorUnitsToMoney(totalCreditMinorUnits);
+  const journalDifferenceMinorUnits = totalDebitMinorUnits - totalCreditMinorUnits;
+  const journalDifference = minorUnitsToMoney(journalDifferenceMinorUnits);
   const equationRight = totals.liability + totals.equity + totals.profit;
-  const equationDifference = Math.round(totals.asset - equationRight);
+  const equationDifferenceMinorUnits = moneyToMinorUnits(totals.asset) - moneyToMinorUnits(equationRight);
+  const equationDifference = minorUnitsToMoney(equationDifferenceMinorUnits);
 
   return [
     {
       점검: "차변/대변 합계",
-      상태: approvedEntries.length === 0 ? "승인 대기" : journalDifference === 0 ? "균형" : "차액 확인",
-      톤: approvedEntries.length === 0 ? "red" : journalDifference === 0 ? "green" : "red",
+      상태: approvedEntries.length === 0 ? "승인 대기" : journalDifferenceMinorUnits === 0 ? "균형" : "차액 확인",
+      톤: approvedEntries.length === 0 ? "red" : journalDifferenceMinorUnits === 0 ? "green" : "red",
       금액: `차변 ${formatKRW(totalDebit)} · 대변 ${formatKRW(totalCredit)}`,
       근거: approvedEntries.length === 0 ? "승인된 분개가 없습니다." : `차액 ${formatKRW(Math.abs(journalDifference))}`,
-      "다음 작업": approvedEntries.length === 0 ? "자동분개 탭에서 정상 초안 승인" : journalDifference === 0 ? "기간별 승인 분개 표본 확인" : "불균형 분개를 취소하고 거래 분류 재확인"
+      "다음 작업": approvedEntries.length === 0 ? "자동분개 탭에서 정상 초안 승인" : journalDifferenceMinorUnits === 0 ? "기간별 승인 분개 표본 확인" : "불균형 분개를 취소하고 거래 분류 재확인"
     },
     {
       점검: "회계등식",
-      상태: financialStatementRows.length === 0 ? "재무제표 대기" : equationDifference === 0 ? "균형" : "차액 확인",
-      톤: financialStatementRows.length === 0 ? "red" : equationDifference === 0 ? "green" : "red",
+      상태: financialStatementRows.length === 0 ? "재무제표 대기" : equationDifferenceMinorUnits === 0 ? "균형" : "차액 확인",
+      톤: financialStatementRows.length === 0 ? "red" : equationDifferenceMinorUnits === 0 ? "green" : "red",
       금액: `자산 ${formatKRW(totals.asset)} · 부채+자본+손익 ${formatKRW(equationRight)}`,
       근거: financialStatementRows.length === 0 ? "재무제표 초안이 없습니다." : `차액 ${formatKRW(Math.abs(equationDifference))}`,
-      "다음 작업": financialStatementRows.length === 0 ? "승인 분개 생성 후 재무제표 초안 확인" : equationDifference === 0 ? "자산, 부채, 자본 계정 실재성 검토" : "자본금, 대표자차입금, 손익 계정 분류 확인"
+      "다음 작업": financialStatementRows.length === 0 ? "승인 분개 생성 후 재무제표 초안 확인" : equationDifferenceMinorUnits === 0 ? "자산, 부채, 자본 계정 실재성 검토" : "자본금, 대표자차입금, 손익 계정 분류 확인"
     },
     {
       점검: "계정별 원장",
@@ -7557,7 +7561,7 @@ function buildFinancialStatementRows(ledgerRows: ReturnType<typeof buildLedgerRo
   });
 
   return [...accountBalances.values()]
-    .filter((row) => row.balance !== 0)
+    .filter((row) => moneyToMinorUnits(row.balance) !== 0)
     .sort((a, b) => {
       const typeOrder = financialStatementSortOrder(a.accountType) - financialStatementSortOrder(b.accountType);
       if (typeOrder !== 0) return typeOrder;
@@ -7566,7 +7570,7 @@ function buildFinancialStatementRows(ledgerRows: ReturnType<typeof buildLedgerRo
     .map((row) => ({
       구분: financialStatementLabel(row.accountType),
       계정: `${row.accountCode} ${row.accountName}`,
-      금액: Math.round(row.balance),
+      금액: row.balance,
       확인: financialStatementCheckText(row.accountType)
     }));
 }

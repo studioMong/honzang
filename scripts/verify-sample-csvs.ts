@@ -18,6 +18,7 @@ import {
 } from "../src/lib/accounting";
 import { DEFAULT_ACCOUNTS } from "../src/lib/defaults";
 import { sanitizeCsvCellValue } from "../src/lib/export-safety";
+import { formatKRW } from "../src/lib/format";
 import { moneyToMinorUnits } from "../src/lib/money";
 import { parseStrictDate } from "../src/lib/server/date-validation";
 import { normalizeZipPath } from "../src/lib/zip";
@@ -114,6 +115,8 @@ assert.equal(sanitizeCsvCellValue("=IMPORTXML(\"https://example.com\")"), "'=IMP
 assert.equal(sanitizeCsvCellValue("  +1+1"), "'  +1+1", "CSV exports should neutralize formula-like text after leading spaces");
 assert.equal(sanitizeCsvCellValue(-1234), "-1234", "CSV exports should preserve numeric negative amounts");
 assert.equal(sanitizeCsvCellValue("정상 거래처"), "정상 거래처", "CSV exports should preserve ordinary text");
+assert.equal(formatKRW(1000), "₩1,000", "whole-won KRW values should render without decimal places");
+assert.equal(formatKRW(0.48), "₩0.48", "fractional KRW values should render with cent precision when needed");
 assert.equal(normalizeZipPath("../evil.csv"), "evil.csv", "ZIP exports should remove parent traversal segments");
 assert.equal(normalizeZipPath("evidences/../../invoice.pdf"), "evidences/invoice.pdf", "ZIP exports should keep safe folders without traversal");
 assert.equal(normalizeZipPath("/absolute/path.txt"), "absolute/path.txt", "ZIP exports should be relative");
