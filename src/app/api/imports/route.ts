@@ -5,7 +5,16 @@ import { z } from "zod";
 import { DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/defaults";
 import { getPrisma } from "@/lib/db";
 import { MAX_IMPORT_REQUEST_BYTES } from "@/lib/file-limits";
-import { applyClassificationRules, applyVendorDefaults, normalizeCsvRow, parseMoney, parseSignedMoney, summarizeTransactions } from "@/lib/accounting";
+import {
+  applyClassificationRules,
+  applyVendorDefaults,
+  isValidMoneyValue,
+  normalizeCsvRow,
+  parseMoney,
+  parseOptionalMoney,
+  parseOptionalSignedMoney,
+  summarizeTransactions
+} from "@/lib/accounting";
 import { recordAuditEvent } from "@/lib/server/audit";
 import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { closedPeriodResponse, findClosedPeriodForDates } from "@/lib/server/closing-periods";
@@ -112,12 +121,18 @@ function validateImportRows(payload: ImportPayloadData) {
     const sourceRow = row as ParsedCsvRow;
     const transactionDate = getMappedCsvValue(sourceRow, mapping.transactionDate);
     const description = getMappedCsvValue(sourceRow, mapping.description);
-    const amount = parseMoney(getMappedCsvValue(sourceRow, mapping.amount));
-    const depositAmount = parseMoney(getMappedCsvValue(sourceRow, mapping.depositAmount));
-    const withdrawalAmount = parseMoney(getMappedCsvValue(sourceRow, mapping.withdrawalAmount));
-    const supplyAmount = mapping.supplyAmount ? parseMoney(getMappedCsvValue(sourceRow, mapping.supplyAmount)) : null;
-    const vatAmount = mapping.vatAmount ? parseMoney(getMappedCsvValue(sourceRow, mapping.vatAmount)) : null;
-    const balance = mapping.balance ? parseSignedMoney(getMappedCsvValue(sourceRow, mapping.balance)) : null;
+    const amountValue = getMappedCsvValue(sourceRow, mapping.amount);
+    const depositAmountValue = getMappedCsvValue(sourceRow, mapping.depositAmount);
+    const withdrawalAmountValue = getMappedCsvValue(sourceRow, mapping.withdrawalAmount);
+    const supplyAmountValue = getMappedCsvValue(sourceRow, mapping.supplyAmount);
+    const vatAmountValue = getMappedCsvValue(sourceRow, mapping.vatAmount);
+    const balanceValue = getMappedCsvValue(sourceRow, mapping.balance);
+    const amount = parseMoney(amountValue);
+    const depositAmount = parseMoney(depositAmountValue);
+    const withdrawalAmount = parseMoney(withdrawalAmountValue);
+    const supplyAmount = mapping.supplyAmount ? parseOptionalMoney(supplyAmountValue) : null;
+    const vatAmount = mapping.vatAmount ? parseOptionalMoney(vatAmountValue) : null;
+    const balance = mapping.balance ? parseOptionalSignedMoney(balanceValue) : null;
 
     if (!parseStrictDate(String(transactionDate ?? ""))) {
       pushIssue(`${rowNumber}행 거래일 값이 비어 있거나 날짜 형식이 아닙니다.`);
@@ -125,6 +140,17 @@ function validateImportRows(payload: ImportPayloadData) {
     if (!String(description ?? "").trim()) {
       pushIssue(`${rowNumber}행 내용/적요 값이 비어 있습니다.`);
     }
+    const invalidMoneyIssues = validateImportRowMoneyValues({
+      amount: mapping.amount ? amountValue : undefined,
+      depositAmount: mapping.depositAmount ? depositAmountValue : undefined,
+      withdrawalAmount: mapping.withdrawalAmount ? withdrawalAmountValue : undefined,
+      supplyAmount: mapping.supplyAmount ? supplyAmountValue : undefined,
+      vatAmount: mapping.vatAmount ? vatAmountValue : undefined,
+      balance: mapping.balance ? balanceValue : undefined
+    });
+    invalidMoneyIssues.forEach((issue) => pushIssue(`${rowNumber}행 ${issue}`));
+    if (invalidMoneyIssues.length > 0) return;
+
     const moneyIssues = validateImportRowMoneyAmounts({
       amount,
       depositAmount,
@@ -157,6 +183,25 @@ function validateImportRows(payload: ImportPayloadData) {
   }
 
   return issues;
+}
+
+function validateImportRowMoneyValues(input: {
+  amount?: unknown;
+  depositAmount?: unknown;
+  withdrawalAmount?: unknown;
+  supplyAmount?: unknown;
+  vatAmount?: unknown;
+  balance?: unknown;
+}) {
+  const values: Array<[unknown, string]> = [
+    [input.amount, "금액"],
+    [input.depositAmount, "입금"],
+    [input.withdrawalAmount, "출금"],
+    [input.supplyAmount, "공급가액"],
+    [input.vatAmount, "부가세"],
+    [input.balance, "잔액"]
+  ];
+  return values.flatMap(([value, label]) => (isValidMoneyValue(value) ? [] : [`${label} 값은 숫자 금액이어야 합니다.`]));
 }
 
 function validateImportRowMoneyAmounts(input: {

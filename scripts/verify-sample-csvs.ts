@@ -7,9 +7,12 @@ import {
   applyVendorDefaults,
   generateJournalDraft,
   inferMapping,
+  isValidMoneyValue,
   normalizeCsvRow,
   parseDate,
   parseMoney,
+  parseOptionalMoney,
+  parseOptionalSignedMoney,
   parseSignedMoney,
   summarizeTransactions
 } from "../src/lib/accounting";
@@ -89,6 +92,12 @@ assert.equal(parseSignedMoney("(1,234원)"), -1_234, "parenthesized signed money
 assert.equal(parseSignedMoney("1,234-"), -1_234, "trailing negative signed money should preserve negative amounts");
 assert.equal(parseSignedMoney("-1,234.56"), -1_234.56, "leading negative signed money should preserve decimal negative amounts");
 assert.equal(parseSignedMoney("1,234.56"), 1_234.56, "signed money should preserve positive decimal amounts");
+assert.equal(parseOptionalMoney(""), null, "optional blank money should remain null");
+assert.equal(parseOptionalMoney("숫자아님"), null, "optional invalid money should remain null");
+assert.equal(parseOptionalSignedMoney("-1,234"), -1_234, "optional signed money should preserve negative amounts");
+assert.equal(isValidMoneyValue(""), true, "blank money values should be valid for optional mapped cells");
+assert.equal(isValidMoneyValue("숫자아님"), false, "non-empty invalid money values should be rejected");
+assert.equal(isValidMoneyValue("1,234원"), true, "localized money values should be valid");
 assert.equal(parseDate("2026.6.7"), "2026-06-07", "dotted dates should normalize");
 assert.equal(parseDate("20260607"), "2026-06-07", "compact dates should normalize");
 assert.equal(parseDate("2026.6.7 13:20"), "2026-06-07", "dates with common time suffixes should normalize");

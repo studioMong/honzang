@@ -87,6 +87,7 @@ try {
   await expectBlockedClosingPeriod();
   await expectInvalidCsvImportMapping();
   await expectInvalidCsvImportRows();
+  await expectInvalidCsvImportNonNumericAmount();
   await expectInvalidCsvImportAmountScale();
   await expectInvalidCsvImportTaxAmounts();
   await expectInvalidCsvOriginalFile();
@@ -411,6 +412,51 @@ async function expectInvalidCsvImportRows() {
     !body.issues.some((issue) => issue.includes("3행 거래일"))
   ) {
     throw new Error(`/api/imports returned unexpected row validation payload: ${text}`);
+  }
+}
+
+async function expectInvalidCsvImportNonNumericAmount() {
+  const response = await fetch(`${baseUrl}/api/imports`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sourceType: "BANK",
+      originalFileName: "invalid-nonnumeric-amount.csv",
+      mapping: {
+        transactionDate: "거래일",
+        description: "적요",
+        depositAmount: "입금",
+        balance: "잔액"
+      },
+      headers: ["거래일", "적요", "입금", "잔액"],
+      rows: [
+        {
+          거래일: "2026-06-17",
+          적요: "숫자 아닌 입금",
+          입금: "금액확인",
+          잔액: "1000"
+        },
+        {
+          거래일: "2026-06-17",
+          적요: "숫자 아닌 잔액",
+          입금: "1000",
+          잔액: "잔액확인"
+        }
+      ]
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/imports should reject non-numeric CSV money values, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (
+    body.code !== "INVALID_CSV_ROWS" ||
+    !Array.isArray(body.issues) ||
+    !body.issues.some((issue) => issue.includes("1행 입금 값은 숫자 금액")) ||
+    !body.issues.some((issue) => issue.includes("2행 잔액 값은 숫자 금액"))
+  ) {
+    throw new Error(`/api/imports returned unexpected non-numeric amount validation payload: ${text}`);
   }
 }
 

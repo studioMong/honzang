@@ -24,14 +24,39 @@ export function parseMoney(value: unknown): number {
 }
 
 export function parseSignedMoney(value: unknown): number {
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-  if (typeof value !== "string") return 0;
-  const compact = value.trim().replace(/[,\s원₩]/g, "");
+  return parseSignedMoneyNumber(value) ?? 0;
+}
+
+export function parseOptionalMoney(value: unknown): number | null {
+  const parsed = parseOptionalSignedMoney(value);
+  return parsed === null ? null : Math.abs(parsed);
+}
+
+export function parseOptionalSignedMoney(value: unknown): number | null {
+  if (isBlankMoneyValue(value)) return null;
+  return parseSignedMoneyNumber(value);
+}
+
+export function isValidMoneyValue(value: unknown) {
+  return isBlankMoneyValue(value) || parseSignedMoneyNumber(value) !== null;
+}
+
+function isBlankMoneyValue(value: unknown) {
+  if (value === null || value === undefined) return true;
+  return typeof value === "string" && value.trim() === "";
+}
+
+function parseSignedMoneyNumber(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const compact = trimmed.replace(/[,\s원₩]/g, "");
   const parenthesized = compact.match(/^\((.+)\)$/);
   const trailingNegative = compact.match(/^(.+)-$/);
   const normalized = parenthesized ? `-${parenthesized[1]}` : trailingNegative ? `-${trailingNegative[1]}` : compact;
   const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : 0;
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 export function parseDate(value: unknown): string {
@@ -120,9 +145,9 @@ export function normalizeCsvRow(
     direction: depositAmount > 0 ? "DEPOSIT" : withdrawalAmount > 0 ? "WITHDRAWAL" : "UNKNOWN",
     depositAmount,
     withdrawalAmount,
-    supplyAmount: mapping.supplyAmount ? parseMoney(get(mapping.supplyAmount)) : null,
-    vatAmount: mapping.vatAmount ? parseMoney(get(mapping.vatAmount)) : null,
-    balance: mapping.balance ? parseSignedMoney(get(mapping.balance)) : null,
+    supplyAmount: mapping.supplyAmount ? parseOptionalMoney(get(mapping.supplyAmount)) : null,
+    vatAmount: mapping.vatAmount ? parseOptionalMoney(get(mapping.vatAmount)) : null,
+    balance: mapping.balance ? parseOptionalSignedMoney(get(mapping.balance)) : null,
     suggestedAccount: inferred.account,
     confirmedAccount: null,
     evidenceStatus: "UNCHECKED",
