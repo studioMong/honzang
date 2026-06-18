@@ -47,6 +47,11 @@ const patchEvidenceSchema = z.object({
   supplyAmount: z.coerce.number().nonnegative().optional().nullable(),
   vatAmount: z.coerce.number().nonnegative().optional().nullable(),
   totalAmount: z.coerce.number().nonnegative().optional().nullable(),
+  fileName: z.string().trim().max(240).optional().nullable(),
+  fileUrl: z.string().trim().max(500).optional().nullable(),
+  fileDataUrl: z.string().max(MAX_EVIDENCE_FILE_DATA_URL_LENGTH).optional().nullable(),
+  fileMimeType: z.string().trim().max(120).optional().nullable(),
+  fileSize: z.coerce.number().int().nonnegative().max(MAX_EVIDENCE_FILE_SIZE).optional().nullable(),
   transactionId: z.string().optional().nullable()
 });
 
@@ -224,7 +229,7 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const parsed = await parseJsonRequest(request, patchEvidenceSchema, { label: "증빙 수정 요청" });
+  const parsed = await parseJsonRequest(request, patchEvidenceSchema, { label: "증빙 수정 요청", maxBytes: MAX_EVIDENCE_REQUEST_BYTES });
   if (!parsed.ok) return parsed.response;
 
   const payload = parsed.data;
@@ -235,6 +240,11 @@ export async function PATCH(request: Request) {
   const hasSupplyAmount = Object.prototype.hasOwnProperty.call(payload, "supplyAmount");
   const hasVatAmount = Object.prototype.hasOwnProperty.call(payload, "vatAmount");
   const hasTotalAmount = Object.prototype.hasOwnProperty.call(payload, "totalAmount");
+  const hasFileName = Object.prototype.hasOwnProperty.call(payload, "fileName");
+  const hasFileUrl = Object.prototype.hasOwnProperty.call(payload, "fileUrl");
+  const hasFileDataUrl = Object.prototype.hasOwnProperty.call(payload, "fileDataUrl");
+  const hasFileMimeType = Object.prototype.hasOwnProperty.call(payload, "fileMimeType");
+  const hasFileSize = Object.prototype.hasOwnProperty.call(payload, "fileSize");
   const hasTransactionId = Object.prototype.hasOwnProperty.call(payload, "transactionId");
   if (
     !hasEvidenceType &&
@@ -244,9 +254,53 @@ export async function PATCH(request: Request) {
     !hasSupplyAmount &&
     !hasVatAmount &&
     !hasTotalAmount &&
+    !hasFileName &&
+    !hasFileUrl &&
+    !hasFileDataUrl &&
+    !hasFileMimeType &&
+    !hasFileSize &&
     !hasTransactionId
   ) {
     return NextResponse.json({ ok: false, message: "수정할 증빙 항목이 없습니다." }, { status: 400 });
+  }
+
+  if (!hasFileDataUrl && (hasFileMimeType || hasFileSize)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_EVIDENCE_FILE",
+        message: "증빙 파일 데이터 없이 MIME 또는 크기만 수정할 수 없습니다."
+      },
+      { status: 400 }
+    );
+  }
+  const fileIssue = validateEvidenceFile({
+    fileDataUrl: payload.fileDataUrl,
+    fileMimeType: payload.fileMimeType,
+    fileSize: payload.fileSize
+  });
+  if (fileIssue) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_EVIDENCE_FILE",
+        message: fileIssue
+      },
+      { status: 400 }
+    );
+  }
+
+  const fileUrl = hasFileUrl ? normalizeEvidenceFileUrl(payload.fileUrl) : undefined;
+  const fileUrlIssue = hasFileUrl ? validateEvidenceFileUrl(fileUrl) : null;
+  if (fileUrlIssue) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "INVALID_EVIDENCE_FILE_URL",
+        message: fileUrlIssue
+      },
+      { status: 400 }
+    );
   }
 
   const db = getPrisma();
@@ -328,6 +382,15 @@ export async function PATCH(request: Request) {
   if (hasSupplyAmount) updateData.supplyAmount = nextSupplyAmount;
   if (hasVatAmount) updateData.vatAmount = nextVatAmount;
   if (hasTotalAmount) updateData.totalAmount = nextTotalAmount;
+  if (hasFileName) updateData.fileName = payload.fileName || null;
+  if (hasFileUrl) updateData.fileUrl = fileUrl ?? null;
+  if (hasFileDataUrl) {
+    const rawPayload = readRawPayloadObject(existing.rawPayload);
+    rawPayload.fileDataUrl = encryptStoredText(payload.fileDataUrl);
+    rawPayload.fileMimeType = payload.fileMimeType ?? null;
+    rawPayload.fileSize = payload.fileSize ?? null;
+    updateData.rawPayload = rawPayload;
+  }
   if (hasTransactionId) updateData.transactionId = nextTransactionId;
 
   const result = await db.$transaction(async (tx) => {
@@ -484,6 +547,11 @@ async function updateLinkedTransactionEvidenceStatus(
 
 function nullableDecimalLikeToNumber(value: unknown) {
   return value === null || value === undefined ? null : decimalLikeToNumber(value);
+}
+
+function readRawPayloadObject(value: Prisma.JsonValue | null): Record<string, Prisma.JsonValue> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return { ...value } as Record<string, Prisma.JsonValue>;
 }
 
 function decimalLikeToNumber(value: unknown) {

@@ -43,7 +43,10 @@ try {
 
   assert.match(importsRoute, /encryptStoredText\(payload\.originalFileText\)/, "CSV imports should encrypt stored original CSV text");
   assert.match(importsRoute, /decryptStoredText\(importBatch\.originalFileText\)/, "CSV original download should decrypt stored text");
-  assert.match(evidencesRoute, /encryptStoredText\(payload\.fileDataUrl\)/, "evidence uploads should encrypt DB-stored file data URLs");
+  assert.ok(
+    (evidencesRoute.match(/encryptStoredText\(payload\.fileDataUrl\)/g) ?? []).length >= 2,
+    "evidence uploads and file replacements should encrypt DB-stored file data URLs"
+  );
   assert.match(backupRestoreRoute, /encryptStoredText\(originalFile\?\.originalFileText\)/, "backup restore should encrypt restored original CSV text");
   assert.match(backupRestoreRoute, /encryptStoredText\(evidence\.fileDataUrl\)/, "backup restore should encrypt restored evidence files");
   assert.match(serializers, /decryptStoredText\(rawPayload\.fileDataUrl\)/, "evidence serialization should decrypt stored file data URLs");

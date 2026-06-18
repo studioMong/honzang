@@ -1845,6 +1845,7 @@ function EvidencesPanel({
   });
   const [saving, setSaving] = useState(false);
   const [editingEvidenceId, setEditingEvidenceId] = useState<string | null>(null);
+  const [evidenceFileTouched, setEvidenceFileTouched] = useState(false);
   const [deletingEvidenceId, setDeletingEvidenceId] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const matchCandidates = useMemo(() => buildEvidenceMatchCandidates(form, transactions), [form, transactions]);
@@ -1862,6 +1863,7 @@ function EvidencesPanel({
 
     setFileError(null);
     const dataUrl = await readFileAsDataUrl(file);
+    setEvidenceFileTouched(true);
     setForm((current) => ({
       ...current,
       fileName: file.name,
@@ -1873,6 +1875,7 @@ function EvidencesPanel({
 
   function resetEvidenceForm() {
     setEditingEvidenceId(null);
+    setEvidenceFileTouched(false);
     setForm((current) => ({
       ...current,
       counterparty: "",
@@ -1890,6 +1893,7 @@ function EvidencesPanel({
 
   function editEvidence(evidence: AppEvidence) {
     setEditingEvidenceId(evidence.id);
+    setEvidenceFileTouched(false);
     setFileError(null);
     setForm({
       evidenceType: evidence.evidenceType,
@@ -1907,6 +1911,17 @@ function EvidencesPanel({
     });
   }
 
+  function clearEvidenceFile() {
+    setEvidenceFileTouched(true);
+    setForm((current) => ({
+      ...current,
+      fileName: "",
+      fileDataUrl: "",
+      fileMimeType: "",
+      fileSize: ""
+    }));
+  }
+
   async function saveEvidence() {
     setSaving(true);
     try {
@@ -1918,15 +1933,24 @@ function EvidencesPanel({
         supplyAmount: form.supplyAmount ? Number(form.supplyAmount) : null,
         vatAmount: form.vatAmount ? Number(form.vatAmount) : null,
         totalAmount: form.totalAmount ? Number(form.totalAmount) : null,
+        fileName: form.fileName || null,
         transactionId: form.transactionId || null
       };
       if (editingEvidenceId) {
+        const filePatchBody = evidenceFileTouched
+          ? {
+              fileDataUrl: form.fileDataUrl || null,
+              fileMimeType: form.fileMimeType || null,
+              fileSize: form.fileSize ? Number(form.fileSize) : null
+            }
+          : {};
         const response = await fetch("/api/evidences", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             id: editingEvidenceId,
-            ...requestBody
+            ...requestBody,
+            ...filePatchBody
           })
         });
         const payload = await response.json();
@@ -1949,7 +1973,6 @@ function EvidencesPanel({
         body: JSON.stringify({
           companyId,
           ...requestBody,
-          fileName: form.fileName || null,
           fileDataUrl: form.fileDataUrl || null,
           fileMimeType: form.fileMimeType || null,
           fileSize: form.fileSize ? Number(form.fileSize) : null
@@ -2103,7 +2126,6 @@ function EvidencesPanel({
           <label className="file-drop">
             <input
               type="file"
-              disabled={Boolean(editingEvidenceId)}
               onChange={(event) => void handleEvidenceFile(event.target.files?.[0])}
             />
             <span>
@@ -2112,6 +2134,11 @@ function EvidencesPanel({
               <span>{form.fileSize ? `${formatFileSize(Number(form.fileSize))} DB 보관 준비` : `${formatFileSize(MAX_EVIDENCE_FILE_SIZE)} 이하 파일은 DB에 보관합니다`}</span>
             </span>
           </label>
+          {editingEvidenceId && (form.fileName || form.fileDataUrl || form.fileSize) && (
+            <button type="button" className="ghost-button" onClick={clearEvidenceFile} disabled={saving}>
+              파일 제거
+            </button>
+          )}
           {fileError && <p className="field-help">{fileError}</p>}
         </div>
       </section>

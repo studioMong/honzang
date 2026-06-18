@@ -450,6 +450,30 @@ try {
   assert.equal(previousEvidenceTransaction?.evidenceStatus, "UNCHECKED", "evidence patch should persist the previous linked transaction status");
   assert.equal(patchedEvidenceTransaction?.evidenceStatus, "MATCHED", "evidence patch should persist the newly linked transaction status");
 
+  const replacementEvidenceText = `${marker} replacement evidence file`;
+  const replacementEvidenceDataUrl = `data:text/plain;base64,${Buffer.from(replacementEvidenceText).toString("base64")}`;
+  const evidenceFilePatchPayload = await requestJson<{
+    ok?: boolean;
+    mode?: string;
+    evidence?: AppEvidence;
+  }>("/api/evidences", {
+    method: "PATCH",
+    body: {
+      id: evidencePayload.evidence.id,
+      fileName: `${marker}-replacement.txt`,
+      fileDataUrl: replacementEvidenceDataUrl,
+      fileMimeType: "text/plain",
+      fileSize: Buffer.byteLength(replacementEvidenceText)
+    }
+  });
+  assert.equal(evidenceFilePatchPayload.ok, true, "evidence file patch should succeed");
+  assert.equal(evidenceFilePatchPayload.mode, "database", "evidence file patch should use database mode");
+  assert.equal(evidenceFilePatchPayload.evidence?.id, evidencePayload.evidence.id, "evidence file patch should keep the evidence id");
+  assert.equal(evidenceFilePatchPayload.evidence?.fileName, `${marker}-replacement.txt`, "evidence file patch should update file name");
+  assert.equal(evidenceFilePatchPayload.evidence?.fileDataUrl, replacementEvidenceDataUrl, "evidence file patch should return the replaced DB file data URL");
+  assert.equal(evidenceFilePatchPayload.evidence?.fileMimeType, "text/plain", "evidence file patch should update file MIME type");
+  assert.equal(evidenceFilePatchPayload.evidence?.fileSize, Buffer.byteLength(replacementEvidenceText), "evidence file patch should update file size");
+
   const approvedEntries: AppJournalEntry[] = [];
   for (const transaction of importedTransactions) {
     const draft = generateJournalDraft(transaction);

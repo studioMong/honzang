@@ -107,7 +107,7 @@ export function buildDataRetentionRows({
       포함정보: "세금계산서, 카드전표, 현금영수증, 인보이스 파일과 금액 메타데이터",
       보관위치: "Postgres Evidence rawPayload, 백업 ZIP evidences",
       보관기준: "세무 증빙 보관 필요 기간 동안 보관",
-      삭제방법: "증빙함에서 메타데이터 수정/개별 삭제, 전체 교체는 백업 복원",
+      삭제방법: "증빙함에서 메타데이터/파일 수정 또는 개별 삭제, 전체 교체는 백업 복원",
       상태: evidences.length === 0 ? "대기" : externalEvidenceFileCount > 0 ? "외부 링크 포함" : "보관 중",
       톤: evidences.length === 0 ? "amber" : externalEvidenceFileCount > 0 ? "amber" : "green"
     },

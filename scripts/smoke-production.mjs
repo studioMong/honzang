@@ -113,6 +113,7 @@ try {
   await expectInvalidEvidenceDate();
   await expectInvalidEvidenceJson();
   await expectMalformedJson("/api/evidences", "PATCH");
+  await expectInvalidEvidencePatchFile();
   await expectInvalidEvidenceFile();
   await expectInvalidEvidenceFileUrl();
   await expectInvalidEvidenceAmountScale();
@@ -898,6 +899,28 @@ async function expectInvalidEvidenceJson() {
   const body = JSON.parse(text);
   if (body.code !== "INVALID_JSON_PAYLOAD") {
     throw new Error(`/api/evidences returned unexpected invalid JSON payload: ${text}`);
+  }
+}
+
+async function expectInvalidEvidencePatchFile() {
+  const response = await fetch(`${baseUrl}/api/evidences`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: "smoke-evidence",
+      fileName: "receipt.txt",
+      fileDataUrl: "data:text/plain;base64,SGVsbG8=",
+      fileMimeType: "application/pdf",
+      fileSize: 5
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/evidences PATCH should reject inconsistent file payloads, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_EVIDENCE_FILE") {
+    throw new Error(`/api/evidences PATCH returned unexpected file validation payload: ${text}`);
   }
 }
 
