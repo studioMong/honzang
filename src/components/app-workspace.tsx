@@ -44,6 +44,7 @@ import type {
   ReviewItem,
   SourceType
 } from "@/types";
+import { billingActivePrice, billingModelLabel, buildBillingEstimate, formatBillingUnits } from "@/lib/billing";
 import { RESTORE_CONFIRMATION_TEXT } from "@/lib/backup-restore";
 import { buildClosingSnapshotExportPayload, buildClosingSnapshotWorkbookSheets, buildClosingSnapshotZipFiles } from "@/lib/closing-snapshot-export";
 import { DATA_SOURCE_TYPES, buildDataSourceRows } from "@/lib/data-sources";
@@ -5404,56 +5405,6 @@ function vatTypeLabel(value: string) {
     MIXED: "겸영"
   };
   return labels[value] ?? value;
-}
-
-function billingModelLabel(value: AppCompany["billingModel"]) {
-  const labels: Record<AppCompany["billingModel"], string> = {
-    INTERNAL_PER_USE: "내부 회당 정산",
-    SAAS_MONTHLY: "SaaS 월 구독",
-    SAAS_ANNUAL: "SaaS 연 구독"
-  };
-  return labels[value];
-}
-
-function billingActivePrice(company: AppCompany) {
-  if (company.billingModel === "SAAS_MONTHLY") return company.monthlySubscriptionPrice;
-  if (company.billingModel === "SAAS_ANNUAL") return company.annualSubscriptionPrice;
-  return company.perUseUnitPrice;
-}
-
-function buildBillingEstimate(company: AppCompany, transactions: AppTransaction[]) {
-  const unitPrice = billingActivePrice(company);
-  const revenueTransactions = transactions.filter(isBillingRevenueTransaction);
-  const revenueSupplyAmount = revenueTransactions.reduce((sum, transaction) => sum + billingSupplyAmount(transaction), 0);
-  return {
-    unitPrice,
-    unitLabel: billingUnitLabel(company.billingModel),
-    revenueTransactionCount: revenueTransactions.length,
-    revenueSupplyAmount,
-    estimatedUnits: unitPrice > 0 ? revenueSupplyAmount / unitPrice : 0
-  };
-}
-
-function isBillingRevenueTransaction(transaction: AppTransaction) {
-  const account = getTransactionAccount(transaction);
-  if (transaction.depositAmount <= 0) return false;
-  if (account) return account.type === "REVENUE";
-  return transaction.sourceType === "HOMETAX_SALES" || transaction.description.includes("구독") || transaction.description.includes("정산");
-}
-
-function billingSupplyAmount(transaction: AppTransaction) {
-  return transaction.supplyAmount ?? Math.round(transaction.depositAmount / 1.1);
-}
-
-function billingUnitLabel(model: AppCompany["billingModel"]) {
-  if (model === "SAAS_MONTHLY") return "월 구독분";
-  if (model === "SAAS_ANNUAL") return "연 구독분";
-  return "회";
-}
-
-function formatBillingUnits(value: number) {
-  if (!Number.isFinite(value)) return "0";
-  return new Intl.NumberFormat("ko-KR", { maximumFractionDigits: value >= 10 ? 1 : 2 }).format(value);
 }
 
 function auditActionLabel(action: string) {

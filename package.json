@@ -14,6 +14,7 @@
     "verify:deployment-config": "node scripts/verify-deployment-config.mjs",
     "verify:limits": "node scripts/verify-file-limits.mjs",
     "verify:data-sources": "tsx scripts/verify-data-sources.ts",
+    "verify:billing-estimates": "tsx scripts/verify-billing-estimates.ts",
     "verify:product-boundaries": "node scripts/verify-product-boundaries.mjs",
     "verify:closing-snapshot-exports": "tsx scripts/verify-closing-snapshot-exports.ts",
     "verify:workspace-backup-exports": "tsx scripts/verify-workspace-backup-exports.ts",
