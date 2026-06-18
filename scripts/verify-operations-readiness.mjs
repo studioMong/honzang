@@ -79,6 +79,8 @@ async function verifyHealthSampleMode() {
     assert.equal(body.ok, true, "/api/health should stay reachable without DATABASE_URL");
     assert.equal(body.mode, "sample", "/api/health should report sample mode without DATABASE_URL");
     assert.equal(body.database, "not_configured", "/api/health should report missing database configuration");
+    assert.equal(body.schema?.status, "not_checked", "/api/health should report schema not checked without DATABASE_URL");
+    assert.equal(body.schema?.requiredTables, 14, "/api/health should expose required table count without DATABASE_URL");
     assert.equal(body.railway?.commitSha, commitSha, "/api/health should expose Railway commit metadata");
   });
 }

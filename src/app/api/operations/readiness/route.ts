@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPrisma } from "@/lib/db";
 import { isAccessControlEnabled, isAccessTokenSaltConfigured } from "@/lib/server/access-control";
+import { inspectDatabaseSchema, REQUIRED_DATABASE_TABLES } from "@/lib/server/database-schema";
 import { isFileEncryptionConfigured } from "@/lib/server/file-encryption";
 import packageInfo from "../../../../../package.json";
 
@@ -14,23 +15,6 @@ type ReadinessCheck = {
   detail: string;
   action: string;
 };
-
-const REQUIRED_DATABASE_TABLES = [
-  "Company",
-  "Account",
-  "CsvTemplate",
-  "ImportBatch",
-  "Transaction",
-  "Evidence",
-  "JournalEntry",
-  "JournalLine",
-  "Vendor",
-  "ClassificationRule",
-  "ReviewItem",
-  "TaxReport",
-  "AuditEvent",
-  "ClosingPeriod"
-];
 
 export const dynamic = "force-dynamic";
 
@@ -116,20 +100,14 @@ async function databaseSchemaCheck(): Promise<ReadinessCheck> {
   }
 
   try {
-    const rows = await db.$queryRaw<Array<{ table_name: string }>>`
-      SELECT table_name
-      FROM information_schema.tables
-      WHERE table_schema = 'public'
-    `;
-    const existingTables = new Set(rows.map((row) => row.table_name));
-    const missingTables = REQUIRED_DATABASE_TABLES.filter((tableName) => !existingTables.has(tableName));
-    if (missingTables.length > 0) {
+    const schema = await inspectDatabaseSchema(db);
+    if (!schema.ok) {
       return {
         key: "databaseSchema",
         label: "Postgres 스키마",
         status: "마이그레이션 필요",
         tone: "red",
-        detail: `누락 테이블: ${missingTables.join(", ")}`,
+        detail: `누락 테이블: ${schema.missingTables.join(", ")}`,
         action: "Railway preDeployCommand의 npm run db:deploy 실행 로그와 Prisma migration 상태 확인"
       };
     }

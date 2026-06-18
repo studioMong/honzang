@@ -15,6 +15,8 @@ const railwayVerifyScript = readText("scripts/verify-railway.mjs");
 const securityHeaders = readText("scripts/lib/security-headers.mjs");
 const accessControl = readText("src/lib/server/access-control.ts");
 const operationsReadiness = readText("src/app/api/operations/readiness/route.ts");
+const healthRoute = readText("src/app/api/health/route.ts");
+const databaseSchema = readText("src/lib/server/database-schema.ts");
 const proxy = readText("src/proxy.ts");
 
 assert.equal(packageJson.scripts?.build, "prisma generate && next build && node scripts/prepare-standalone.mjs", "package build script should create the standalone server");
@@ -50,6 +52,7 @@ assert.match(proxy, /isRequestAuthenticated/, "proxy should protect private rout
 assert.match(proxy, /INVALID_ORIGIN/, "proxy should reject cross-origin API mutations");
 assert.match(proxy, /MUTATION_METHODS/, "proxy should identify mutating API methods for origin checks");
 assert.ok(existsSync("src/app/api/operations/readiness/route.ts"), "Operations readiness API should exist");
+assert.ok(existsSync("src/lib/server/database-schema.ts"), "Database schema inspection helper should exist");
 assert.match(dockerignore, /^\.next$/m, ".dockerignore should exclude local build output");
 assert.match(dockerignore, /^node_modules$/m, ".dockerignore should exclude local dependencies");
 assert.match(dockerignore, /^\.env\.\*$/m, ".dockerignore should exclude env files");
@@ -91,8 +94,11 @@ assert.match(operationsReadiness, /production \? "red"/, "Operations readiness s
 assert.match(operationsReadiness, /fileEncryptionCheck/, "Operations readiness should include file encryption status");
 assert.match(operationsReadiness, /HONZANG_FILE_ENCRYPTION_KEY/, "Operations readiness should name the file encryption key variable");
 assert.match(operationsReadiness, /databaseSchemaCheck/, "Operations readiness should include database schema status");
-assert.match(operationsReadiness, /REQUIRED_DATABASE_TABLES/, "Operations readiness should enumerate required Prisma tables");
-assert.match(operationsReadiness, /information_schema\.tables/, "Operations readiness should inspect Postgres tables");
+assert.match(operationsReadiness, /inspectDatabaseSchema/, "Operations readiness should use the shared database schema inspector");
+assert.match(healthRoute, /inspectDatabaseSchema/, "Healthcheck should verify database schema readiness");
+assert.match(healthRoute, /schema_error/, "Healthcheck should fail when required database tables are missing");
+assert.match(databaseSchema, /REQUIRED_DATABASE_TABLES/, "Database schema helper should enumerate required Prisma tables");
+assert.match(databaseSchema, /information_schema\.tables/, "Database schema helper should inspect Postgres tables");
 
 console.log("Deployment config verification passed.");
 
