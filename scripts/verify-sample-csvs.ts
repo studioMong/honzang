@@ -21,6 +21,7 @@ import { sanitizeCsvCellValue } from "../src/lib/export-safety";
 import { formatKRW } from "../src/lib/format";
 import { moneyToMinorUnits } from "../src/lib/money";
 import { parseStrictDate } from "../src/lib/server/date-validation";
+import { validateTransactionAmounts } from "../src/lib/server/transaction-validation";
 import { normalizeZipPath } from "../src/lib/zip";
 import { buildEvidenceAmountReviewItems, resolveTransactionEvidenceStatus, type EvidenceAmountReviewTransaction } from "../src/lib/server/evidence-amount-reviews";
 import type { AppClassificationRule, AppTransaction, ParsedCsvRow, SourceType } from "../src/types";
@@ -117,6 +118,21 @@ assert.equal(sanitizeCsvCellValue(-1234), "-1234", "CSV exports should preserve 
 assert.equal(sanitizeCsvCellValue("정상 거래처"), "정상 거래처", "CSV exports should preserve ordinary text");
 assert.equal(formatKRW(1000), "₩1,000", "whole-won KRW values should render without decimal places");
 assert.equal(formatKRW(0.48), "₩0.48", "fractional KRW values should render with cent precision when needed");
+assert.equal(
+  validateTransactionAmounts({ depositAmount: 1100.25, withdrawalAmount: 0, supplyAmount: 1000.2, vatAmount: 100.05 }),
+  null,
+  "manual transaction amounts should allow valid cent precision tax breakdowns"
+);
+assert.match(
+  validateTransactionAmounts({ depositAmount: 1000.001, withdrawalAmount: 0 }) ?? "",
+  /소수 둘째 자리/,
+  "manual transaction amounts should reject values below cent precision"
+);
+assert.match(
+  validateTransactionAmounts({ depositAmount: 1000, withdrawalAmount: 0, supplyAmount: 1000, vatAmount: 100 }) ?? "",
+  /공급가액과 부가세의 합/,
+  "manual transaction tax breakdowns should not exceed the gross amount"
+);
 assert.equal(normalizeZipPath("../evil.csv"), "evil.csv", "ZIP exports should remove parent traversal segments");
 assert.equal(normalizeZipPath("evidences/../../invoice.pdf"), "evidences/invoice.pdf", "ZIP exports should keep safe folders without traversal");
 assert.equal(normalizeZipPath("/absolute/path.txt"), "absolute/path.txt", "ZIP exports should be relative");

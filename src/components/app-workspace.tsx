@@ -52,7 +52,7 @@ import { DEFAULT_ACCOUNTS, DEFAULT_COMPANY_ID, SOURCE_TYPE_LABELS } from "@/lib/
 import { applyClassificationRules, buildReviewItems, generateJournalDraft, inferMapping, normalizeCsvRow, parseMoney, summarizeTransactions } from "@/lib/accounting";
 import { MAX_BACKUP_RESTORE_REQUEST_BYTES, MAX_EVIDENCE_FILE_SIZE, MAX_ORIGINAL_FILE_TEXT_SIZE } from "@/lib/file-limits";
 import { formatDate, formatDateTime, formatKRW, formatNumber } from "@/lib/format";
-import { minorUnitsToMoney, moneyToMinorUnits } from "@/lib/money";
+import { hasAtMostTwoDecimalPlaces, MAX_DECIMAL_14_2_AMOUNT, minorUnitsToMoney, moneyToMinorUnits } from "@/lib/money";
 import { sampleClosingPeriods, sampleCompany, sampleEvidences, sampleJournalEntries, sampleTaxReports, sampleTransactions } from "@/lib/sample-data";
 import { toCsvFileContent } from "@/lib/table-export";
 import {
@@ -1407,6 +1407,57 @@ function CsvGuidePanel() {
   );
 }
 
+type ManualMoneyInputResult = {
+  value: number | null;
+  issue?: string;
+};
+
+function parseManualMoneyInput(raw: string, label: string): ManualMoneyInputResult {
+  const trimmed = raw.trim();
+  if (!trimmed) return { value: null };
+  const value = Number(trimmed);
+  if (!Number.isFinite(value)) {
+    return { value: null, issue: `${label}은 유효한 숫자여야 합니다.` };
+  }
+  if (value < 0) {
+    return { value: null, issue: `${label}은 0 이상이어야 합니다.` };
+  }
+  if (value > MAX_DECIMAL_14_2_AMOUNT) {
+    return { value: null, issue: `${label}은 ${MAX_DECIMAL_14_2_AMOUNT.toLocaleString("ko-KR")} 이하만 입력할 수 있습니다.` };
+  }
+  if (!hasAtMostTwoDecimalPlaces(value)) {
+    return { value: null, issue: `${label}은 소수 둘째 자리까지만 입력할 수 있습니다.` };
+  }
+  return { value };
+}
+
+function validateManualTaxAmounts(grossAmount: number, supplyAmount: number | null, vatAmount: number | null) {
+  if (supplyAmount === null && vatAmount === null) return null;
+  const grossMinorUnits = moneyToMinorUnits(grossAmount);
+  const supplyMinorUnits = supplyAmount === null ? null : moneyToMinorUnits(supplyAmount);
+  const vatMinorUnits = vatAmount === null ? null : moneyToMinorUnits(vatAmount);
+
+  if (supplyMinorUnits !== null && supplyMinorUnits > grossMinorUnits) {
+    return "공급가액은 거래 총액보다 클 수 없습니다.";
+  }
+  if (vatMinorUnits !== null && vatMinorUnits > grossMinorUnits) {
+    return "부가세는 거래 총액보다 클 수 없습니다.";
+  }
+  if (supplyMinorUnits !== null && vatMinorUnits !== null && supplyMinorUnits + vatMinorUnits > grossMinorUnits) {
+    return "공급가액과 부가세의 합은 거래 총액보다 클 수 없습니다.";
+  }
+
+  return null;
+}
+
+function formatTransactionTaxBreakdown(transaction: AppTransaction) {
+  const parts = [
+    transaction.supplyAmount === null || transaction.supplyAmount === undefined ? null : `공급가액 ${formatKRW(transaction.supplyAmount)}`,
+    transaction.vatAmount === null || transaction.vatAmount === undefined ? null : `부가세 ${formatKRW(transaction.vatAmount)}`
+  ].filter((part): part is string => Boolean(part));
+  return parts.join(" · ");
+}
+
 function TransactionsPanel({
   transactions,
   accounts,
@@ -1424,6 +1475,8 @@ function TransactionsPanel({
     counterparty: "",
     depositAmount: "",
     withdrawalAmount: "",
+    supplyAmount: "",
+    vatAmount: "",
     confirmedAccountId: "",
     evidenceStatus: "UNCHECKED" as EvidenceStatus,
     memo: ""
@@ -1445,18 +1498,30 @@ function TransactionsPanel({
 
   async function createManualTransaction() {
     if (!form.description.trim()) return;
-    const depositAmount = Number(form.depositAmount || 0);
-    const withdrawalAmount = Number(form.withdrawalAmount || 0);
-    if (!Number.isFinite(depositAmount) || !Number.isFinite(withdrawalAmount)) {
-      setMessage({ tone: "red", text: "금액은 숫자로 입력해야 합니다." });
+    const depositResult = parseManualMoneyInput(form.depositAmount, "입금");
+    const withdrawalResult = parseManualMoneyInput(form.withdrawalAmount, "출금");
+    const supplyResult = parseManualMoneyInput(form.supplyAmount, "공급가액");
+    const vatResult = parseManualMoneyInput(form.vatAmount, "부가세");
+    const moneyIssue = depositResult.issue ?? withdrawalResult.issue ?? supplyResult.issue ?? vatResult.issue;
+    if (moneyIssue) {
+      setMessage({ tone: "red", text: moneyIssue });
       return;
     }
+    const depositAmount = depositResult.value ?? 0;
+    const withdrawalAmount = withdrawalResult.value ?? 0;
+    const supplyAmount = supplyResult.value;
+    const vatAmount = vatResult.value;
     if (depositAmount <= 0 && withdrawalAmount <= 0) {
       setMessage({ tone: "red", text: "입금 또는 출금 금액을 입력해야 합니다." });
       return;
     }
     if (depositAmount > 0 && withdrawalAmount > 0) {
       setMessage({ tone: "red", text: "입금과 출금 중 하나만 입력해야 합니다." });
+      return;
+    }
+    const taxIssue = validateManualTaxAmounts(depositAmount > 0 ? depositAmount : withdrawalAmount, supplyAmount, vatAmount);
+    if (taxIssue) {
+      setMessage({ tone: "red", text: taxIssue });
       return;
     }
     setSaving(true);
@@ -1471,6 +1536,8 @@ function TransactionsPanel({
           counterparty: form.counterparty.trim() || null,
           depositAmount,
           withdrawalAmount,
+          supplyAmount,
+          vatAmount,
           confirmedAccountId: form.confirmedAccountId || null,
           evidenceStatus: form.evidenceStatus,
           memo: form.memo.trim() || null
@@ -1486,6 +1553,8 @@ function TransactionsPanel({
           counterparty: "",
           depositAmount: "",
           withdrawalAmount: "",
+          supplyAmount: "",
+          vatAmount: "",
           memo: ""
         }));
       } else {
@@ -1538,11 +1607,19 @@ function TransactionsPanel({
           </div>
           <div className="field">
             <label>입금</label>
-            <input type="number" min="0" step="1" inputMode="numeric" value={form.depositAmount} onChange={(event) => updateForm("depositAmount", event.target.value)} />
+            <input type="number" min="0" step="0.01" inputMode="decimal" value={form.depositAmount} onChange={(event) => updateForm("depositAmount", event.target.value)} />
           </div>
           <div className="field">
             <label>출금</label>
-            <input type="number" min="0" step="1" inputMode="numeric" value={form.withdrawalAmount} onChange={(event) => updateForm("withdrawalAmount", event.target.value)} />
+            <input type="number" min="0" step="0.01" inputMode="decimal" value={form.withdrawalAmount} onChange={(event) => updateForm("withdrawalAmount", event.target.value)} />
+          </div>
+          <div className="field">
+            <label>공급가액</label>
+            <input type="number" min="0" step="0.01" inputMode="decimal" value={form.supplyAmount} onChange={(event) => updateForm("supplyAmount", event.target.value)} />
+          </div>
+          <div className="field">
+            <label>부가세</label>
+            <input type="number" min="0" step="0.01" inputMode="decimal" value={form.vatAmount} onChange={(event) => updateForm("vatAmount", event.target.value)} />
           </div>
           <div className="field">
             <label>증빙</label>
@@ -1592,6 +1669,7 @@ function TransactionsPanel({
                   <td>
                     <strong>{transaction.description}</strong>
                     {transaction.counterparty && <div className="muted">{transaction.counterparty}</div>}
+                    {formatTransactionTaxBreakdown(transaction) && <div className="muted">{formatTransactionTaxBreakdown(transaction)}</div>}
                   </td>
                   <td>
                     <select

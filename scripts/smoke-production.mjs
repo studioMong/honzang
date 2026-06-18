@@ -139,6 +139,9 @@ try {
   await expectText("/?view=journals", (body) =>
     ["자동분개 초안", "바로 승인", "검토 필요", "정상 초안"].every((text) => body.includes(text))
   );
+  await expectText("/?view=transactions", (body) =>
+    ["수기 거래", "입금", "출금", "공급가액", "부가세", "거래내역"].every((text) => body.includes(text))
+  );
   await expectText("/?view=reports", (body) =>
     [
       "혼자장부 신고 준비 리포트",
