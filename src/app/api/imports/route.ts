@@ -11,6 +11,7 @@ import { ensureDefaultCompany } from "@/lib/server/bootstrap";
 import { closedPeriodResponse, findClosedPeriodForDates } from "@/lib/server/closing-periods";
 import { parseStrictDate } from "@/lib/server/date-validation";
 import { decryptStoredText, encryptedTextUnavailableMessage, encryptStoredText } from "@/lib/server/file-encryption";
+import { validateDecimal14_2Amount, validateDecimal14_2SignedAmount } from "@/lib/server/money-validation";
 import { parseJsonRequest } from "@/lib/server/request-json";
 import { MAX_ORIGINAL_FILE_TEXT_SIZE, validateOriginalFileText } from "@/lib/server/source-file-validation";
 import { validateTransactionTaxAmounts } from "@/lib/server/transaction-validation";
@@ -116,6 +117,7 @@ function validateImportRows(payload: ImportPayloadData) {
     const withdrawalAmount = parseMoney(getMappedCsvValue(sourceRow, mapping.withdrawalAmount));
     const supplyAmount = mapping.supplyAmount ? parseMoney(getMappedCsvValue(sourceRow, mapping.supplyAmount)) : null;
     const vatAmount = mapping.vatAmount ? parseMoney(getMappedCsvValue(sourceRow, mapping.vatAmount)) : null;
+    const balance = mapping.balance ? parseMoney(getMappedCsvValue(sourceRow, mapping.balance)) : null;
 
     if (!parseStrictDate(String(transactionDate ?? ""))) {
       pushIssue(`${rowNumber}행 거래일 값이 비어 있거나 날짜 형식이 아닙니다.`);
@@ -123,6 +125,17 @@ function validateImportRows(payload: ImportPayloadData) {
     if (!String(description ?? "").trim()) {
       pushIssue(`${rowNumber}행 내용/적요 값이 비어 있습니다.`);
     }
+    const moneyIssues = validateImportRowMoneyAmounts({
+      amount,
+      depositAmount,
+      withdrawalAmount,
+      supplyAmount,
+      vatAmount,
+      balance
+    });
+    moneyIssues.forEach((issue) => pushIssue(`${rowNumber}행 ${issue}`));
+    if (moneyIssues.length > 0) return;
+
     if (amount <= 0 && depositAmount <= 0 && withdrawalAmount <= 0) {
       pushIssue(`${rowNumber}행 금액 또는 입금/출금 값이 0보다 커야 합니다.`);
     }
@@ -144,6 +157,24 @@ function validateImportRows(payload: ImportPayloadData) {
   }
 
   return issues;
+}
+
+function validateImportRowMoneyAmounts(input: {
+  amount: number;
+  depositAmount: number;
+  withdrawalAmount: number;
+  supplyAmount: number | null;
+  vatAmount: number | null;
+  balance: number | null;
+}) {
+  return [
+    validateDecimal14_2Amount(input.amount, "금액"),
+    validateDecimal14_2Amount(input.depositAmount, "입금"),
+    validateDecimal14_2Amount(input.withdrawalAmount, "출금"),
+    input.supplyAmount === null ? null : validateDecimal14_2Amount(input.supplyAmount, "공급가액"),
+    input.vatAmount === null ? null : validateDecimal14_2Amount(input.vatAmount, "부가세"),
+    input.balance === null ? null : validateDecimal14_2SignedAmount(input.balance, "잔액")
+  ].filter((issue): issue is string => Boolean(issue));
 }
 
 function getMappedCsvValue(row: ParsedCsvRow, column?: string) {

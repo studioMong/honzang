@@ -1,8 +1,11 @@
+import { moneyToMinorUnits, validateDecimal14_2Amount, validateDecimal14_2SignedAmount } from "@/lib/server/money-validation";
+
 export type TransactionAmountValidationInput = {
   depositAmount?: number | null;
   withdrawalAmount?: number | null;
   supplyAmount?: number | null;
   vatAmount?: number | null;
+  balance?: number | null;
   direction?: string | null;
 };
 
@@ -15,6 +18,14 @@ export type TransactionTaxAmountValidationInput = {
 export function validateTransactionAmounts(payload: TransactionAmountValidationInput) {
   const depositAmount = payload.depositAmount ?? 0;
   const withdrawalAmount = payload.withdrawalAmount ?? 0;
+  const moneyIssue = [
+    validateDecimal14_2Amount(depositAmount, "입금 금액"),
+    validateDecimal14_2Amount(withdrawalAmount, "출금 금액"),
+    payload.supplyAmount == null ? null : validateDecimal14_2Amount(payload.supplyAmount, "공급가액"),
+    payload.vatAmount == null ? null : validateDecimal14_2Amount(payload.vatAmount, "부가세"),
+    payload.balance == null ? null : validateDecimal14_2SignedAmount(payload.balance, "잔액")
+  ].find((issue): issue is string => Boolean(issue));
+  if (moneyIssue) return moneyIssue;
 
   if (depositAmount <= 0 && withdrawalAmount <= 0) {
     return "입금 또는 출금 금액을 입력해야 합니다.";
@@ -44,26 +55,29 @@ export function validateTransactionTaxAmounts(payload: TransactionTaxAmountValid
   const supplyAmount = payload.supplyAmount ?? null;
   const vatAmount = payload.vatAmount ?? null;
 
+  const moneyIssue = [
+    grossAmount === null ? null : validateDecimal14_2Amount(grossAmount, "거래 총액"),
+    supplyAmount === null ? null : validateDecimal14_2Amount(supplyAmount, "공급가액"),
+    vatAmount === null ? null : validateDecimal14_2Amount(vatAmount, "부가세")
+  ].find((issue): issue is string => Boolean(issue));
+  if (moneyIssue) return moneyIssue;
+
   if (grossAmount === null || grossAmount <= 0) return null;
   if (supplyAmount === null && vatAmount === null) return null;
 
-  const roundedGross = roundWon(grossAmount);
-  const roundedSupply = supplyAmount === null ? null : roundWon(supplyAmount);
-  const roundedVat = vatAmount === null ? null : roundWon(vatAmount);
+  const grossMinorUnits = moneyToMinorUnits(grossAmount);
+  const supplyMinorUnits = supplyAmount === null ? null : moneyToMinorUnits(supplyAmount);
+  const vatMinorUnits = vatAmount === null ? null : moneyToMinorUnits(vatAmount);
 
-  if (roundedSupply !== null && roundedSupply > roundedGross) {
+  if (supplyMinorUnits !== null && supplyMinorUnits > grossMinorUnits) {
     return "공급가액은 거래 총액보다 클 수 없습니다.";
   }
-  if (roundedVat !== null && roundedVat > roundedGross) {
+  if (vatMinorUnits !== null && vatMinorUnits > grossMinorUnits) {
     return "부가세는 거래 총액보다 클 수 없습니다.";
   }
-  if (roundedSupply !== null && roundedVat !== null && roundedSupply + roundedVat > roundedGross) {
+  if (supplyMinorUnits !== null && vatMinorUnits !== null && supplyMinorUnits + vatMinorUnits > grossMinorUnits) {
     return "공급가액과 부가세의 합은 거래 총액보다 클 수 없습니다.";
   }
 
   return null;
-}
-
-function roundWon(value: number) {
-  return Math.round(value);
 }

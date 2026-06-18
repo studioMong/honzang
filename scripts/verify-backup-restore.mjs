@@ -219,11 +219,13 @@ try {
   await verifyInvalidCsvTemplateBackup();
   await verifyInvalidJsonPayloadBackup();
   await verifyInvalidTransactionAmountBackup();
+  await verifyInvalidTransactionAmountScaleBackup();
   await verifyInvalidTransactionTaxBackup();
   await verifyInvalidTransactionImportBatchBackup();
   await verifyInvalidTransactionAccountBackup();
   await verifyInvalidEvidenceBackup();
   await verifyInvalidEvidenceAmountBackup();
+  await verifyInvalidEvidenceAmountScaleBackup();
   await verifyInvalidEvidenceTransactionBackup();
   await verifyInvalidAccountReferenceBackup();
   await verifyInvalidReviewItemBackup();
@@ -337,6 +339,23 @@ async function verifyInvalidEvidenceAmountBackup() {
   assert.equal(body.code, "INVALID_BACKUP_EVIDENCE", "restore should return evidence validation code");
   assert.ok(Array.isArray(body.issues), "restore should return evidence validation issues");
   assert.ok(body.issues.some((issue) => issue.includes("합계")), "restore should report inconsistent evidence totals");
+}
+
+async function verifyInvalidEvidenceAmountScaleBackup() {
+  const invalidBackup = structuredClone(backup);
+  invalidBackup.evidences = [
+    {
+      ...backup.evidences[0],
+      id: "evidence-invalid-amount-scale-1",
+      totalAmount: 1000.001
+    }
+  ];
+
+  const body = await postJson("/api/backups/restore", { backup: invalidBackup, dryRun: true }, 400);
+  assert.equal(body.ok, false, "restore should reject evidence amounts with too many decimal places");
+  assert.equal(body.code, "INVALID_BACKUP_EVIDENCE", "restore should return evidence validation code");
+  assert.ok(Array.isArray(body.issues), "restore should return evidence validation issues");
+  assert.ok(body.issues.some((issue) => issue.includes("소수 둘째 자리")), "restore should report evidence amount scale issues");
 }
 
 async function verifyInvalidEvidenceTransactionBackup() {
@@ -525,6 +544,23 @@ async function verifyInvalidTransactionAmountBackup() {
   assert.equal(body.code, "INVALID_BACKUP_TRANSACTIONS", "restore should return transaction validation code");
   assert.ok(Array.isArray(body.issues), "restore should return transaction validation issues");
   assert.ok(body.issues.some((issue) => issue.includes("입금과 출금")), "restore should report inconsistent transaction amounts");
+}
+
+async function verifyInvalidTransactionAmountScaleBackup() {
+  const invalidBackup = structuredClone(backup);
+  invalidBackup.transactions = [
+    {
+      ...backup.transactions[0],
+      depositAmount: 1000.001,
+      withdrawalAmount: 0
+    }
+  ];
+
+  const body = await postJson("/api/backups/restore", { backup: invalidBackup, dryRun: true }, 400);
+  assert.equal(body.ok, false, "restore should reject transaction amounts with too many decimal places");
+  assert.equal(body.code, "INVALID_BACKUP_TRANSACTIONS", "restore should return transaction validation code");
+  assert.ok(Array.isArray(body.issues), "restore should return transaction validation issues");
+  assert.ok(body.issues.some((issue) => issue.includes("소수 둘째 자리")), "restore should report transaction amount scale issues");
 }
 
 async function verifyInvalidTransactionTaxBackup() {

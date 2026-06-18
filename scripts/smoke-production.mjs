@@ -87,6 +87,7 @@ try {
   await expectBlockedClosingPeriod();
   await expectInvalidCsvImportMapping();
   await expectInvalidCsvImportRows();
+  await expectInvalidCsvImportAmountScale();
   await expectInvalidCsvImportTaxAmounts();
   await expectInvalidCsvOriginalFile();
   await expectMalformedJson("/api/imports");
@@ -98,6 +99,7 @@ try {
   await expectInvalidManualTransactionDate();
   await expectInvalidManualTransactionJson();
   await expectInvalidManualTransactionAmounts();
+  await expectInvalidManualTransactionAmountScale();
   await expectInvalidManualTransactionTaxAmounts();
   await expectInvalidTransactionPatch();
   await expectInvalidJournalDate();
@@ -109,6 +111,7 @@ try {
   await expectInvalidEvidenceJson();
   await expectInvalidEvidenceFile();
   await expectInvalidEvidenceFileUrl();
+  await expectInvalidEvidenceAmountScale();
   await expectInvalidEvidenceAmounts();
   await expectInvalidReportPeriod();
   await expectInvalidReportJson();
@@ -411,6 +414,38 @@ async function expectInvalidCsvImportRows() {
   }
 }
 
+async function expectInvalidCsvImportAmountScale() {
+  const response = await fetch(`${baseUrl}/api/imports`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sourceType: "BANK",
+      originalFileName: "invalid-amount-scale.csv",
+      mapping: {
+        transactionDate: "거래일",
+        description: "적요",
+        depositAmount: "입금"
+      },
+      headers: ["거래일", "적요", "입금"],
+      rows: [
+        {
+          거래일: "2026-06-17",
+          적요: "소수 자릿수 초과",
+          입금: "1000.001"
+        }
+      ]
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/imports should reject CSV amounts with too many decimal places, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_CSV_ROWS" || !Array.isArray(body.issues) || !body.issues.some((issue) => issue.includes("소수 둘째 자리"))) {
+    throw new Error(`/api/imports returned unexpected amount scale validation payload: ${text}`);
+  }
+}
+
 async function expectInvalidCsvImportTaxAmounts() {
   const response = await fetch(`${baseUrl}/api/imports`, {
     method: "POST",
@@ -540,6 +575,27 @@ async function expectInvalidManualTransactionAmounts() {
   const body = JSON.parse(text);
   if (body.code !== "INVALID_TRANSACTION_AMOUNTS") {
     throw new Error(`/api/transactions returned unexpected amount validation payload: ${text}`);
+  }
+}
+
+async function expectInvalidManualTransactionAmountScale() {
+  const response = await fetch(`${baseUrl}/api/transactions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      transactionDate: "2026-06-17",
+      description: "소수 자릿수 초과 수기 거래",
+      depositAmount: 1000.001,
+      withdrawalAmount: 0
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/transactions should reject manual amounts with too many decimal places, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_TRANSACTION_AMOUNTS" || !String(body.message ?? "").includes("소수 둘째 자리")) {
+    throw new Error(`/api/transactions returned unexpected amount scale validation payload: ${text}`);
   }
 }
 
@@ -812,6 +868,26 @@ async function expectInvalidEvidenceFileUrl() {
   const body = JSON.parse(text);
   if (body.code !== "INVALID_EVIDENCE_FILE_URL") {
     throw new Error(`/api/evidences returned unexpected file URL validation payload: ${text}`);
+  }
+}
+
+async function expectInvalidEvidenceAmountScale() {
+  const response = await fetch(`${baseUrl}/api/evidences`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      evidenceType: "기타영수증",
+      issueDate: "2026-06-17",
+      totalAmount: 1000.001
+    })
+  });
+  const text = await response.text();
+  if (response.status !== 400) {
+    throw new Error(`/api/evidences should reject evidence amounts with too many decimal places, got HTTP ${response.status}: ${text}`);
+  }
+  const body = JSON.parse(text);
+  if (body.code !== "INVALID_EVIDENCE_AMOUNTS" || !String(body.message ?? "").includes("소수 둘째 자리")) {
+    throw new Error(`/api/evidences returned unexpected amount scale validation payload: ${text}`);
   }
 }
 

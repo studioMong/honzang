@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import { MAX_EVIDENCE_FILE_DATA_URL_LENGTH, MAX_EVIDENCE_FILE_SIZE } from "@/lib/file-limits";
 import { parseStrictDate } from "@/lib/server/date-validation";
+import { moneyToMinorUnits, validateDecimal14_2Amount } from "@/lib/server/money-validation";
 
 export { MAX_EVIDENCE_FILE_DATA_URL_LENGTH, MAX_EVIDENCE_FILE_SIZE };
 
@@ -56,17 +57,28 @@ export function validateEvidenceAmounts(payload: EvidenceAmountValidationInput) 
   const vatAmount = payload.vatAmount ?? null;
   const totalAmount = payload.totalAmount ?? null;
 
-  if (totalAmount !== null && supplyAmount !== null && roundWon(totalAmount) < roundWon(supplyAmount)) {
+  const moneyIssue = [
+    supplyAmount === null ? null : validateDecimal14_2Amount(supplyAmount, "증빙 공급가액"),
+    vatAmount === null ? null : validateDecimal14_2Amount(vatAmount, "증빙 부가세"),
+    totalAmount === null ? null : validateDecimal14_2Amount(totalAmount, "증빙 합계")
+  ].find((issue): issue is string => Boolean(issue));
+  if (moneyIssue) return moneyIssue;
+
+  const supplyMinorUnits = supplyAmount === null ? null : moneyToMinorUnits(supplyAmount);
+  const vatMinorUnits = vatAmount === null ? null : moneyToMinorUnits(vatAmount);
+  const totalMinorUnits = totalAmount === null ? null : moneyToMinorUnits(totalAmount);
+
+  if (totalMinorUnits !== null && supplyMinorUnits !== null && totalMinorUnits < supplyMinorUnits) {
     return "증빙 합계는 공급가액보다 작을 수 없습니다.";
   }
-  if (totalAmount !== null && vatAmount !== null && roundWon(totalAmount) < roundWon(vatAmount)) {
+  if (totalMinorUnits !== null && vatMinorUnits !== null && totalMinorUnits < vatMinorUnits) {
     return "증빙 합계는 부가세보다 작을 수 없습니다.";
   }
   if (
-    supplyAmount !== null &&
-    vatAmount !== null &&
-    totalAmount !== null &&
-    roundWon(supplyAmount) + roundWon(vatAmount) !== roundWon(totalAmount)
+    supplyMinorUnits !== null &&
+    vatMinorUnits !== null &&
+    totalMinorUnits !== null &&
+    supplyMinorUnits + vatMinorUnits !== totalMinorUnits
   ) {
     return "증빙 합계는 공급가액과 부가세의 합과 일치해야 합니다.";
   }
@@ -85,8 +97,4 @@ function parseBase64DataUrl(value: string) {
     mimeType,
     byteLength: Buffer.from(base64, "base64").length
   };
-}
-
-function roundWon(value: number) {
-  return Math.round(value);
 }
