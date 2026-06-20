@@ -46,6 +46,8 @@ const filingInputSummaryRows = [
 
 const baseUrl = (process.env.VERIFY_DB_WORKFLOW_BASE_URL ?? "http://127.0.0.1:3000").replace(/\/$/, "");
 const marker = `verify-db-workflow-${Date.now()}`;
+const accessCode = process.env.VERIFY_DB_WORKFLOW_ACCESS_CODE?.trim();
+let accessCookie = normalizeCookie(process.env.VERIFY_DB_WORKFLOW_ACCESS_COOKIE?.trim() ?? "");
 const cleanup = {
   importBatchIds: [] as string[],
   csvTemplateIds: [] as string[],
@@ -61,6 +63,8 @@ const cleanup = {
 if (baseUrl.includes("honzang-production.up.railway.app") && process.env.VERIFY_DB_WORKFLOW_ALLOW_PRODUCTION !== "1") {
   throw new Error("Refusing to mutate the production Railway URL. Use a local or staging DB, or set VERIFY_DB_WORKFLOW_ALLOW_PRODUCTION=1 explicitly.");
 }
+
+await authenticateIfRequired();
 
 try {
   const companyPayload = await requestJson<{
@@ -1146,6 +1150,50 @@ async function cleanupCreatedData() {
   }
 }
 
+async function authenticateIfRequired() {
+  const session = await requestPublicJson<{ enabled?: boolean; authenticated?: boolean }>("/api/auth/session", {
+    headers: accessCookie ? { Cookie: accessCookie } : undefined
+  });
+  if (!session.enabled || session.authenticated) return;
+
+  if (!accessCode) {
+    throw new Error(
+      "Access control is enabled. Set VERIFY_DB_WORKFLOW_ACCESS_CODE, or provide VERIFY_DB_WORKFLOW_ACCESS_COOKIE, before running verify:db-workflow."
+    );
+  }
+
+  const loginResponse = await fetch(`${baseUrl}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: accessCode }),
+    cache: "no-store"
+  });
+  const loginText = await loginResponse.text();
+  if (!loginResponse.ok) {
+    throw new Error(`/api/auth/login returned HTTP ${loginResponse.status}: ${loginText}`);
+  }
+
+  accessCookie = normalizeCookie(loginResponse.headers.get("set-cookie") ?? "");
+  assert.ok(accessCookie, "access login should return an access cookie");
+
+  const authenticatedSession = await requestPublicJson<{ enabled?: boolean; authenticated?: boolean }>("/api/auth/session", {
+    headers: { Cookie: accessCookie }
+  });
+  assert.equal(authenticatedSession.authenticated, true, "access cookie should authenticate verify:db-workflow requests");
+}
+
+async function requestPublicJson<T>(path: string, options: { headers?: Record<string, string> } = {}): Promise<T> {
+  const response = await fetch(`${baseUrl}${path}`, {
+    headers: options.headers,
+    cache: "no-store"
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`${path} returned HTTP ${response.status}: ${text}`);
+  }
+  return (text ? JSON.parse(text) : {}) as T;
+}
+
 async function requestJson<T>(
   path: string,
   options: {
@@ -1155,9 +1203,13 @@ async function requestJson<T>(
     expectedStatus?: number;
   } = {}
 ): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (options.body) headers["Content-Type"] = "application/json";
+  if (accessCookie) headers.Cookie = accessCookie;
+
   const response = await fetch(`${baseUrl}${path}`, {
     method: options.method ?? "GET",
-    headers: options.body ? { "Content-Type": "application/json" } : undefined,
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
     body: options.body ? JSON.stringify(options.body) : undefined,
     cache: "no-store"
   });
@@ -1171,4 +1223,8 @@ async function requestJson<T>(
     throw new Error(`${options.method ?? "GET"} ${path} returned HTTP ${response.status}: ${text}`);
   }
   return body as T;
+}
+
+function normalizeCookie(value: string) {
+  return value.split(";")[0]?.trim() ?? "";
 }

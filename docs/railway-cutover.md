@@ -40,10 +40,16 @@ DB 연결 staging 환경이 있으면 아래 검증도 실행한다.
 VERIFY_DB_WORKFLOW_BASE_URL=https://staging-url.example.com npm run verify:db-workflow
 ```
 
+접근코드 보호가 켜진 staging 환경에서는 아래처럼 검증용 접근코드를 함께 전달한다.
+
+```bash
+VERIFY_DB_WORKFLOW_ACCESS_CODE=접근코드 VERIFY_DB_WORKFLOW_BASE_URL=https://staging-url.example.com npm run verify:db-workflow
+```
+
 운영 공개 URL에는 기본적으로 mutation workflow를 실행하지 않는다. 불가피하게 운영에서 실행해야 할 때만 아래처럼 명시적으로 허용한다.
 
 ```bash
-VERIFY_DB_WORKFLOW_ALLOW_PRODUCTION=1 VERIFY_DB_WORKFLOW_BASE_URL=https://honzang-production.up.railway.app npm run verify:db-workflow
+VERIFY_DB_WORKFLOW_ALLOW_PRODUCTION=1 VERIFY_DB_WORKFLOW_ACCESS_CODE=접근코드 VERIFY_DB_WORKFLOW_BASE_URL=https://honzang-production.up.railway.app npm run verify:db-workflow
 ```
 
 ## 공개 URL 감사

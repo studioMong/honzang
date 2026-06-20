@@ -183,6 +183,12 @@ DB 연결 환경에서 핵심 저장 흐름을 검증하려면 앱 서버를 실
 VERIFY_DB_WORKFLOW_BASE_URL=http://127.0.0.1:3000 npm run verify:db-workflow
 ```
 
+접근코드 보호가 켜진 환경에서는 아래처럼 검증용 접근코드를 함께 전달합니다.
+
+```bash
+VERIFY_DB_WORKFLOW_ACCESS_CODE=접근코드 VERIFY_DB_WORKFLOW_BASE_URL=http://127.0.0.1:3000 npm run verify:db-workflow
+```
+
 백업 복원 화면과 `dryRun` 검증은 프로덕션 빌드 후 아래 명령으로 확인합니다. 실제 복원은 실행하지 않고 백업 형식 검사와 `confirmReplace` 가드만 확인합니다.
 
 ```bash

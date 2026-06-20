@@ -86,6 +86,7 @@ assert.match(railwayCutoverDoc, /\/api\/version/, "Railway cutover checklist sho
 assert.match(railwayCutoverDoc, /\/api\/health/, "Railway cutover checklist should include health endpoint verification");
 assert.match(railwayCutoverDoc, /\/manifest\.webmanifest/, "Railway cutover checklist should include PWA manifest verification");
 assert.match(railwayCutoverDoc, /VERIFY_DB_WORKFLOW_BASE_URL/, "Railway cutover checklist should include DB workflow guidance");
+assert.match(railwayCutoverDoc, /VERIFY_DB_WORKFLOW_ACCESS_CODE/, "Railway cutover checklist should include access-code DB workflow guidance");
 assert.match(railwayCutoverDoc, /HONZANG_FILE_ENCRYPTION_KEY/, "Railway cutover checklist should include the file encryption key variable");
 assert.match(railwayAuditScript, /docs\/railway-cutover\.md/, "Railway audit should point operators to the cutover checklist");
 assert.match(railwayAuditScript, /Public Networking/, "Railway audit should mention public domain diagnostics");
