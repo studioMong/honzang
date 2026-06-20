@@ -12,6 +12,7 @@ const readme = readText("README.md");
 const railwayCutoverDoc = readText("docs/railway-cutover.md");
 const railwayAuditScript = readText("scripts/audit-railway-deployment.mjs");
 const railwayVerifyScript = readText("scripts/verify-railway.mjs");
+const railwayAccessVerifyScript = readText("scripts/verify-railway-access.mjs");
 const securityHeaders = readText("scripts/lib/security-headers.mjs");
 const accessControl = readText("src/lib/server/access-control.ts");
 const operationsReadiness = readText("src/app/api/operations/readiness/route.ts");
@@ -23,6 +24,7 @@ assert.equal(packageJson.scripts?.build, "prisma generate && next build && node 
 assert.equal(packageJson.scripts?.start, "HOSTNAME=0.0.0.0 node .next/standalone/server.js", "package start script should run the standalone server");
 assert.equal(packageJson.scripts?.["db:deploy"], "prisma migrate deploy", "package should expose a deploy migration command");
 assert.equal(packageJson.scripts?.["audit:railway"], "node scripts/audit-railway-deployment.mjs", "package should expose a Railway deployment audit command");
+assert.equal(packageJson.scripts?.["verify:railway-access"], "node scripts/verify-railway-access.mjs", "package should expose Railway access verification");
 assert.equal(packageJson.scripts?.["verify:access-control"], "node scripts/verify-access-control.mjs", "package should expose access-control verification");
 assert.equal(packageJson.scripts?.["verify:access-audit"], "tsx scripts/verify-access-audit.ts", "package should expose access-audit verification");
 assert.equal(packageJson.scripts?.["verify:period-locks"], "node scripts/verify-period-locks.mjs", "package should expose period-lock verification");
@@ -93,6 +95,8 @@ assert.match(railwayAuditScript, /Public Networking/, "Railway audit should ment
 assert.match(railwayAuditScript, /Variables/, "Railway audit should mention environment variable diagnostics");
 assert.match(railwayAuditScript, /findSecurityHeaderIssues/, "Railway audit should inspect public security headers");
 assert.match(railwayVerifyScript, /expectSecurityHeaders/, "Railway verification should require public security headers");
+assert.match(railwayAccessVerifyScript, /AUTH_REQUIRED/, "Railway access verification should require protected APIs to reject anonymous requests");
+assert.match(railwayAccessVerifyScript, /\/access/, "Railway access verification should check access-page redirects");
 assert.match(securityHeaders, /strict-transport-security/, "Security header verifier should check HSTS");
 assert.match(securityHeaders, /content-security-policy/, "Security header verifier should check CSP");
 assert.match(accessControl, /isAccessTokenSaltConfigured/, "Access control should expose salt configuration state");
