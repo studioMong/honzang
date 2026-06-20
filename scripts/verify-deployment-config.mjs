@@ -9,6 +9,7 @@ const nextConfig = readText("next.config.ts");
 const dockerignore = readText(".dockerignore");
 const envExample = readText(".env.example");
 const readme = readText("README.md");
+const projectGoalDoc = readText("docs/project-goal.md");
 const railwayCutoverDoc = readText("docs/railway-cutover.md");
 const railwayAuditScript = readText("scripts/audit-railway-deployment.mjs");
 const railwayVerifyScript = readText("scripts/verify-railway.mjs");
@@ -83,6 +84,10 @@ assert.match(envExample, /HONZANG_ACCESS_CODE=/, ".env.example should include th
 assert.match(envExample, /HONZANG_ACCESS_TOKEN_SALT=/, ".env.example should include the access-token salt variable");
 assert.match(envExample, /HONZANG_FILE_ENCRYPTION_KEY=/, ".env.example should include the file encryption key variable");
 assert.match(readme, /docs\/railway-cutover\.md/, "README should link to the Railway cutover checklist");
+assert.match(readme, /docs\/project-goal\.md/, "README should link to the final project goal");
+assert.match(projectGoalDoc, /100% 완료 기준/, "Project goal document should define completion criteria");
+assert.match(projectGoalDoc, /홈택스 자동 제출/, "Project goal document should define excluded tax-agent behavior");
+assert.match(projectGoalDoc, /VERIFY_DB_WORKFLOW_ACCESS_CODE/, "Project goal document should include protected DB workflow criteria");
 assert.match(railwayCutoverDoc, /honzang-production\.up\.railway\.app/, "Railway cutover checklist should name the production domain");
 assert.match(railwayCutoverDoc, /\/api\/version/, "Railway cutover checklist should include version endpoint verification");
 assert.match(railwayCutoverDoc, /\/api\/health/, "Railway cutover checklist should include health endpoint verification");
