@@ -14,6 +14,7 @@ const railwayCutoverDoc = readText("docs/railway-cutover.md");
 const railwayAuditScript = readText("scripts/audit-railway-deployment.mjs");
 const railwayVerifyScript = readText("scripts/verify-railway.mjs");
 const railwayAccessVerifyScript = readText("scripts/verify-railway-access.mjs");
+const dbWorkflowVerifyScript = readText("scripts/verify-db-workflow.ts");
 const securityHeaders = readText("scripts/lib/security-headers.mjs");
 const accessControl = readText("src/lib/server/access-control.ts");
 const operationsReadiness = readText("src/app/api/operations/readiness/route.ts");
@@ -102,6 +103,9 @@ assert.match(railwayAuditScript, /findSecurityHeaderIssues/, "Railway audit shou
 assert.match(railwayVerifyScript, /expectSecurityHeaders/, "Railway verification should require public security headers");
 assert.match(railwayAccessVerifyScript, /AUTH_REQUIRED/, "Railway access verification should require protected APIs to reject anonymous requests");
 assert.match(railwayAccessVerifyScript, /\/access/, "Railway access verification should check access-page redirects");
+assert.match(dbWorkflowVerifyScript, /baseOrigin/, "DB workflow verification should derive the target origin");
+assert.match(dbWorkflowVerifyScript, /Origin: baseOrigin/, "DB workflow verification should send same-origin login requests");
+assert.match(dbWorkflowVerifyScript, /isMutationMethod\(method\).*headers\.Origin = baseOrigin/s, "DB workflow verification should send same-origin mutation requests");
 assert.match(securityHeaders, /strict-transport-security/, "Security header verifier should check HSTS");
 assert.match(securityHeaders, /content-security-policy/, "Security header verifier should check CSP");
 assert.match(accessControl, /isAccessTokenSaltConfigured/, "Access control should expose salt configuration state");

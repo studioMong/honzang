@@ -45,6 +45,7 @@ const filingInputSummaryRows = [
 ];
 
 const baseUrl = (process.env.VERIFY_DB_WORKFLOW_BASE_URL ?? "http://127.0.0.1:3000").replace(/\/$/, "");
+const baseOrigin = new URL(baseUrl).origin;
 const marker = `verify-db-workflow-${Date.now()}`;
 const accessCode = process.env.VERIFY_DB_WORKFLOW_ACCESS_CODE?.trim();
 let accessCookie = normalizeCookie(process.env.VERIFY_DB_WORKFLOW_ACCESS_COOKIE?.trim() ?? "");
@@ -1164,7 +1165,7 @@ async function authenticateIfRequired() {
 
   const loginResponse = await fetch(`${baseUrl}/api/auth/login`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Origin: baseOrigin },
     body: JSON.stringify({ code: accessCode }),
     cache: "no-store"
   });
@@ -1203,12 +1204,14 @@ async function requestJson<T>(
     expectedStatus?: number;
   } = {}
 ): Promise<T> {
+  const method = options.method ?? "GET";
   const headers: Record<string, string> = {};
   if (options.body) headers["Content-Type"] = "application/json";
+  if (isMutationMethod(method)) headers.Origin = baseOrigin;
   if (accessCookie) headers.Cookie = accessCookie;
 
   const response = await fetch(`${baseUrl}${path}`, {
-    method: options.method ?? "GET",
+    method,
     headers: Object.keys(headers).length > 0 ? headers : undefined,
     body: options.body ? JSON.stringify(options.body) : undefined,
     cache: "no-store"
@@ -1216,13 +1219,17 @@ async function requestJson<T>(
   const text = await response.text();
   const body = text ? JSON.parse(text) : {};
   if (options.expectedStatus !== undefined) {
-    assert.equal(response.status, options.expectedStatus, `${options.method ?? "GET"} ${path} should return HTTP ${options.expectedStatus}: ${text}`);
+    assert.equal(response.status, options.expectedStatus, `${method} ${path} should return HTTP ${options.expectedStatus}: ${text}`);
     return body as T;
   }
   if (!response.ok && !options.allowFailure) {
-    throw new Error(`${options.method ?? "GET"} ${path} returned HTTP ${response.status}: ${text}`);
+    throw new Error(`${method} ${path} returned HTTP ${response.status}: ${text}`);
   }
   return body as T;
+}
+
+function isMutationMethod(method: string) {
+  return ["POST", "PUT", "PATCH", "DELETE"].includes(method.toUpperCase());
 }
 
 function normalizeCookie(value: string) {

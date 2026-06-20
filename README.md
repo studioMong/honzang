@@ -181,6 +181,7 @@ npm run verify:samples
 ```
 
 DB 연결 환경에서 핵심 저장 흐름을 검증하려면 앱 서버를 실행한 뒤 아래 명령을 사용합니다. 이 검증은 테스트용 거래, 승인 분개, 리포트 스냅샷, 월 마감 잠금을 만들고 정리하므로 로컬 또는 스테이징 DB에서 실행합니다.
+검증 요청은 mutating API 호출에 대상 URL과 같은 `Origin` 헤더를 붙여 접근코드 보호 환경의 출처 검사를 함께 통과하는지 확인합니다.
 
 ```bash
 VERIFY_DB_WORKFLOW_BASE_URL=http://127.0.0.1:3000 npm run verify:db-workflow

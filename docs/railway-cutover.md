@@ -47,6 +47,7 @@ VERIFY_DB_WORKFLOW_ACCESS_CODE=접근코드 VERIFY_DB_WORKFLOW_BASE_URL=https://
 ```
 
 운영 공개 URL에는 기본적으로 mutation workflow를 실행하지 않는다. 불가피하게 운영에서 실행해야 할 때만 아래처럼 명시적으로 허용한다.
+이 workflow는 로그인과 mutating API 요청에 대상 URL의 `Origin` 헤더를 붙여 Railway 프록시의 출처 검사를 브라우저 요청과 같은 조건으로 확인한다.
 
 ```bash
 VERIFY_DB_WORKFLOW_ALLOW_PRODUCTION=1 VERIFY_DB_WORKFLOW_ACCESS_CODE=접근코드 VERIFY_DB_WORKFLOW_BASE_URL=https://honzang-production.up.railway.app npm run verify:db-workflow
