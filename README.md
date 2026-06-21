@@ -33,6 +33,12 @@ npm run smoke:prod
 npm run verify:mvp
 ```
 
+저장소에 실제 `.env`, 개인키, 구체적인 Postgres 접속 문자열, 운영용 접근코드/salt/파일 암호화 키가 섞이지 않았는지는 아래 명령으로 따로 확인할 수 있습니다.
+
+```bash
+npm run verify:secret-hygiene
+```
+
 ## Railway 환경변수
 
 Railway 서비스 Variables에서 Postgres 서비스의 `DATABASE_URL`을 참조 변수로 연결합니다.

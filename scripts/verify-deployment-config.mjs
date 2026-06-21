@@ -16,6 +16,7 @@ const railwayVerifyScript = readText("scripts/verify-railway.mjs");
 const railwayAccessVerifyScript = readText("scripts/verify-railway-access.mjs");
 const railwayAuthenticatedVerifyScript = readText("scripts/verify-railway-authenticated.mjs");
 const envSecretGeneratorScript = readText("scripts/generate-env-secrets.mjs");
+const secretHygieneVerifyScript = readText("scripts/verify-secret-hygiene.mjs");
 const dbWorkflowVerifyScript = readText("scripts/verify-db-workflow.ts");
 const securityHeaders = readText("scripts/lib/security-headers.mjs");
 const accessControl = readText("src/lib/server/access-control.ts");
@@ -36,6 +37,7 @@ assert.equal(
 );
 assert.equal(packageJson.scripts?.["env:secrets"], "node scripts/generate-env-secrets.mjs", "package should expose environment secret generation");
 assert.equal(packageJson.scripts?.["verify:env-secrets"], "node scripts/verify-env-secret-generator.mjs", "package should expose environment secret generation verification");
+assert.equal(packageJson.scripts?.["verify:secret-hygiene"], "node scripts/verify-secret-hygiene.mjs", "package should expose repository secret hygiene verification");
 assert.equal(packageJson.scripts?.["verify:access-control"], "node scripts/verify-access-control.mjs", "package should expose access-control verification");
 assert.equal(packageJson.scripts?.["verify:access-audit"], "tsx scripts/verify-access-audit.ts", "package should expose access-audit verification");
 assert.equal(packageJson.scripts?.["verify:period-locks"], "node scripts/verify-period-locks.mjs", "package should expose period-lock verification");
@@ -80,6 +82,7 @@ assert.ok(existsSync("scripts/audit-railway-deployment.mjs"), "Railway audit scr
 assert.ok(existsSync("scripts/verify-railway-authenticated.mjs"), "Authenticated Railway read verification script should exist");
 assert.ok(existsSync("scripts/generate-env-secrets.mjs"), "Environment secret generator should exist");
 assert.ok(existsSync("scripts/verify-env-secret-generator.mjs"), "Environment secret generator verification should exist");
+assert.ok(existsSync("scripts/verify-secret-hygiene.mjs"), "Repository secret hygiene verification should exist");
 assert.ok(existsSync("scripts/verify-access-control.mjs"), "Access-control verification script should exist");
 assert.ok(existsSync("scripts/verify-access-audit.ts"), "Access-audit verification script should exist");
 assert.ok(existsSync("scripts/verify-period-locks.mjs"), "Period-lock verification script should exist");
@@ -95,6 +98,7 @@ assert.match(readme, /프로덕션에서는 `HONZANG_ACCESS_TOKEN_SALT`도 함�
 assert.match(readme, /접근 성공\/실패\/잠금\/로그아웃/, "README should document access audit events");
 assert.match(readme, /verify:railway-authenticated/, "README should document authenticated Railway read verification");
 assert.match(readme, /npm run env:secrets/, "README should document environment secret generation");
+assert.match(readme, /verify:secret-hygiene/, "README should document repository secret hygiene verification");
 assert.match(envExample, /HONZANG_ACCESS_CODE=/, ".env.example should include the deployment access code variable");
 assert.match(envExample, /HONZANG_ACCESS_TOKEN_SALT=/, ".env.example should include the access-token salt variable");
 assert.match(envExample, /HONZANG_FILE_ENCRYPTION_KEY=/, ".env.example should include the file encryption key variable");
@@ -126,6 +130,9 @@ assert.match(railwayAuthenticatedVerifyScript, /\/api\/transactions/, "Authentic
 assert.match(railwayAuthenticatedVerifyScript, /\/api\/operations\/readiness/, "Authenticated Railway verification should read protected readiness data");
 assert.match(envSecretGeneratorScript, /randomBytes\(32\)/, "Environment secret generator should create high-entropy secret values");
 assert.match(envSecretGeneratorScript, /DATABASE_URL은 Railway Postgres reference variable/, "Environment secret generator should defer DATABASE_URL to Railway reference variables");
+assert.match(secretHygieneVerifyScript, /git.*ls-files/s, "Secret hygiene verification should inspect tracked files");
+assert.match(secretHygieneVerifyScript, /tracked environment files are not allowed/, "Secret hygiene verification should block committed env files");
+assert.match(secretHygieneVerifyScript, /private key block/, "Secret hygiene verification should block private key material");
 assert.match(dbWorkflowVerifyScript, /baseOrigin/, "DB workflow verification should derive the target origin");
 assert.match(dbWorkflowVerifyScript, /Origin: baseOrigin/, "DB workflow verification should send same-origin login requests");
 assert.match(dbWorkflowVerifyScript, /isMutationMethod\(method\).*headers\.Origin = baseOrigin/s, "DB workflow verification should send same-origin mutation requests");

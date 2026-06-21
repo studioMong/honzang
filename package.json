@@ -16,6 +16,7 @@
     "verify:data-sources": "tsx scripts/verify-data-sources.ts",
     "verify:billing-estimates": "tsx scripts/verify-billing-estimates.ts",
     "verify:env-secrets": "node scripts/verify-env-secret-generator.mjs",
+    "verify:secret-hygiene": "node scripts/verify-secret-hygiene.mjs",
     "verify:filing-schedules": "tsx scripts/verify-filing-schedules.ts",
     "verify:file-encryption": "tsx scripts/verify-file-encryption.ts",
     "verify:database-schema-contract": "node scripts/verify-database-schema-contract.mjs",
