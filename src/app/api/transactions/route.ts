@@ -334,7 +334,7 @@ export async function PATCH(request: Request) {
           }
         })
       : null;
-  if (nextConfirmedAccountId && !confirmedAccount) {
+  if (hasConfirmedAccountId && nextConfirmedAccountId && !confirmedAccount) {
     return NextResponse.json({ ok: false, message: "계정과목을 찾을 수 없습니다." }, { status: 404 });
   }
   const nextDescription = hasDescription ? payload.description?.trim() ?? "" : existing.description;

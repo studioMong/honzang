@@ -137,7 +137,7 @@ try {
     body: {
       companyId,
       id: classificationRulePayload.classificationRule.id,
-      accountCode: `${marker}-missing-account`
+      accountCode: "NOACC"
     }
   });
   assert.equal(invalidClassificationRulePatchPayload.ok, false, "classification rule patch with a missing account should fail");
@@ -209,11 +209,15 @@ try {
   assert.equal(missingVendorDeletePayload.ok, false, "missing vendor delete should fail");
   assert.match(missingVendorDeletePayload.message ?? "", /거래처/, "missing vendor delete should report a missing vendor");
 
+  const transactionPatchAccount =
+    companyPayload.accounts?.find((account) => account.code === importedTransactions[0]?.suggestedAccount?.code) ?? verificationAccount;
+  assert.ok(transactionPatchAccount?.id, "company accounts should expose an account id for transaction patch verification");
+  assert.ok(!transactionPatchAccount.id.startsWith("acct-"), "transaction patch verification should use a database account id");
   await requestJson<{ ok?: boolean; mode?: string; transaction?: AppTransaction }>("/api/transactions", {
     method: "PATCH",
     body: {
       id: importedTransactions[0]?.id,
-      confirmedAccountId: verificationAccount.id
+      confirmedAccountId: transactionPatchAccount.id
     }
   });
   await requestJson<{ ok?: boolean; mode?: string; transaction?: AppTransaction }>("/api/transactions", {
@@ -225,7 +229,7 @@ try {
   });
   const transactionPatchList = await requestJson<{ transactions?: AppTransaction[] }>("/api/transactions");
   const patchedTransaction = transactionPatchList.transactions?.find((transaction) => transaction.id === importedTransactions[0]?.id);
-  assert.equal(patchedTransaction?.confirmedAccount?.id, verificationAccount.id, "evidence-only transaction patch should preserve confirmed account");
+  assert.equal(patchedTransaction?.confirmedAccount?.id, transactionPatchAccount.id, "evidence-only transaction patch should preserve confirmed account");
   assert.equal(patchedTransaction?.evidenceStatus, "MISSING", "evidence-only transaction patch should update evidence status");
 
   const manualTaxTransactionPayload = await requestJson<{ ok?: boolean; mode?: string; transaction?: AppTransaction }>("/api/transactions", {
@@ -961,10 +965,14 @@ async function importSample(companyId: string, sourceType: SourceType, filePath:
   assert.equal(payload.mode, "database", `${sourceType} import should use database mode`);
   assert.equal(payload.duplicate, false, `${sourceType} import should create a fresh batch`);
   assert.ok(payload.importBatchId, `${sourceType} import should return an import batch id`);
+  cleanup.importBatchIds.push(payload.importBatchId);
+  if (payload.csvTemplate?.id && payload.csvTemplate.headerSignature?.includes(marker)) {
+    cleanup.csvTemplateIds.push(payload.csvTemplate.id);
+  }
   assert.equal(payload.importBatch?.hasOriginalFile, true, `${sourceType} import should preserve original CSV`);
   assert.equal(payload.csvTemplate?.sourceType, sourceType, `${sourceType} import should return saved CSV template`);
   assert.equal(payload.csvTemplate?.headerSignature, headers.join("|"), `${sourceType} template should track the imported header signature`);
-  assert.deepEqual(payload.csvTemplate?.mapping, mapping, `${sourceType} template should preserve the submitted mapping`);
+  assert.deepEqual(compactMapping(payload.csvTemplate?.mapping ?? {}), compactMapping(mapping), `${sourceType} template should preserve the submitted mapping`);
   assert.equal(payload.transactions?.length, rowCount, `${sourceType} import should return imported transactions`);
 
   const duplicatePayload = await requestJson<ImportSampleResponse>("/api/imports", {
@@ -991,10 +999,6 @@ async function importSample(companyId: string, sourceType: SourceType, filePath:
   assert.equal(originalFilePayload.ok, true, `${sourceType} original CSV download should succeed`);
   assert.equal(originalFilePayload.originalFileName, `${marker}-${sourceType}.csv`, `${sourceType} original CSV filename`);
   assert.ok(originalFilePayload.originalFileText?.includes(headers[0] ?? ""), `${sourceType} original CSV should include header`);
-  cleanup.importBatchIds.push(payload.importBatchId);
-  if (payload.csvTemplate?.id && payload.csvTemplate.headerSignature?.includes(marker)) {
-    cleanup.csvTemplateIds.push(payload.csvTemplate.id);
-  }
   assert.ok(payload.importBatchId, `${sourceType} import should expose an import batch id for cleanup and lock verification`);
   return {
     importBatchId: payload.importBatchId,
@@ -1004,7 +1008,19 @@ async function importSample(companyId: string, sourceType: SourceType, filePath:
 }
 
 function isSameCsvTemplate(template: CsvTemplate, sourceType: SourceType, headers: string[], mapping: CsvColumnMapping) {
-  return template.sourceType === sourceType && template.headerSignature === headers.join("|") && JSON.stringify(template.mapping) === JSON.stringify(mapping);
+  return (
+    template.sourceType === sourceType &&
+    template.headerSignature === headers.join("|") &&
+    stableMappingJson(template.mapping) === stableMappingJson(mapping)
+  );
+}
+
+function compactMapping(mapping: CsvColumnMapping) {
+  return Object.fromEntries(Object.entries(mapping).filter(([, value]) => value !== undefined));
+}
+
+function stableMappingJson(mapping: CsvColumnMapping) {
+  return JSON.stringify(Object.entries(compactMapping(mapping)).sort(([left], [right]) => left.localeCompare(right)));
 }
 
 function remapRowHeaders(row: ParsedCsvRow, headerMap: Map<string, string>) {
