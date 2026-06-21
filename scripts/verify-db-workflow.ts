@@ -155,6 +155,24 @@ try {
   assert.equal(missingClassificationRulePatchPayload.ok, false, "missing classification rule patch should fail");
   assert.match(missingClassificationRulePatchPayload.message ?? "", /자동 분류 규칙/, "missing classification rule patch should report a missing rule");
 
+  const updatedClassificationRulePayload = await requestJson<{ ok?: boolean; mode?: string; classificationRule?: AppClassificationRule }>(
+    "/api/classification-rules",
+    {
+      method: "PATCH",
+      body: {
+        companyId,
+        id: classificationRulePayload.classificationRule.id,
+        name: `${marker} classification rule updated`,
+        priority: 11,
+        isActive: false
+      }
+    }
+  );
+  assert.equal(updatedClassificationRulePayload.ok, true, "classification rule patch should succeed");
+  assert.equal(updatedClassificationRulePayload.mode, "database", "classification rule patch should use database mode");
+  assert.equal(updatedClassificationRulePayload.classificationRule?.priority, 11, "classification rule patch should update priority");
+  assert.equal(updatedClassificationRulePayload.classificationRule?.isActive, false, "classification rule patch should update active state");
+
   const missingClassificationRuleDeletePayload = await requestJson<{ ok?: boolean; message?: string }>("/api/classification-rules", {
     method: "DELETE",
     expectedStatus: 404,
