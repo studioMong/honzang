@@ -35,6 +35,7 @@
     "verify:railway-access": "node scripts/verify-railway-access.mjs",
     "verify:railway-authenticated": "node scripts/verify-railway-authenticated.mjs",
     "audit:railway": "node scripts/audit-railway-deployment.mjs",
+    "wait:railway": "node scripts/wait-railway-deployment.mjs",
     "verify:samples": "tsx scripts/verify-sample-csvs.ts",
     "verify:db-workflow": "tsx scripts/verify-db-workflow.ts",
     "env:secrets": "node scripts/generate-env-secrets.mjs",

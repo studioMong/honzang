@@ -74,6 +74,12 @@ RAILWAY_ACCESS_CODE=운영_접근코드 npm run verify:railway-authenticated
 RAILWAY_EXPECTED_COMMIT=$(git rev-parse HEAD) npm run audit:railway
 ```
 
+GitHub push 이후 최신 커밋 반영이 늦으면 반복 대기 스크립트를 사용한다. 기본 10분 동안 최신 커밋, Postgres 연결, 접근코드 보호, PWA manifest를 확인한다.
+
+```bash
+RAILWAY_EXPECTED_COMMIT=$(git rev-parse HEAD) npm run wait:railway
+```
+
 아직 전환 전이라 실패를 기록만 해야 할 때는 soft mode를 사용한다.
 
 ```bash

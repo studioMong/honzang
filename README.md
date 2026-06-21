@@ -115,6 +115,12 @@ RAILWAY_EXPECTED_COMMIT=$(git rev-parse HEAD) npm run verify:railway
 npm run audit:railway
 ```
 
+GitHub push 이후 Railway가 최신 커밋을 반영할 때까지 기다리려면 아래 명령을 사용합니다. 기본 10분 동안 `/api/version`, `/api/health`, 접근 보호 세션, PWA manifest를 반복 확인하고, 최신 커밋·Postgres 연결·접근코드 보호·manifest가 모두 맞을 때만 성공합니다.
+
+```bash
+npm run wait:railway
+```
+
 현재 공개 URL이 아직 준비되지 않은 상태에서도 진단 출력만 확인하려면 아래처럼 soft mode로 실행합니다.
 
 ```bash

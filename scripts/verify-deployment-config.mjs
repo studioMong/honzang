@@ -12,6 +12,7 @@ const readme = readText("README.md");
 const projectGoalDoc = readText("docs/project-goal.md");
 const railwayCutoverDoc = readText("docs/railway-cutover.md");
 const railwayAuditScript = readText("scripts/audit-railway-deployment.mjs");
+const railwayWaitScript = readText("scripts/wait-railway-deployment.mjs");
 const railwayVerifyScript = readText("scripts/verify-railway.mjs");
 const railwayAccessVerifyScript = readText("scripts/verify-railway-access.mjs");
 const railwayAuthenticatedVerifyScript = readText("scripts/verify-railway-authenticated.mjs");
@@ -29,6 +30,7 @@ assert.equal(packageJson.scripts?.build, "prisma generate && next build && node 
 assert.equal(packageJson.scripts?.start, "HOSTNAME=0.0.0.0 node .next/standalone/server.js", "package start script should run the standalone server");
 assert.equal(packageJson.scripts?.["db:deploy"], "prisma migrate deploy", "package should expose a deploy migration command");
 assert.equal(packageJson.scripts?.["audit:railway"], "node scripts/audit-railway-deployment.mjs", "package should expose a Railway deployment audit command");
+assert.equal(packageJson.scripts?.["wait:railway"], "node scripts/wait-railway-deployment.mjs", "package should expose a Railway deployment wait command");
 assert.equal(packageJson.scripts?.["verify:railway-access"], "node scripts/verify-railway-access.mjs", "package should expose Railway access verification");
 assert.equal(
   packageJson.scripts?.["verify:railway-authenticated"],
@@ -79,6 +81,7 @@ assert.match(dockerignore, /^\.env\.\*$/m, ".dockerignore should exclude env fil
 
 assert.equal(existsSync("index.html"), false, "root index.html must not exist because Railway can mis-detect a static site");
 assert.ok(existsSync("scripts/audit-railway-deployment.mjs"), "Railway audit script should exist");
+assert.ok(existsSync("scripts/wait-railway-deployment.mjs"), "Railway deployment wait script should exist");
 assert.ok(existsSync("scripts/verify-railway-authenticated.mjs"), "Authenticated Railway read verification script should exist");
 assert.ok(existsSync("scripts/generate-env-secrets.mjs"), "Environment secret generator should exist");
 assert.ok(existsSync("scripts/verify-env-secret-generator.mjs"), "Environment secret generator verification should exist");
@@ -97,6 +100,7 @@ assert.match(readme, /HONZANG_FILE_ENCRYPTION_KEY=/, "README should document the
 assert.match(readme, /프로덕션에서는 `HONZANG_ACCESS_TOKEN_SALT`도 함께 있어야/, "README should mark access-token salt as required in production");
 assert.match(readme, /접근 성공\/실패\/잠금\/로그아웃/, "README should document access audit events");
 assert.match(readme, /verify:railway-authenticated/, "README should document authenticated Railway read verification");
+assert.match(readme, /npm run wait:railway/, "README should document Railway deployment waiting");
 assert.match(readme, /npm run env:secrets/, "README should document environment secret generation");
 assert.match(readme, /verify:secret-hygiene/, "README should document repository secret hygiene verification");
 assert.match(envExample, /HONZANG_ACCESS_CODE=/, ".env.example should include the deployment access code variable");
@@ -114,12 +118,18 @@ assert.match(railwayCutoverDoc, /\/manifest\.webmanifest/, "Railway cutover chec
 assert.match(railwayCutoverDoc, /VERIFY_DB_WORKFLOW_BASE_URL/, "Railway cutover checklist should include DB workflow guidance");
 assert.match(railwayCutoverDoc, /VERIFY_DB_WORKFLOW_ACCESS_CODE/, "Railway cutover checklist should include access-code DB workflow guidance");
 assert.match(railwayCutoverDoc, /verify:railway-authenticated/, "Railway cutover checklist should include authenticated read verification");
+assert.match(railwayCutoverDoc, /npm run wait:railway/, "Railway cutover checklist should include deployment waiting");
 assert.match(railwayCutoverDoc, /npm run env:secrets/, "Railway cutover checklist should include environment secret generation");
 assert.match(railwayCutoverDoc, /HONZANG_FILE_ENCRYPTION_KEY/, "Railway cutover checklist should include the file encryption key variable");
 assert.match(railwayAuditScript, /docs\/railway-cutover\.md/, "Railway audit should point operators to the cutover checklist");
 assert.match(railwayAuditScript, /Public Networking/, "Railway audit should mention public domain diagnostics");
 assert.match(railwayAuditScript, /Variables/, "Railway audit should mention environment variable diagnostics");
 assert.match(railwayAuditScript, /findSecurityHeaderIssues/, "Railway audit should inspect public security headers");
+assert.match(railwayWaitScript, /RAILWAY_WAIT_TIMEOUT_MS/, "Railway wait should allow timeout configuration");
+assert.match(railwayWaitScript, /\/api\/version/, "Railway wait should poll version metadata");
+assert.match(railwayWaitScript, /\/api\/health/, "Railway wait should poll health status");
+assert.match(railwayWaitScript, /\/api\/auth\/session/, "Railway wait should poll access protection status");
+assert.match(railwayWaitScript, /\/manifest\.webmanifest/, "Railway wait should poll PWA manifest status");
 assert.match(railwayVerifyScript, /expectSecurityHeaders/, "Railway verification should require public security headers");
 assert.match(railwayAccessVerifyScript, /AUTH_REQUIRED/, "Railway access verification should require protected APIs to reject anonymous requests");
 assert.match(railwayAccessVerifyScript, /\/access/, "Railway access verification should check access-page redirects");
