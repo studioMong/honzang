@@ -47,6 +47,18 @@ HONZANG_ACCESS_TOKEN_SALT=쿠키_서명용_긴_랜덤값
 HONZANG_FILE_ENCRYPTION_KEY=원본_CSV_증빙_암호화용_긴_랜덤값
 ```
 
+Railway에 붙여 넣을 접근코드, 접근 쿠키 salt, 파일 암호화 키는 아래 명령으로 생성할 수 있습니다. `DATABASE_URL`은 출력하지 않으므로 Railway Postgres reference variable로 별도 연결합니다.
+
+```bash
+npm run env:secrets
+```
+
+원하는 접근코드를 직접 정한 뒤 나머지 긴 랜덤값만 생성하려면 아래처럼 실행합니다.
+
+```bash
+HONZANG_ACCESS_CODE=원하는_접근코드 npm run env:secrets
+```
+
 `HONZANG_ACCESS_CODE`가 설정된 배포 환경에서는 `/access`에서 코드를 입력해야 앱과 장부 API에 접근할 수 있습니다. 프로덕션에서는 `HONZANG_ACCESS_TOKEN_SALT`도 함께 있어야 접근 쿠키를 발급합니다. `/api/health`, `/api/version`, PWA 리소스, 샘플 CSV는 배포 점검과 설치를 위해 공개 상태를 유지합니다. 접근 쿠키는 HTTP-only로 7일간 유지되며, 코드를 바꾸거나 salt를 바꾸면 기존 쿠키는 무효화됩니다. 같은 접속 출처에서 접근코드를 5회 틀리면 10분간 로그인을 제한합니다. API 변경 요청은 `Origin`이 앱 주소와 다르면 403으로 거부합니다. DB 연결 환경에서는 접근 성공/실패/잠금/로그아웃, 잘못된 로그인 요청 형식과 잠금 상태 재시도가 감사 로그에 기록되며, 원문 IP와 접근 코드는 저장하지 않고 해시와 상태값만 저장합니다.
 
 `HONZANG_FILE_ENCRYPTION_KEY`가 설정되면 신규 원본 CSV와 DB 보관 증빙 파일은 Railway Postgres에 저장하기 전에 암호화됩니다. 키가 없으면 기존 로컬 개발처럼 평문 저장하지만, 프로덕션 운영 준비 점검에서는 필수 누락으로 표시됩니다. 키를 교체하기 전에는 기존 암호화 파일을 백업 JSON/ZIP으로 내려받아 복구 계획을 먼저 확인해야 합니다.

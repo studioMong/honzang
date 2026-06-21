@@ -25,6 +25,7 @@
    - `HONZANG_ACCESS_CODE`: 운영 접근 코드
    - `HONZANG_ACCESS_TOKEN_SALT`: 긴 랜덤 문자열
    - `HONZANG_FILE_ENCRYPTION_KEY`: 원본 CSV와 DB 보관 증빙 파일 암호화용 긴 랜덤 문자열
+   - 접근코드와 긴 랜덤값 초안은 `npm run env:secrets`로 생성한다. `DATABASE_URL`은 생성하지 않고 Railway Postgres 참조 변수로 연결한다.
 5. Public Networking 또는 Domains에서 `honzang-production.up.railway.app`가 최신 Next.js 앱 서비스에 붙어 있는지 확인한다.
 6. 같은 도메인이 이전 static/legacy 서비스에 남아 있으면 해당 연결을 제거하거나 도메인을 최신 앱 서비스로 이동한다.
 7. 최신 `main` 커밋으로 앱 서비스를 재배포한다.
