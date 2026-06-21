@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   billingActivePrice,
   billingModelLabel,
+  buildBillingEstimateRows,
   billingSupplyAmount,
   billingUnitLabel,
   buildBillingEstimate,
@@ -67,6 +68,13 @@ const transactions: AppTransaction[] = [
     supplyAmount: 500000
   }),
   buildTransaction({
+    id: "tx-pg-source",
+    sourceType: "PG",
+    description: "플랫폼 입금",
+    depositAmount: 110000,
+    supplyAmount: 100000
+  }),
+  buildTransaction({
     id: "tx-expense-account-wins",
     description: "구독 환급",
     depositAmount: 110000,
@@ -97,8 +105,9 @@ assert.equal(isBillingRevenueTransaction(transactions[0]), true, "confirmed reve
 assert.equal(isBillingRevenueTransaction(transactions[1]), true, "Hometax sales rows without account should count as billing revenue");
 assert.equal(isBillingRevenueTransaction(transactions[2]), true, "subscription description should count as billing revenue");
 assert.equal(isBillingRevenueTransaction(transactions[3]), true, "settlement description should count as billing revenue");
-assert.equal(isBillingRevenueTransaction(transactions[4]), false, "an explicit non-revenue account should override revenue-like text");
-assert.equal(isBillingRevenueTransaction(transactions[5]), false, "withdrawals should not count as billing revenue");
+assert.equal(isBillingRevenueTransaction(transactions[4]), true, "PG source rows without settlement text should count as billing revenue");
+assert.equal(isBillingRevenueTransaction(transactions[5]), false, "an explicit non-revenue account should override revenue-like text");
+assert.equal(isBillingRevenueTransaction(transactions[6]), false, "withdrawals should not count as billing revenue");
 
 assert.equal(billingSupplyAmount(transactions[0]), 200000, "explicit supply amount should be used for billing");
 assert.equal(billingSupplyAmount(transactions[1]), 100000, "missing supply amount should be estimated from VAT-inclusive deposit");
@@ -106,19 +115,19 @@ assert.equal(billingSupplyAmount(transactions[1]), 100000, "missing supply amoun
 const internalEstimate = buildBillingEstimate(baseCompany, transactions);
 assert.equal(internalEstimate.unitPrice, 110000, "internal estimate should expose active unit price");
 assert.equal(internalEstimate.unitLabel, "회", "internal estimate should expose per-use unit label");
-assert.equal(internalEstimate.revenueTransactionCount, 4, "billing estimate should count revenue-like transactions only");
-assert.equal(internalEstimate.revenueSupplyAmount, 830000, "billing estimate should sum revenue supply amounts");
-assert.equal(internalEstimate.estimatedUnits, 830000 / 110000, "internal estimate should divide supply amount by per-use price");
+assert.equal(internalEstimate.revenueTransactionCount, 5, "billing estimate should count revenue-like transactions only");
+assert.equal(internalEstimate.revenueSupplyAmount, 930000, "billing estimate should sum revenue supply amounts");
+assert.equal(internalEstimate.estimatedUnits, 930000 / 110000, "internal estimate should divide supply amount by per-use price");
 
 const monthlyEstimate = buildBillingEstimate({ ...baseCompany, billingModel: "SAAS_MONTHLY" }, transactions);
 assert.equal(monthlyEstimate.unitPrice, 33000, "monthly estimate should expose monthly subscription price");
 assert.equal(monthlyEstimate.unitLabel, "월 구독분", "monthly estimate should expose monthly unit label");
-assert.equal(monthlyEstimate.estimatedUnits, 830000 / 33000, "monthly estimate should divide supply amount by monthly price");
+assert.equal(monthlyEstimate.estimatedUnits, 930000 / 33000, "monthly estimate should divide supply amount by monthly price");
 
 const annualEstimate = buildBillingEstimate({ ...baseCompany, billingModel: "SAAS_ANNUAL" }, transactions);
 assert.equal(annualEstimate.unitPrice, 330000, "annual estimate should expose annual subscription price");
 assert.equal(annualEstimate.unitLabel, "연 구독분", "annual estimate should expose annual unit label");
-assert.equal(annualEstimate.estimatedUnits, 830000 / 330000, "annual estimate should divide supply amount by annual price");
+assert.equal(annualEstimate.estimatedUnits, 930000 / 330000, "annual estimate should divide supply amount by annual price");
 
 const zeroPriceEstimate = buildBillingEstimate({ ...baseCompany, perUseUnitPrice: 0 }, transactions);
 assert.equal(zeroPriceEstimate.estimatedUnits, 0, "zero price should avoid division and require user input");
@@ -127,6 +136,11 @@ assert.equal(formatBillingUnits(12.345), "12.3", "large billing unit values shou
 assert.equal(formatBillingUnits(0.333), "0.33", "small billing unit values should show two decimals at most");
 assert.equal(formatBillingUnits(1000), "1,000", "billing unit formatting should include Korean group separators");
 assert.equal(formatBillingUnits(Number.POSITIVE_INFINITY), "0", "non-finite billing units should be safe to render");
+
+const estimateRows = buildBillingEstimateRows(baseCompany, transactions);
+assert.ok(estimateRows.some((row) => row.항목 === "과금 모델" && row.값 === "내부 회당 정산"), "estimate rows should expose the billing model");
+assert.ok(estimateRows.some((row) => row.항목 === "PG 매출 후보" && row.값 === 1 && row.톤 === "green"), "estimate rows should count PG source revenue candidates");
+assert.ok(estimateRows.some((row) => row.항목 === "추정 단위" && String(row.값).includes("회")), "estimate rows should expose formatted billing units");
 
 console.log("Billing estimate verification passed.");
 

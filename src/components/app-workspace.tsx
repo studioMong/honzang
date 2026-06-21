@@ -46,7 +46,7 @@ import type {
   ReviewItem,
   SourceType
 } from "@/types";
-import { billingActivePrice, billingModelLabel, buildBillingEstimate, formatBillingUnits } from "@/lib/billing";
+import { billingActivePrice, billingModelLabel, buildBillingEstimate, buildBillingEstimateRows, formatBillingUnits } from "@/lib/billing";
 import { RESTORE_CONFIRMATION_TEXT } from "@/lib/backup-restore";
 import { buildClosingSnapshotExportPayload, buildClosingSnapshotWorkbookSheets, buildClosingSnapshotZipFiles } from "@/lib/closing-snapshot-export";
 import { DATA_SOURCE_TYPES, buildDataSourceRows } from "@/lib/data-sources";
@@ -4491,6 +4491,7 @@ function SettingsPanel({
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const setupItems = buildCompanySetupItems(form);
   const billingEstimate = buildBillingEstimate(form, transactions);
+  const billingEstimateRows = buildBillingEstimateRows(form, transactions);
   const missingCount = setupItems.filter((item) => item.tone === "red").length;
   const dataRetentionRows = buildDataRetentionRows({
     importBatches,
@@ -5244,7 +5245,13 @@ function SettingsPanel({
             <h2 className="panel-title">과금 정책</h2>
             <p className="panel-subtitle">매출 거래 기준 과금 단위 추정</p>
           </div>
-          <span className={`status ${billingEstimate.unitPrice > 0 ? "green" : "amber"}`}>{billingEstimate.unitPrice > 0 ? "단가 설정" : "단가 필요"}</span>
+          <div className="toolbar">
+            <span className={`status ${billingEstimate.unitPrice > 0 ? "green" : "amber"}`}>{billingEstimate.unitPrice > 0 ? "단가 설정" : "단가 필요"}</span>
+            <button className="secondary-button" onClick={() => downloadCsv("honzang-billing-estimate.csv", billingEstimateRows)}>
+              <Download size={16} />
+              과금 추정표
+            </button>
+          </div>
         </div>
         <div className="panel-body">
           <div className="review-list">
@@ -5254,6 +5261,28 @@ function SettingsPanel({
             <ChecklistItem tone="green" title="매출 공급가액" value={formatKRW(billingEstimate.revenueSupplyAmount)} />
             <ChecklistItem tone={billingEstimate.unitPrice > 0 ? "green" : "amber"} title="추정 단위" value={billingEstimate.unitPrice > 0 ? `${formatBillingUnits(billingEstimate.estimatedUnits)} ${billingEstimate.unitLabel}` : "단가 입력"} />
           </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>항목</th>
+                <th>값</th>
+                <th>상태</th>
+                <th>확인</th>
+              </tr>
+            </thead>
+            <tbody>
+              {billingEstimateRows.map((row) => (
+                <tr key={row.항목}>
+                  <td>{row.항목}</td>
+                  <td>{row.값}</td>
+                  <td><span className={`status ${row.톤}`}>{row.상태}</span></td>
+                  <td>{row.확인}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </section>
 
