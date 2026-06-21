@@ -14,6 +14,7 @@ const railwayCutoverDoc = readText("docs/railway-cutover.md");
 const railwayAuditScript = readText("scripts/audit-railway-deployment.mjs");
 const railwayVerifyScript = readText("scripts/verify-railway.mjs");
 const railwayAccessVerifyScript = readText("scripts/verify-railway-access.mjs");
+const railwayAuthenticatedVerifyScript = readText("scripts/verify-railway-authenticated.mjs");
 const dbWorkflowVerifyScript = readText("scripts/verify-db-workflow.ts");
 const securityHeaders = readText("scripts/lib/security-headers.mjs");
 const accessControl = readText("src/lib/server/access-control.ts");
@@ -27,6 +28,11 @@ assert.equal(packageJson.scripts?.start, "HOSTNAME=0.0.0.0 node .next/standalone
 assert.equal(packageJson.scripts?.["db:deploy"], "prisma migrate deploy", "package should expose a deploy migration command");
 assert.equal(packageJson.scripts?.["audit:railway"], "node scripts/audit-railway-deployment.mjs", "package should expose a Railway deployment audit command");
 assert.equal(packageJson.scripts?.["verify:railway-access"], "node scripts/verify-railway-access.mjs", "package should expose Railway access verification");
+assert.equal(
+  packageJson.scripts?.["verify:railway-authenticated"],
+  "node scripts/verify-railway-authenticated.mjs",
+  "package should expose authenticated Railway read verification"
+);
 assert.equal(packageJson.scripts?.["verify:access-control"], "node scripts/verify-access-control.mjs", "package should expose access-control verification");
 assert.equal(packageJson.scripts?.["verify:access-audit"], "tsx scripts/verify-access-audit.ts", "package should expose access-audit verification");
 assert.equal(packageJson.scripts?.["verify:period-locks"], "node scripts/verify-period-locks.mjs", "package should expose period-lock verification");
@@ -68,6 +74,7 @@ assert.match(dockerignore, /^\.env\.\*$/m, ".dockerignore should exclude env fil
 
 assert.equal(existsSync("index.html"), false, "root index.html must not exist because Railway can mis-detect a static site");
 assert.ok(existsSync("scripts/audit-railway-deployment.mjs"), "Railway audit script should exist");
+assert.ok(existsSync("scripts/verify-railway-authenticated.mjs"), "Authenticated Railway read verification script should exist");
 assert.ok(existsSync("scripts/verify-access-control.mjs"), "Access-control verification script should exist");
 assert.ok(existsSync("scripts/verify-access-audit.ts"), "Access-audit verification script should exist");
 assert.ok(existsSync("scripts/verify-period-locks.mjs"), "Period-lock verification script should exist");
@@ -81,6 +88,7 @@ assert.match(readme, /HONZANG_ACCESS_TOKEN_SALT=/, "README should document the a
 assert.match(readme, /HONZANG_FILE_ENCRYPTION_KEY=/, "README should document the file encryption key variable");
 assert.match(readme, /프로덕션에서는 `HONZANG_ACCESS_TOKEN_SALT`도 함께 있어야/, "README should mark access-token salt as required in production");
 assert.match(readme, /접근 성공\/실패\/잠금\/로그아웃/, "README should document access audit events");
+assert.match(readme, /verify:railway-authenticated/, "README should document authenticated Railway read verification");
 assert.match(envExample, /HONZANG_ACCESS_CODE=/, ".env.example should include the deployment access code variable");
 assert.match(envExample, /HONZANG_ACCESS_TOKEN_SALT=/, ".env.example should include the access-token salt variable");
 assert.match(envExample, /HONZANG_FILE_ENCRYPTION_KEY=/, ".env.example should include the file encryption key variable");
@@ -95,6 +103,7 @@ assert.match(railwayCutoverDoc, /\/api\/health/, "Railway cutover checklist shou
 assert.match(railwayCutoverDoc, /\/manifest\.webmanifest/, "Railway cutover checklist should include PWA manifest verification");
 assert.match(railwayCutoverDoc, /VERIFY_DB_WORKFLOW_BASE_URL/, "Railway cutover checklist should include DB workflow guidance");
 assert.match(railwayCutoverDoc, /VERIFY_DB_WORKFLOW_ACCESS_CODE/, "Railway cutover checklist should include access-code DB workflow guidance");
+assert.match(railwayCutoverDoc, /verify:railway-authenticated/, "Railway cutover checklist should include authenticated read verification");
 assert.match(railwayCutoverDoc, /HONZANG_FILE_ENCRYPTION_KEY/, "Railway cutover checklist should include the file encryption key variable");
 assert.match(railwayAuditScript, /docs\/railway-cutover\.md/, "Railway audit should point operators to the cutover checklist");
 assert.match(railwayAuditScript, /Public Networking/, "Railway audit should mention public domain diagnostics");
@@ -103,6 +112,11 @@ assert.match(railwayAuditScript, /findSecurityHeaderIssues/, "Railway audit shou
 assert.match(railwayVerifyScript, /expectSecurityHeaders/, "Railway verification should require public security headers");
 assert.match(railwayAccessVerifyScript, /AUTH_REQUIRED/, "Railway access verification should require protected APIs to reject anonymous requests");
 assert.match(railwayAccessVerifyScript, /\/access/, "Railway access verification should check access-page redirects");
+assert.match(railwayAuthenticatedVerifyScript, /RAILWAY_ACCESS_CODE/, "Authenticated Railway verification should accept an access code");
+assert.match(railwayAuthenticatedVerifyScript, /\/api\/auth\/login/, "Authenticated Railway verification should log in without mutating ledger data");
+assert.match(railwayAuthenticatedVerifyScript, /\/api\/companies/, "Authenticated Railway verification should read protected company data");
+assert.match(railwayAuthenticatedVerifyScript, /\/api\/transactions/, "Authenticated Railway verification should read protected transaction data");
+assert.match(railwayAuthenticatedVerifyScript, /\/api\/operations\/readiness/, "Authenticated Railway verification should read protected readiness data");
 assert.match(dbWorkflowVerifyScript, /baseOrigin/, "DB workflow verification should derive the target origin");
 assert.match(dbWorkflowVerifyScript, /Origin: baseOrigin/, "DB workflow verification should send same-origin login requests");
 assert.match(dbWorkflowVerifyScript, /isMutationMethod\(method\).*headers\.Origin = baseOrigin/s, "DB workflow verification should send same-origin mutation requests");

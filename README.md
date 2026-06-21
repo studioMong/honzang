@@ -79,6 +79,12 @@ npm run verify:railway
 npm run verify:railway-access
 ```
 
+운영 접근코드가 준비되면 DB를 변경하기 전에 인증된 읽기 검증을 먼저 실행합니다. 이 검증은 접근코드로 로그인한 뒤 회사, 거래, 운영 준비 상태 API를 읽기만 합니다.
+
+```bash
+RAILWAY_ACCESS_CODE=운영_접근코드 npm run verify:railway-authenticated
+```
+
 배포 커밋까지 고정해서 확인하려면 아래처럼 실행합니다.
 
 ```bash

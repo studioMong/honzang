@@ -61,6 +61,12 @@ RAILWAY_EXPECTED_COMMIT=$(git rev-parse HEAD) npm run verify:railway
 npm run verify:railway-access
 ```
 
+운영 접근코드가 준비되면 DB를 변경하기 전에 인증된 읽기 검증을 먼저 실행한다.
+
+```bash
+RAILWAY_ACCESS_CODE=운영_접근코드 npm run verify:railway-authenticated
+```
+
 실패 원인을 분류하려면 감사 스크립트를 사용한다.
 
 ```bash
